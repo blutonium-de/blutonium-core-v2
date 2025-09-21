@@ -1,11 +1,10 @@
 // lib/stripe.ts
 import Stripe from "stripe";
 
-const key = process.env.STRIPE_SECRET_KEY;
-if (!key) {
-  throw new Error("Missing STRIPE_SECRET_KEY");
+if (!process.env.STRIPE_SECRET_KEY) {
+  throw new Error("STRIPE_SECRET_KEY fehlt in .env.local / Vercel-Env");
 }
 
-export const stripe = new Stripe(key, {
+export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: "2024-06-20",
 });
