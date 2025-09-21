@@ -1,6 +1,6 @@
 // app/api/checkout/route.ts
 import { NextResponse } from "next/server";
-import type Stripe from "stripe";
+import type { Stripe } from "stripe";           // ⬅️ als Named-Type importieren
 import { stripe } from "../../../lib/stripe";
 
 type CartItem = { id: string; qty: number };
@@ -16,7 +16,6 @@ type Product = {
 export const dynamic = "force-dynamic";
 
 async function loadProducts(origin: string): Promise<Product[]> {
-  // Produkte aus deiner bestehenden API holen (serverseitig)
   const r = await fetch(`${origin}/api/products`, { cache: "no-store" });
   if (!r.ok) throw new Error(`Products API ${r.status}`);
   const j = await r.json();
@@ -45,7 +44,7 @@ export async function POST(req: Request) {
           quantity: qty,
           price_data: {
             currency: "eur",
-            unit_amount: Math.round(p.priceEUR * 100), // € -> Cent
+            unit_amount: Math.round(p.priceEUR * 100),
             product_data: {
               name: p.title,
               description: p.subtitle || undefined,
@@ -69,11 +68,9 @@ export async function POST(req: Request) {
       line_items,
       success_url: successUrl,
       cancel_url: cancelUrl,
-      shipping_address_collection: {
-        allowed_countries: ["DE", "AT", "CH", "NL", "BE", "LU"],
-      },
+      shipping_address_collection: { allowed_countries: ["DE", "AT", "CH", "NL", "BE", "LU"] },
       billing_address_collection: "auto",
-      automatic_tax: { enabled: false }, // bei Bedarf aktivieren
+      automatic_tax: { enabled: false },
     });
 
     return NextResponse.json({ url: session.url });

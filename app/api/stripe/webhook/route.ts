@@ -1,16 +1,16 @@
 // app/api/stripe/webhook/route.ts
 import { NextResponse } from "next/server";
-import type Stripe from "stripe";
-import { stripe } from "../../../../lib/stripe"; // <-- relativ statt "@/lib/stripe"
+import type { Stripe } from "stripe";                 // ⬅️ als Named-Type importieren
+import { stripe } from "../../../../lib/stripe";      // relativer Import
 
 export const dynamic = "force-dynamic";
-export const runtime = "nodejs"; // wichtig für raw body (Webhooks müssen auf Node laufen)
+export const runtime = "nodejs"; // Webhooks müssen auf Node laufen (für raw body)
 
 export async function POST(req: Request) {
   const sig = req.headers.get("stripe-signature") ?? "";
   let event: Stripe.Event;
 
-  // Rohdaten lesen (kein JSON parsen!)
+  // Rohdaten (kein JSON!)
   const payload = await req.text();
 
   try {
@@ -26,12 +26,10 @@ export async function POST(req: Request) {
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
 
-        // Optional: Line Items nachladen (für Artikelübersicht)
         const lineItems = await stripe.checkout.sessions.listLineItems(session.id, {
           limit: 100,
         });
 
-        // ➜ HIER: Bestellung speichern / Mail versenden / Fulfillment anstoßen
         console.log("✅ Zahlung abgeschlossen:", {
           sessionId: session.id,
           amount_total: session.amount_total,
