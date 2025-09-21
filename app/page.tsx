@@ -34,7 +34,7 @@ export default function Home() {
 
         <div className="mx-auto max-w-6xl px-4 py-24 md:py-36">
           <h1 className="text-4xl md:text-6xl font-extrabold tracking-tight drop-shadow">
-            Blutonium Records
+            Blutonium Records 🚀
           </h1>
           <p className="mt-4 text-white/85 text-lg md:text-xl max-w-3xl">
             Since 1995 — Hardstyle / Hardtrance / Hard Dance
