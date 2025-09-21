@@ -1,5 +1,6 @@
 // app/api/checkout/route.ts
 import { NextResponse } from "next/server";
+import type Stripe from "stripe";
 import { stripe } from "../../../lib/stripe";
 
 type CartItem = { id: string; qty: number };
@@ -30,8 +31,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Warenkorb leer" }, { status: 400 });
     }
 
-    const origin =
-      process.env.NEXT_PUBLIC_SITE_URL || new URL(req.url).origin;
+    const origin = process.env.NEXT_PUBLIC_SITE_URL || new URL(req.url).origin;
 
     const products = await loadProducts(origin);
     const map = new Map(products.map((p: Product) => [p.id, p] as const));
@@ -69,7 +69,9 @@ export async function POST(req: Request) {
       line_items,
       success_url: successUrl,
       cancel_url: cancelUrl,
-      shipping_address_collection: { allowed_countries: ["DE", "AT", "CH", "NL", "BE", "LU"] },
+      shipping_address_collection: {
+        allowed_countries: ["DE", "AT", "CH", "NL", "BE", "LU"],
+      },
       billing_address_collection: "auto",
       automatic_tax: { enabled: false }, // bei Bedarf aktivieren
     });

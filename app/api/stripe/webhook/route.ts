@@ -1,10 +1,10 @@
 // app/api/stripe/webhook/route.ts
 import { NextResponse } from "next/server";
 import type Stripe from "stripe";
-import { stripe } from "@/lib/stripe";
+import { stripe } from "../../../../lib/stripe"; // <-- relativ statt "@/lib/stripe"
 
 export const dynamic = "force-dynamic";
-export const runtime = "nodejs"; // wichtig für raw body
+export const runtime = "nodejs"; // wichtig für raw body (Webhooks müssen auf Node laufen)
 
 export async function POST(req: Request) {
   const sig = req.headers.get("stripe-signature") ?? "";
