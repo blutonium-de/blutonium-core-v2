@@ -17,7 +17,6 @@ type Product = {
 export const dynamic = "force-dynamic";
 
 async function loadProducts(origin: string): Promise<Product[]> {
-  // Produkte aus deiner bestehenden API holen (serverseitig)
   const r = await fetch(`${origin}/api/products`, { cache: "no-store" });
   if (!r.ok) throw new Error(`Products API ${r.status}`);
   const j = await r.json();
@@ -37,26 +36,26 @@ export async function POST(req: Request) {
     const products = await loadProducts(origin);
     const map = new Map(products.map((p) => [p.id, p] as const));
 
-    const line_items: Stripe.Checkout.SessionCreateParams.LineItem[] =
-      cart
-        .map((ci) => {
-          const p = map.get(ci.id);
-          if (!p) return null;
-          const qty = Math.max(1, Math.floor(ci.qty || 1));
-          return {
-            quantity: qty,
-            price_data: {
-              currency: "eur",
-              unit_amount: Math.round(p.priceEUR * 100), // € -> Cent
-              product_data: {
-                name: p.title,
-                description: p.subtitle || undefined,
-                images: p.image ? [new URL(p.image, origin).toString()] : [],
-              },
+    const line_items = cart
+      .map((ci) => {
+        const p = map.get(ci.id);
+        if (!p) return null;
+        const qty = Math.max(1, Math.floor(ci.qty || 1));
+
+        return {
+          quantity: qty,
+          price_data: {
+            currency: "eur",
+            unit_amount: Math.round(p.priceEUR * 100), // € → Cent
+            product_data: {
+              name: p.title,
+              description: p.subtitle || undefined,
+              images: p.image ? [new URL(p.image, origin).toString()] : [],
             },
-          };
-        })
-        .filter(Boolean) as unknown as Stripe.Checkout.SessionCreateParams.LineItem[];
+          },
+        } satisfies Stripe.Checkout.SessionCreateParams.LineItem;
+      })
+      .filter(Boolean) as Stripe.Checkout.SessionCreateParams.LineItem[];
 
     if (line_items.length === 0) {
       return NextResponse.json({ error: "Ungültige Artikel" }, { status: 400 });
