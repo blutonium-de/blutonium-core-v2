@@ -6,6 +6,5 @@ if (!process.env.STRIPE_SECRET_KEY) {
 }
 
 export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-  // Nimm eine feste, bewährte API-Version (stabiler Builds)
   apiVersion: "2024-06-20",
 });

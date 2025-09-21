@@ -1,16 +1,16 @@
 // app/api/stripe/webhook/route.ts
 import { NextResponse } from "next/server";
-import type { Stripe } from "stripe";                 // ⬅️ als Named-Type importieren
-import { stripe } from "../../../../lib/stripe";      // relativer Import
+import type Stripe from "stripe";                   // ✅ Default-Type-Import
+import { stripe } from "../../../../lib/stripe";    // ✅ relativer Import
 
 export const dynamic = "force-dynamic";
-export const runtime = "nodejs"; // Webhooks müssen auf Node laufen (für raw body)
+export const runtime = "nodejs"; // wichtig für raw body (Webhooks)
 
 export async function POST(req: Request) {
   const sig = req.headers.get("stripe-signature") ?? "";
   let event: Stripe.Event;
 
-  // Rohdaten (kein JSON!)
+  // Rohdaten lesen (kein JSON parsen!)
   const payload = await req.text();
 
   try {
@@ -43,7 +43,6 @@ export async function POST(req: Request) {
           })),
           metadata: session.metadata,
         });
-
         break;
       }
 
