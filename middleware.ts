@@ -5,6 +5,11 @@ import type { NextRequest } from "next/server"
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
 
+  // Debug-/System-Routen unverändert durchlassen
+  if (pathname.startsWith("/__")) {
+    return NextResponse.next()
+  }
+
   // nichts tun für Dateien, API, Assets
   if (
     pathname.startsWith("/api") ||
