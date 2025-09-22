@@ -25,3 +25,6 @@ out/
 # Editors
 .vscode/
 .idea/
+
+.env*
+!.env.example
