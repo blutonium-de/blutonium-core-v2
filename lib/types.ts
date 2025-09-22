@@ -46,6 +46,13 @@ export type Product = {
   image: string
   tags?: string[]
   active: boolean
-  // Stripe später:
+
+  // Stripe (optional)
   stripePriceId?: string | null
+
+  // Versand (optional):
+  // - Falls gesetzt, überschreibt es die Heuristik in /api/shipping (Gramm pro Stück).
+  // - Für digitale Produkte (z.B. Samples) isDigital: true => wird im Versand mit 0g behandelt.
+  weightGrams?: number
+  isDigital?: boolean
 }

@@ -9,7 +9,8 @@
     "image": "/shop/hardstyle-samples-vol2-01.jpg",
     "tags": ["sample cd", "hardstyle-samples", "merch"],
     "active": true,
-    "stripePriceId": null
+    "stripePriceId": null,
+    "weight": 200
   },
   {
     "id": "blutonium-boy-t-shirt",
@@ -21,7 +22,8 @@
     "image": "/shop/bb-t-shirt-01.jpg",
     "tags": ["tshirt", "blutonium-boy", "merch"],
     "active": true,
-    "stripePriceId": null
+    "stripePriceId": null,
+    "weight": 200
   },
   {
     "id": "slipmates-classics",
@@ -33,6 +35,57 @@
     "image": "/shop/slipmate-01.jpg",
     "tags": ["slipmate", "classics"],
     "active": true,
-    "stripePriceId": null
+    "stripePriceId": null,
+    "weight": 150
+  },
+  {
+    "id": "vinyl-001",
+    "title": "Blutonium Records Vinyl #1",
+    "subtitle": "Limited Edition",
+    "image": "/images/products/vinyl-001.jpg",
+    "priceEUR": 19.99,
+    "slug": "blutonium-records-vinyl-1",
+    "weight": 350,
+    "active": true
+  },
+  {
+    "id": "vinyl-002",
+    "title": "Blutonium Records Vinyl #2",
+    "subtitle": "Classic Release",
+    "image": "/images/products/vinyl-002.jpg",
+    "priceEUR": 18.99,
+    "slug": "blutonium-records-vinyl-2",
+    "weight": 350,
+    "active": true
+  },
+  {
+    "id": "cd-001",
+    "title": "Blutonium Doppel-CD",
+    "subtitle": "Collector’s Edition",
+    "image": "/images/products/cd-001.jpg",
+    "priceEUR": 14.99,
+    "slug": "blutonium-doppel-cd",
+    "weight": 100,
+    "active": true
+  },
+  {
+    "id": "shirt-001",
+    "title": "Blutonium T-Shirt",
+    "subtitle": "Schwarz, Größe M",
+    "image": "/images/products/shirt-001.jpg",
+    "priceEUR": 24.99,
+    "slug": "blutonium-shirt-m",
+    "weight": 200,
+    "active": true
+  },
+  {
+    "id": "shirt-002",
+    "title": "Blutonium T-Shirt",
+    "subtitle": "Schwarz, Größe L",
+    "image": "/images/products/shirt-002.jpg",
+    "priceEUR": 24.99,
+    "slug": "blutonium-shirt-l",
+    "weight": 200,
+    "active": true
   }
 ]
