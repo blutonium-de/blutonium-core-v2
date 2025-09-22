@@ -28,3 +28,5 @@ out/
 
 .env*
 !.env.example
+# never commit env files
+.env*
