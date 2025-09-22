@@ -48,7 +48,6 @@ export default function ReleasesPage() {
   async function fillYear(year: number, seed?: Release[]) {
     let offset: number | null = 0
     let more = true
-    // mit Seed beginnen, sonst mit aktuellem State
     const start = seed ?? data
     let local = new Map<string, Release>(start.map(r => [r.id, r]))
 
@@ -56,7 +55,6 @@ export default function ReleasesPage() {
       const res = await fetchPage({ year, limit: 50, pages: 5, cursor: offset ?? 0 })
       for (const it of res.releases) local.set(it.id, it)
       offset = res.cursorNext ? Number(res.cursorNext) : null
-      // Artists kommen ohne Cursor — wenn kein cursorNext, ist für dieses Jahr „voll“
       more = !!offset
     }
 
@@ -66,12 +64,13 @@ export default function ReleasesPage() {
     setData(merged)
   }
 
-  // Initial: 2 Seiten global (Label-Suche), DANN neuestes Jahr sofort komplett nachladen
+  // Initial: mehr vorab laden und danach die 2–3 jüngsten Jahre komplett nachladen
   useEffect(() => {
     ;(async () => {
       try {
         setLoading(true); setError(null)
-        const res = await fetchPage({ limit: 50, pages: 2 })
+        // Vorab etwas großzügiger laden, damit die Jahresliste vollständig ist
+        const res = await fetchPage({ limit: 50, pages: 3 })
         const map = new Map<string, Release>()
         for (const it of res.releases) map.set(it.id, it)
         const merged = Array.from(map.values()).sort((b, a) =>
@@ -80,12 +79,18 @@ export default function ReleasesPage() {
         setData(merged)
         setCursorNext(res.cursorNext)
 
-        // neuestes Jahr ermitteln und direkt vollständig laden
-        const years = merged.map(r => r.year).filter(Boolean)
+        // jüngste Jahre bestimmen (z. B. 2025, 2024, 2023)
+        const years = Array.from(new Set(merged.map(r => r.year).filter(Boolean))).sort((a, b) => b - a)
         if (years.length) {
-          const newest = Math.max(...years)
-          setActiveYear(newest)
-          await fillYear(newest, merged) // Seed = bereits geladene Releases
+          const top = years.slice(0, 3) // Anzahl bei Bedarf anpassen
+          setActiveYear(top[0])
+
+          // Zuerst das jüngste Jahr mit Seed (nutzt bereits geladene Releases)
+          await fillYear(top[0], merged)
+          // Dann die nächsten Jahre vollständig nachladen
+          for (let i = 1; i < top.length; i++) {
+            await fillYear(top[i])
+          }
         }
       } catch (e: any) {
         setError(e.message || "Fehler beim Laden")

@@ -19,7 +19,9 @@ type Product = {
 
 export const dynamic = "force-dynamic"
 
-const FREE_SHIPPING_MIN_EUR = 100
+// bisher: const FREE_SHIPPING_MIN_EUR = 100
+const FREE_SHIPPING_MIN_EUR =
+  Number(process.env.SHOP_FREE_SHIPPING_MIN ?? 150)
 
 async function loadProducts(origin: string): Promise<Product[]> {
   const r = await fetch(`${origin}/api/products`, { cache: "no-store" })
