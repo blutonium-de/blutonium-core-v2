@@ -33,3 +33,6 @@ out/
 
 # never commit env files
 .env*
+
+# env
+.env*
