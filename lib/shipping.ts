@@ -21,7 +21,8 @@ export const COUNTRY_TO_ZONE: Record<string, Zone> = {
   CH: "EU", // CH separat behandeln? -> Zone anpassen, falls gewünscht
 }
 
-const BRACKETS = [500, 1000, 2000, 5000] // Gramm-Grenzen: ≤500, ≤1000, ≤2000, ≤5000
+// ⚠️ jetzt exportiert (wurde zuvor nur const BRACKETS)
+export const BRACKETS = [500, 1000, 2000, 5000] // Gramm-Grenzen: ≤500, ≤1000, ≤2000, ≤5000
 
 // Preise in Cent pro Carrier/Zone/Gewichts-Stufe (4 Stufen entsprechend BRACKETS)
 const RATES: Record<Carrier, Record<Zone, number[]>> = {
@@ -59,9 +60,20 @@ export function weightBracketIndex(totalGrams: number): number {
   return BRACKETS.length - 1
 }
 
+// Nutzt die Tabellen oben (Basisfunktion)
 export function shippingPriceFor(carrier: Carrier, zone: Zone, totalGrams: number): number {
   const idx = weightBracketIndex(totalGrams)
   return RATES[carrier][zone][idx]
+}
+
+// ► Alias, damit Import-Name 'priceFor' funktioniert
+export const priceFor = shippingPriceFor
+
+// ► Neu exportiert: Label für die jeweilige Gewichts-Stufe
+export function labelForBracket(grams: number): string {
+  const idx = weightBracketIndex(Math.max(0, Math.floor(grams || 0)))
+  const cap = BRACKETS[idx]
+  return `bis ${Math.round(cap / 1000)} kg`
 }
 
 // ---- Cart/Produkte Typen (leicht generisch gehalten)
