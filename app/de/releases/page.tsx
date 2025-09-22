@@ -191,7 +191,9 @@ export default function ReleasesPage() {
         {grouped.map(([year, items]) => (
           <section
             key={year}
-            ref={(el) => (yearRefs.current[String(year)] = el)}
+            ref={(el: HTMLDivElement | null) => {
+              yearRefs.current[String(year)] = el
+            }}
             className="scroll-mt-28"
           >
             <h2 className="text-2xl font-bold mb-5">{year}</h2>
