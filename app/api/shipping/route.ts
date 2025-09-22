@@ -1,142 +1,93 @@
 // app/api/shipping/route.ts
 import { NextResponse } from "next/server"
-import products from "../../../data/products.json" assert { type: "json" }
 import type { Product } from "../../../lib/types"
 import {
-  bestCarrierFor,
-  calcShippingCents,
+  priceFor,
   resolveZone,
-  BRACKETS,
   labelForBracket,
+  BRACKETS,
   type Carrier,
 } from "../../../lib/shipping"
 
+type CartItem = { id: string; qty: number }
+
 export const dynamic = "force-dynamic"
 
-type CartItem = { id: string; qty: number }
-type QuoteRequest = {
-  country: string           // ISO-2, z.B. "AT", "DE", "CH", ...
-  items: CartItem[]
-  preferredCarrier?: Carrier
+// Gleiche Freigrenze wie im Checkout verwenden (falls du dort was änderst, hier auch)
+const FREE_SHIPPING_MIN_EUR = 100
+
+async function loadProducts(origin: string): Promise<Product[]> {
+  const r = await fetch(`${origin}/api/products`, { cache: "no-store" })
+  if (!r.ok) throw new Error(`Products API ${r.status}`)
+  const j = await r.json()
+  return j.products || []
 }
 
-function euro(nCents: number) {
-  return (nCents / 100).toFixed(2)
+// Optional: GET liefert Konfiguration (z.B. für UI)
+export async function GET(req: Request) {
+  return NextResponse.json({
+    brackets: BRACKETS,              // Gewichtsstufen (g)
+    freeShippingMinEUR: FREE_SHIPPING_MIN_EUR,
+  })
 }
 
-/**
- * Gewicht ableiten:
- * - falls Product.weightGrams vorhanden → nutzen
- * - heuristisch anhand von Tags/Titel:
- *    - "vinyl" → ~350 g (250 g Platte + 100 g Verpackung)
- *    - "cd" oder "doppel cd" → ~100 g (60 g + 40 g Verpackung)
- *    - "sample" (digitale Ware) → 0 g
- * - sonst konservativ ~250 g
- */
-function inferWeightGrams(p: Product): number {
-  // explizit hinterlegt?
-  // @ts-expect-error (falls dein Product-Typ weightGrams noch nicht hat)
-  if (typeof (p as any).weightGrams === "number") {
-    // @ts-ignore
-    return Math.max(0, Math.round((p as any).weightGrams))
-  }
-
-  const hay = `${p.title} ${p.subtitle ?? ""} ${(p.tags ?? []).join(" ")}`.toLowerCase()
-
-  if (hay.includes("sample")) return 0
-  if (hay.includes("vinyl")) return 350
-  if (hay.includes("cd")) return 100
-
-  // Default/Fallback
-  return 250
-}
-
+// POST: Versandvorschau für Warenkorb
 export async function POST(req: Request) {
   try {
-    const body = (await req.json()) as QuoteRequest
+    const body = await req.json()
+    const items: CartItem[] = Array.isArray(body?.items) ? body.items : []
+    const country: string = (body?.country || "AT").toUpperCase()
+    const carrier: Carrier = (body?.carrier || "POST_DHL") as Carrier
 
-    if (!body?.country || !Array.isArray(body?.items) || body.items.length === 0) {
-      return NextResponse.json(
-        { error: "country (ISO-2) und items[] werden benötigt." },
-        { status: 400 }
-      )
+    if (items.length === 0) {
+      return NextResponse.json({ error: "Warenkorb leer" }, { status: 400 })
     }
 
-    // Produkt-Lookup
-    const list = (products as Product[]).filter(p => p.active)
-    const map = new Map(list.map(p => [p.id, p] as const))
+    const origin = process.env.NEXT_PUBLIC_SITE_URL || new URL(req.url).origin
+    const products = await loadProducts(origin)
+    const map = new Map(products.map(p => [p.id, p] as const))
 
-    // Gesamtgewicht & Zwischensummen
+    // Summe Warenwert & Gewicht bestimmen
+    let totalEUR = 0
     let totalGrams = 0
-    let itemsTotalCents = 0
+    for (const it of items) {
+      const p = map.get(it.id)
+      if (!p) continue
+      const qty = Math.max(1, Math.floor(it.qty || 1))
+      totalEUR += (p.priceEUR ?? 0) * qty
 
-    const normalized = body.items
-      .map(({ id, qty }) => {
-        const p = map.get(id)
-        if (!p) return null
-        const q = Math.max(1, Math.floor(qty || 1))
-        const grams = inferWeightGrams(p) * q
-        const lineCents = Math.round((p.priceEUR ?? 0) * 100) * q
-        totalGrams += grams
-        itemsTotalCents += lineCents
-        return {
-          id: p.id,
-          title: p.title,
-          qty: q,
-          weightGramsEach: inferWeightGrams(p),
-          weightGramsTotal: grams,
-          linePriceCents: lineCents,
-        }
-      })
-      .filter(Boolean) as {
-        id: string
-        title: string
-        qty: number
-        weightGramsEach: number
-        weightGramsTotal: number
-        linePriceCents: number
-      }[]
-
-    if (normalized.length === 0) {
-      return NextResponse.json({ error: "Keine gültigen Artikel gefunden." }, { status: 400 })
+      // digitale Items zählen 0g, fehlende Gewichte = 0
+      const grams = p.isDigital ? 0 : (p.weightGrams ?? 0)
+      totalGrams += grams * qty
     }
 
-    const countryISO2 = body.country.toUpperCase()
-    const zone = resolveZone(countryISO2)
+    const zone = resolveZone(country)
 
-    // Beste Versand-Option (oder preferredCarrier, wenn gesetzt & verfügbar)
-    const best = bestCarrierFor(countryISO2, totalGrams, body.preferredCarrier)
-    const shippingCents = best.priceCents
-    const grandTotalCents = itemsTotalCents + shippingCents
+    const thresholdCents = Math.round(FREE_SHIPPING_MIN_EUR * 100)
+    const freeApplied = Math.round(totalEUR * 100) >= thresholdCents
 
-    // Antwort
+    const shippingCents = freeApplied
+      ? 0
+      : priceFor(carrier, zone, totalGrams)
+
+    const bracketLabel = labelForBracket(totalGrams)
+
     return NextResponse.json({
       ok: true,
-      country: countryISO2,
       zone,
-      items,
-      weight: {
-        totalGrams,
-        bracketLabel: labelForBracket(totalGrams),
-        brackets: BRACKETS, // zur Info
-      },
-      pricing: {
-        itemsTotalCents,
-        shippingCents,
-        grandTotalCents,
-        itemsTotalEUR: euro(itemsTotalCents),
-        shippingEUR: euro(shippingCents),
-        grandTotalEUR: euro(grandTotalCents),
-        currency: "EUR",
-      },
-      shipping: {
-        carrier: best.carrier,
-        label: best.label,
-        bracketGrams: best.bracket,
-      },
+      carrier,
+      totalEUR,
+      totalGrams,
+      bracketLabel,
+      shippingCents,
+      freeApplied,
+      thresholdCents,
     })
   } catch (err: any) {
-    console.error("shipping error:", err)
-    return NextResponse.json({ error: err?.message || "Shipping failed" }, { status: 500 })
+    console.error("shipping preview error:", err)
+    return NextResponse.json(
+      { error: err?.message || "Shipping preview failed" },
+      { status: 500 },
+    )
   }
 }
