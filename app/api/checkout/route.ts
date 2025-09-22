@@ -103,14 +103,20 @@ export async function POST(req: Request) {
 
     const params: Stripe.Checkout.SessionCreateParams = {
       mode: "payment",
-      // payment_method_types NICHT mehr setzen (SDK wählt selbst) → sonst Typfehler
+      // payment_method_types NICHT mehr setzen (SDK wählt selbst)
       line_items,
+      // ✨ NEU: immer einen Customer aus der Checkout-E-Mail erstellen
+      customer_creation: "always",
+
       shipping_address_collection: { allowed_countries: allowedCountries },
       shipping_options,
+
       success_url: `${origin}/de/merch/success`,
       cancel_url: `${origin}/de/merch/cancel`,
+
       billing_address_collection: "auto",
       automatic_tax: { enabled: false },
+
       metadata: {
         chosen_country: country,
         chosen_zone: resolveZone(country),
