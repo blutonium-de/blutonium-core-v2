@@ -1,6 +1,6 @@
 // app/api/checkout/route.ts
 import { NextResponse } from "next/server";
-import Stripe from "stripe";                   // ✅ Default-Import
+import Stripe from "stripe";                   // ✅ Default-Import (richtig)
 import { stripe } from "../../../lib/stripe";
 
 type CartItem = { id: string; qty: number };
