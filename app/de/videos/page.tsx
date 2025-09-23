@@ -1,3 +1,4 @@
+// app/de/videos/page.tsx
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
@@ -11,254 +12,233 @@ type Video = {
 }
 
 type ApiResponse =
-  | {
-      videos: Video[]
-      nextPageToken: string | null
-      source: string
-      steps?: any[]
-      note?: string
-    }
-  | {
-      error: string
-      videos?: Video[]
-      source?: string
-      steps?: any[]
-      note?: string
-    }
+  | { videos: Video[]; nextPageToken?: string | null; source?: string; error?: undefined; steps?: any }
+  | { error: string; source?: string; status?: number; steps?: any; videos?: undefined }
 
 function cx(...a: (string | false | null | undefined)[]) {
   return a.filter(Boolean).join(" ")
 }
 
-async function fetchVideos(params: Record<string, string | number>) {
-  const sp = new URLSearchParams()
-  Object.entries(params).forEach(([k, v]) => sp.set(k, String(v)))
-  const base = typeof window === "undefined" ? "" : window.location.origin
-  const r = await fetch(`${base}/api/youtube?${sp.toString()}`, { cache: "no-store" })
-  const json = (await r.json()) as ApiResponse
-  if (!r.ok) throw json
-  return json
-}
-
 export default function VideosPage() {
-  // Daten & API-State
-  const [items, setItems] = useState<Video[]>([])
-  const [nextToken, setNextToken] = useState<string | null>(null)
+  const [videos, setVideos] = useState<Video[]>([])
+  const [nextPageToken, setNextPageToken] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [lastResp, setLastResp] = useState<any>(null)
 
   // UI: Suche / Filter / Sortierung
-  const [q, setQ] = useState("")           // Such-Query
-  const [year, setYear] = useState<string>("all")
-  const [sortDir, setSortDir] = useState<"desc" | "asc">("desc") // desc = neu → alt
-  const [debugOpen, setDebugOpen] = useState(false)
+  const [query, setQuery] = useState("")
+  const [year, setYear] = useState<number | "all">("all")
+  const [sort, setSort] = useState<"newer" | "older">("newer")
+  const [debug, setDebug] = useState(false)
+  const [debugSteps, setDebugSteps] = useState<any>(null)
 
-  // Initial-Ladung
-  useEffect(() => {
-    ;(async () => {
-      try {
-        setLoading(true)
-        setError(null)
-        const res = await fetchVideos({ max: 12 })
-        setItems(res.videos || [])
-        setNextToken((res as any).nextPageToken ?? null)
-        setLastResp(res)
-      } catch (e: any) {
-        setError(e?.error || e?.note || "Fehler beim Laden")
-        setItems([])
-        setNextToken(null)
-        setLastResp(e)
-      } finally {
-        setLoading(false)
+  async function fetchVideos(opts?: { cursor?: string | null; replace?: boolean }) {
+    try {
+      setLoading(true)
+      setError(null)
+
+      const sp = new URLSearchParams()
+      sp.set("max", "24")
+      if (opts?.cursor) sp.set("pageToken", String(opts.cursor))
+
+      const base = typeof window === "undefined" ? "" : window.location.origin
+      const r = await fetch(`${base}/api/youtube?${sp.toString()}`, { cache: "no-store" })
+      const data: ApiResponse = await r.json()
+
+      if ("error" in data) {
+        setError(data.error || "Unbekannter Fehler")
+        setVideos([])
+        setNextPageToken(null)
+        setDebugSteps((data as any).steps ?? null)
+        return
       }
-    })()
+
+      const list = data.videos ?? []
+      setDebugSteps((data as any).steps ?? null)
+
+      setVideos((prev) => (opts?.replace ? list : [...prev, ...list]))
+      setNextPageToken(data.nextPageToken ?? null)
+    } catch (e: any) {
+      setError(e?.message || "Fehler beim Laden")
+      setVideos([])
+      setNextPageToken(null)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Initial laden
+  useEffect(() => {
+    fetchVideos({ replace: true })
   }, [])
 
-  // Alle verfügbaren Jahre aus geladenen Items (für Dropdown)
-  const allYears = useMemo(() => {
-    const ys = new Set<number>()
-    for (const v of items) {
-      const d = new Date(v.publishedAt)
-      if (!isNaN(d.getTime())) ys.add(d.getFullYear())
-    }
-    return Array.from(ys).sort((a, b) => b - a)
-  }, [items])
-
-  // Gefilterte & sortierte Liste (clientseitig)
+  // Such-/Filter-/Sortier-View ableiten
   const filtered = useMemo(() => {
-    let list = items
+    let out = videos
 
-    // Jahr-Filter
+    if (query.trim()) {
+      const q = query.toLowerCase()
+      out = out.filter((v) => v.title.toLowerCase().includes(q))
+    }
+
     if (year !== "all") {
-      const y = Number(year)
-      list = list.filter((v) => {
-        const d = new Date(v.publishedAt)
-        return !isNaN(d.getTime()) && d.getFullYear() === y
+      out = out.filter((v) => {
+        const y = new Date(v.publishedAt).getFullYear()
+        return y === year
       })
     }
 
-    // Suche (Titel)
-    const qq = q.trim().toLowerCase()
-    if (qq) {
-      list = list.filter((v) => v.title?.toLowerCase().includes(qq))
-    }
-
-    // Sortierung
-    list = [...list].sort((a, b) => {
-      const ta = new Date(a.publishedAt).getTime()
-      const tb = new Date(b.publishedAt).getTime()
-      return sortDir === "desc" ? tb - ta : ta - tb
+    out = [...out].sort((a, b) => {
+      const da = new Date(a.publishedAt).getTime()
+      const db = new Date(b.publishedAt).getTime()
+      return sort === "newer" ? db - da : da - db
     })
 
-    return list
-  }, [items, year, q, sortDir])
+    return out
+  }, [videos, query, year, sort])
+
+  const years = useMemo(() => {
+    const set = new Set<number>()
+    for (const v of videos) set.add(new Date(v.publishedAt).getFullYear())
+    return Array.from(set).sort((a, b) => b - a)
+  }, [videos])
 
   return (
-    <div className="max-w-6xl mx-auto">
-      <header className="pt-10 pb-6">
-        <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight">Videos</h1>
+    <div className="max-w-6xl mx-auto px-4 pb-16">
+      <header className="pt-10">
+        <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight">Videos</h1>
         <p className="mt-3 text-white/80">
           Neueste Uploads vom offiziellen Blutonium Records YouTube-Kanal.
         </p>
 
-        {/* Debug-Toggle */}
-        {lastResp && (
+        {/* Debug-Schalter */}
+        <div className="mt-6 flex flex-wrap gap-3 items-center">
           <button
-            className="mt-4 text-xs px-3 py-1.5 rounded-md border border-white/10 bg-white/5 hover:bg-white/10"
-            onClick={() => setDebugOpen((s) => !s)}
+            onClick={() => setDebug((v) => !v)}
+            className="px-4 py-2 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-sm"
           >
-            {debugOpen ? "Debug schließen" : "Debug anzeigen"}
+            {debug ? "Debug ausblenden" : "Debug anzeigen"}
           </button>
-        )}
-        {debugOpen && lastResp && (
-          <pre className="mt-3 overflow-x-auto rounded-lg border border-white/10 bg-black/40 p-3 text-[11px] leading-tight">
-            {JSON.stringify(lastResp, null, 2)}
-          </pre>
-        )}
+
+          {/* Suche */}
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Suche nach Titel..."
+            className="w-full sm:w-80 px-4 py-2 rounded-lg bg-white/5 border border-white/10 outline-none focus:border-white/20"
+          />
+
+          {/* Jahres-Filter */}
+          <select
+            value={year}
+            onChange={(e) => setYear(e.target.value === "all" ? "all" : Number(e.target.value))}
+            className="px-3 py-2 rounded-lg bg-white/5 border border-white/10"
+          >
+            <option value="all">Alle Jahre</option>
+            {years.map((y) => (
+              <option key={y} value={y}>
+                {y}
+              </option>
+            ))}
+          </select>
+
+          {/* Sortierung */}
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value as any)}
+            className="px-3 py-2 rounded-lg bg-white/5 border border-white/10"
+          >
+            <option value="newer">Neu → Alt</option>
+            <option value="older">Alt → Neu</option>
+          </select>
+        </div>
       </header>
 
-      {/* Filterleiste */}
-      <div className="mb-6 flex flex-col sm:flex-row gap-3 sm:items-center">
-        {/* Suche */}
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Suche nach Titel…"
-          className="w-full sm:max-w-xs rounded-lg border border-white/10 bg-white/5 px-3 py-2 outline-none focus:border-white/20"
-        />
+      {/* Lade-/Fehlerzustände */}
+      <div className="mt-8">
+        {loading && videos.length === 0 && (
+          <div className="py-10 text-center text-white/70">Lade Videos …</div>
+        )}
 
-        {/* Jahr */}
-        <select
-          value={year}
-          onChange={(e) => setYear(e.target.value)}
-          className="w-full sm:w-auto rounded-lg border border-white/10 bg-white/5 px-3 py-2 outline-none focus:border-white/20"
-        >
-          <option value="all">Alle Jahre</option>
-          {allYears.map((y) => (
-            <option key={y} value={y}>
-              {y}
-            </option>
-          ))}
-        </select>
+        {error && videos.length === 0 && (
+          <div className="py-10 text-center text-red-300">
+            Fehler: {error}
+            <div className="mt-2 text-white/50 text-sm">
+              Kein Feed verfügbar (API geblockt/RSS leer)
+            </div>
+          </div>
+        )}
 
-        {/* Sort */}
-        <select
-          value={sortDir}
-          onChange={(e) => setSortDir(e.target.value as "asc" | "desc")}
-          className="w-full sm:w-auto rounded-lg border border-white/10 bg-white/5 px-3 py-2 outline-none focus:border-white/20"
-        >
-          <option value="desc">Neu → Alt</option>
-          <option value="asc">Alt → Neu</option>
-        </select>
+        {!loading && !error && filtered.length === 0 && (
+          <div className="py-10 text-center text-white/70">Keine aktuellen Videos gefunden.</div>
+        )}
       </div>
 
-      {/* Lade-/Fehlerzustände */}
-      {loading && items.length === 0 && (
-        <div className="py-16 text-center text-white/70">Lade Videos …</div>
-      )}
-
-      {error && items.length === 0 && (
-        <div className="py-16 text-center text-red-300">
-          Fehler: {error}
-          {lastResp?.note ? <div className="text-white/60 mt-2">{lastResp.note}</div> : null}
-        </div>
-      )}
-
-      {!loading && !error && filtered.length === 0 && items.length > 0 && (
-        <div className="py-16 text-center text-white/70">Keine Treffer für die Filter.</div>
-      )}
-
-      {!loading && !error && items.length === 0 && (
-        <div className="py-16 text-center text-white/70">Keine Videos gefunden.</div>
-      )}
-
-      {/* Grid */}
+      {/* Cards */}
       {filtered.length > 0 && (
-        <div className="pb-16">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {filtered.map((v) => (
+        <section className="mt-6 grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          {filtered.map((v) => {
+            // <- Dein gewünschtes Mapping (für’s Verständnis noch mal klar)
+            const card = {
+              id: v.id,
+              title: v.title,
+              date: new Date(v.publishedAt).toLocaleDateString("de-AT"),
+              href: v.url,
+              img: v.thumb,
+            }
+
+            return (
               <a
-                key={v.id}
-                href={v.url}
+                key={card.id}
+                href={card.href}
                 target="_blank"
                 rel="noreferrer"
-                className="group block overflow-hidden rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition"
+                className="group rounded-2xl overflow-hidden border border-white/10 bg-white/5 hover:bg-white/10 transition block"
               >
-                <div className="aspect-[16/9] overflow-hidden bg-white/5">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={v.thumb}
-                    alt={v.title}
-                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
-                    loading="lazy"
-                  />
+                <div className="aspect-video bg-white/5 overflow-hidden">
+                  {card.img ? (
+                    <img
+                      src={card.img}
+                      alt={card.title}
+                      className="w-full h-full object-cover group-hover:scale-[1.02] transition"
+                      loading="lazy"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <div className="w-full h-full grid place-items-center text-white/40">Ohne Bild</div>
+                  )}
                 </div>
                 <div className="p-4">
-                  <h3 className="line-clamp-2 text-base sm:text-lg font-semibold">{v.title}</h3>
-                  <p className="mt-1 text-xs text-white/60">
-                    {new Date(v.publishedAt || "").toLocaleDateString("de-AT", {
-                      day: "2-digit",
-                      month: "2-digit",
-                      year: "numeric",
-                    })}
-                  </p>
+                  <h3 className="font-semibold line-clamp-2">{card.title}</h3>
+                  <div className="text-sm text-white/60 mt-1">{card.date}</div>
                 </div>
               </a>
-            ))}
-          </div>
+            )
+          })}
+        </section>
+      )}
 
-          {/* Mehr laden (nur wenn es noch mehr gibt) */}
-          <div className="mt-8 text-center">
-            {nextToken ? (
-              <button
-                disabled={loading}
-                onClick={async () => {
-                  try {
-                    setLoading(true)
-                    const res = await fetchVideos({ max: 12, pageToken: nextToken })
-                    setItems((cur) => [...cur, ...(res.videos || [])])
-                    setNextToken((res as any).nextPageToken ?? null)
-                    setLastResp(res)
-                  } catch (e: any) {
-                    setError(e?.error || e?.note || "Fehler beim Nachladen")
-                    setLastResp(e)
-                  } finally {
-                    setLoading(false)
-                  }
-                }}
-                className={cx(
-                  "px-4 py-2 rounded-lg border bg-white/5 hover:bg-white/10",
-                  "border-white/10 disabled:opacity-50"
-                )}
-              >
-                {loading ? "Laden …" : "Mehr laden"}
-              </button>
-            ) : (
-              <div className="text-white/50 text-sm">Alles geladen.</div>
+      {/* Mehr laden */}
+      {nextPageToken && (
+        <div className="text-center mt-10">
+          <button
+            disabled={loading}
+            onClick={() => fetchVideos({ cursor: nextPageToken, replace: false })}
+            className={cx(
+              "px-4 py-2 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10",
+              loading && "opacity-60 cursor-not-allowed"
             )}
-          </div>
+          >
+            {loading ? "Laden …" : "Mehr laden"}
+          </button>
         </div>
+      )}
+
+      {/* Debug-Ausgabe */}
+      {debug && (
+        <pre className="mt-10 whitespace-pre-wrap text-xs bg-black/50 rounded-xl p-4 border border-white/10 overflow-x-auto">
+          {JSON.stringify({ count: videos.length, nextPageToken, steps: debugSteps }, null, 2)}
+        </pre>
       )}
     </div>
   )
