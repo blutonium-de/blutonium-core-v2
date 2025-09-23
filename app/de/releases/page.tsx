@@ -20,6 +20,8 @@ type Release = {
 }
 type Filter = "all" | "single" | "album" | "compilation"
 
+const YEARS_PRELOAD = 3 // wie viele jüngste Jahre direkt voll laden
+
 function cx(...a: (string | false | null | undefined)[]) {
   return a.filter(Boolean).join(" ")
 }
@@ -33,6 +35,14 @@ async function fetchPage(params: Record<string, string | number>) {
   return (await r.json()) as { releases: Release[]; cursorNext: string | null }
 }
 
+/** Releases zusammenführen (nach id), chronologisch sortiert (neu zuerst). */
+function mergeReleases(prev: Release[], add: Release[]) {
+  const map = new Map<string, Release>()
+  for (const r of prev) map.set(r.id, r)
+  for (const r of add) map.set(r.id, r)
+  return Array.from(map.values()).sort((b, a) => (a.releaseDate || "").localeCompare(b.releaseDate || ""))
+}
+
 export default function ReleasesPage() {
   const [data, setData] = useState<Release[]>([])
   const [cursorNext, setCursorNext] = useState<string | null>(null)
@@ -42,55 +52,42 @@ export default function ReleasesPage() {
   const [filter, setFilter] = useState<Filter>("all")
   const [activeYear, setActiveYear] = useState<number | null>(null)
 
+  // Welche Jahre sind schon vollständig geladen?
+  const loadedYearsRef = useRef<Set<number>>(new Set())
+  const loadingYearsRef = useRef<Set<number>>(new Set())
   const yearRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
-  // Jahr gezielt vollständig nachladen (Label + Artists), optional mit Startdaten (seed)
-  async function fillYear(year: number, seed?: Release[]) {
-    let offset: number | null = 0
-    let more = true
-    const start = seed ?? data
-    let local = new Map<string, Release>(start.map(r => [r.id, r]))
-
-    while (more) {
-      const res = await fetchPage({ year, limit: 50, pages: 5, cursor: offset ?? 0 })
-      for (const it of res.releases) local.set(it.id, it)
-      offset = res.cursorNext ? Number(res.cursorNext) : null
-      more = !!offset
+  /** Ein Jahr vollständig laden (Label + Artists) und in den State MERGEN. */
+  async function fillYear(year: number) {
+    if (loadedYearsRef.current.has(year) || loadingYearsRef.current.has(year)) return
+    loadingYearsRef.current.add(year)
+    try {
+      // 5 Seiten mit je 50 aus der API (die Serverroute merged Label+Artists schon)
+      const res = await fetchPage({ year, limit: 50, pages: 5, cursor: 0 })
+      setData(prev => mergeReleases(prev, res.releases))
+      loadedYearsRef.current.add(year)
+    } finally {
+      loadingYearsRef.current.delete(year)
     }
-
-    const merged = Array.from(local.values()).sort((b, a) =>
-      (a.releaseDate || "").localeCompare(b.releaseDate || "")
-    )
-    setData(merged)
   }
 
-  // Initial: mehr vorab laden und danach die 2–3 jüngsten Jahre komplett nachladen
+  // Initial: etwas „Seed“ laden, dann die jüngsten N Jahre komplett nachladen
   useEffect(() => {
     ;(async () => {
       try {
         setLoading(true); setError(null)
-        // Vorab etwas großzügiger laden, damit die Jahresliste vollständig ist
-        const res = await fetchPage({ limit: 50, pages: 3 })
-        const map = new Map<string, Release>()
-        for (const it of res.releases) map.set(it.id, it)
-        const merged = Array.from(map.values()).sort((b, a) =>
-          (a.releaseDate || "").localeCompare(b.releaseDate || "")
-        )
-        setData(merged)
-        setCursorNext(res.cursorNext)
 
-        // jüngste Jahre bestimmen (z. B. 2025, 2024, 2023)
-        const years = Array.from(new Set(merged.map(r => r.year).filter(Boolean))).sort((a, b) => b - a)
+        // Seed (etwas größer, damit die Jahresliste stabil ist)
+        const seed = await fetchPage({ limit: 50, pages: 3 })
+        setData(prev => mergeReleases(prev, seed.releases))
+        setCursorNext(seed.cursorNext)
+
+        // jüngste Jahre bestimmen und direkt voll nachladen
+        const years = Array.from(new Set(seed.releases.map(r => r.year).filter(Boolean))).sort((a, b) => b - a)
         if (years.length) {
-          const top = years.slice(0, 3) // Anzahl bei Bedarf anpassen
-          setActiveYear(top[0])
-
-          // Zuerst das jüngste Jahr mit Seed (nutzt bereits geladene Releases)
-          await fillYear(top[0], merged)
-          // Dann die nächsten Jahre vollständig nachladen
-          for (let i = 1; i < top.length; i++) {
-            await fillYear(top[i])
-          }
+          const toPreload = years.slice(0, YEARS_PRELOAD)
+          setActiveYear(toPreload[0])
+          await Promise.all(toPreload.map(fillYear))
         }
       } catch (e: any) {
         setError(e.message || "Fehler beim Laden")
@@ -100,16 +97,14 @@ export default function ReleasesPage() {
     })()
   }, [])
 
-  // Jahr-Klick: smooth scroll + vollständig laden
-  function onYearClick(year: number) {
+  // Jahr-Klick: smooth scroll + ggf. lazy nachladen
+  async function onYearClick(year: number) {
     setActiveYear(year)
     setTimeout(() => {
       const el = yearRefs.current[String(year)]
       if (el) el.scrollIntoView({ behavior: "smooth", block: "start" })
     }, 60)
-    void (async () => {
-      try { setLoading(true); await fillYear(year) } finally { setLoading(false) }
-    })()
+    await fillYear(year)
   }
 
   // Gruppierung & Sortierung für Anzeige
@@ -135,7 +130,7 @@ export default function ReleasesPage() {
           Blutonium Records Veröffentlichungen
         </h1>
         <p className="mt-3 text-white/80">
-          Filtere nach Typ, springe per Jahr & entdecke alle Releases. Neueste zuerst.
+          Neueste zuerst. Die aktuellsten Jahre werden vollständig vorgeladen.
         </p>
 
         {/* Filter-Tabs */}
@@ -196,9 +191,7 @@ export default function ReleasesPage() {
         {grouped.map(([year, items]) => (
           <section
             key={year}
-            ref={(el: HTMLDivElement | null) => {
-              yearRefs.current[String(year)] = el
-            }}
+            ref={(el: HTMLDivElement | null) => { yearRefs.current[String(year)] = el }}
             className="scroll-mt-28"
           >
             <h2 className="text-2xl font-bold mb-5">{year}</h2>
@@ -226,7 +219,7 @@ export default function ReleasesPage() {
                     )}
                   </div>
 
-                  {/* Info */}
+                  {/* Infos */}
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-baseline gap-2">
                       <span className="text-xs uppercase tracking-wide px-2 py-0.5 rounded bg-white/10 border border-white/10">
@@ -300,12 +293,7 @@ export default function ReleasesPage() {
                 try {
                   setLoading(true)
                   const res = await fetchPage({ limit: 50, pages: 1, cursor: cursorNext! })
-                  const map = new Map<string, Release>(data.map(r => [r.id, r]))
-                  for (const it of res.releases) map.set(it.id, it)
-                  const merged = Array.from(map.values()).sort((b, a) =>
-                    (a.releaseDate || "").localeCompare(b.releaseDate || "")
-                  )
-                  setData(merged)
+                  setData(prev => mergeReleases(prev, res.releases))
                   setCursorNext(res.cursorNext)
                 } finally {
                   setLoading(false)
