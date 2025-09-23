@@ -41,12 +41,18 @@ async function fetchVideos(params: Record<string, string | number>) {
 }
 
 export default function VideosPage() {
+  // Daten & API-State
   const [items, setItems] = useState<Video[]>([])
   const [nextToken, setNextToken] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [debugOpen, setDebugOpen] = useState(false)
   const [lastResp, setLastResp] = useState<any>(null)
+
+  // UI: Suche / Filter / Sortierung
+  const [q, setQ] = useState("")           // Such-Query
+  const [year, setYear] = useState<string>("all")
+  const [sortDir, setSortDir] = useState<"desc" | "asc">("desc") // desc = neu → alt
+  const [debugOpen, setDebugOpen] = useState(false)
 
   // Initial-Ladung
   useEffect(() => {
@@ -69,42 +75,44 @@ export default function VideosPage() {
     })()
   }, [])
 
-  const haveItems = items.length > 0
-
-  const grid = useMemo(() => {
-    return items.map((v) => (
-      <a
-        key={v.id}
-        href={v.url}
-        target="_blank"
-        rel="noreferrer"
-        className="group block overflow-hidden rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition"
-      >
-        {/* Thumb */}
-        <div className="aspect-[16/9] overflow-hidden bg-white/5">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={v.thumb}
-            alt={v.title}
-            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
-            loading="lazy"
-          />
-        </div>
-
-        {/* Text */}
-        <div className="p-4">
-          <h3 className="line-clamp-2 text-base sm:text-lg font-semibold">{v.title}</h3>
-          <p className="mt-1 text-xs text-white/60">
-            {new Date(v.publishedAt || "").toLocaleDateString("de-AT", {
-              day: "2-digit",
-              month: "2-digit",
-              year: "numeric",
-            })}
-          </p>
-        </div>
-      </a>
-    ))
+  // Alle verfügbaren Jahre aus geladenen Items (für Dropdown)
+  const allYears = useMemo(() => {
+    const ys = new Set<number>()
+    for (const v of items) {
+      const d = new Date(v.publishedAt)
+      if (!isNaN(d.getTime())) ys.add(d.getFullYear())
+    }
+    return Array.from(ys).sort((a, b) => b - a)
   }, [items])
+
+  // Gefilterte & sortierte Liste (clientseitig)
+  const filtered = useMemo(() => {
+    let list = items
+
+    // Jahr-Filter
+    if (year !== "all") {
+      const y = Number(year)
+      list = list.filter((v) => {
+        const d = new Date(v.publishedAt)
+        return !isNaN(d.getTime()) && d.getFullYear() === y
+      })
+    }
+
+    // Suche (Titel)
+    const qq = q.trim().toLowerCase()
+    if (qq) {
+      list = list.filter((v) => v.title?.toLowerCase().includes(qq))
+    }
+
+    // Sortierung
+    list = [...list].sort((a, b) => {
+      const ta = new Date(a.publishedAt).getTime()
+      const tb = new Date(b.publishedAt).getTime()
+      return sortDir === "desc" ? tb - ta : ta - tb
+    })
+
+    return list
+  }, [items, year, q, sortDir])
 
   return (
     <div className="max-w-6xl mx-auto">
@@ -114,7 +122,7 @@ export default function VideosPage() {
           Neueste Uploads vom offiziellen Blutonium Records YouTube-Kanal.
         </p>
 
-        {/* Debug-Schalter – nur sichtbar, wenn Antwort Meta enthält */}
+        {/* Debug-Toggle */}
         {lastResp && (
           <button
             className="mt-4 text-xs px-3 py-1.5 rounded-md border border-white/10 bg-white/5 hover:bg-white/10"
@@ -130,28 +138,97 @@ export default function VideosPage() {
         )}
       </header>
 
+      {/* Filterleiste */}
+      <div className="mb-6 flex flex-col sm:flex-row gap-3 sm:items-center">
+        {/* Suche */}
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Suche nach Titel…"
+          className="w-full sm:max-w-xs rounded-lg border border-white/10 bg-white/5 px-3 py-2 outline-none focus:border-white/20"
+        />
+
+        {/* Jahr */}
+        <select
+          value={year}
+          onChange={(e) => setYear(e.target.value)}
+          className="w-full sm:w-auto rounded-lg border border-white/10 bg-white/5 px-3 py-2 outline-none focus:border-white/20"
+        >
+          <option value="all">Alle Jahre</option>
+          {allYears.map((y) => (
+            <option key={y} value={y}>
+              {y}
+            </option>
+          ))}
+        </select>
+
+        {/* Sort */}
+        <select
+          value={sortDir}
+          onChange={(e) => setSortDir(e.target.value as "asc" | "desc")}
+          className="w-full sm:w-auto rounded-lg border border-white/10 bg-white/5 px-3 py-2 outline-none focus:border-white/20"
+        >
+          <option value="desc">Neu → Alt</option>
+          <option value="asc">Alt → Neu</option>
+        </select>
+      </div>
+
       {/* Lade-/Fehlerzustände */}
-      {loading && !haveItems && (
-        <div className="py-20 text-center text-white/70">Lade Videos …</div>
+      {loading && items.length === 0 && (
+        <div className="py-16 text-center text-white/70">Lade Videos …</div>
       )}
 
-      {error && !haveItems && (
-        <div className="py-20 text-center text-red-300">
+      {error && items.length === 0 && (
+        <div className="py-16 text-center text-red-300">
           Fehler: {error}
           {lastResp?.note ? <div className="text-white/60 mt-2">{lastResp.note}</div> : null}
         </div>
       )}
 
-      {!loading && !error && !haveItems && (
-        <div className="py-20 text-center text-white/70">Keine aktuellen Videos gefunden.</div>
+      {!loading && !error && filtered.length === 0 && items.length > 0 && (
+        <div className="py-16 text-center text-white/70">Keine Treffer für die Filter.</div>
+      )}
+
+      {!loading && !error && items.length === 0 && (
+        <div className="py-16 text-center text-white/70">Keine Videos gefunden.</div>
       )}
 
       {/* Grid */}
-      {haveItems && (
+      {filtered.length > 0 && (
         <div className="pb-16">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{grid}</div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {filtered.map((v) => (
+              <a
+                key={v.id}
+                href={v.url}
+                target="_blank"
+                rel="noreferrer"
+                className="group block overflow-hidden rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition"
+              >
+                <div className="aspect-[16/9] overflow-hidden bg-white/5">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={v.thumb}
+                    alt={v.title}
+                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+                    loading="lazy"
+                  />
+                </div>
+                <div className="p-4">
+                  <h3 className="line-clamp-2 text-base sm:text-lg font-semibold">{v.title}</h3>
+                  <p className="mt-1 text-xs text-white/60">
+                    {new Date(v.publishedAt || "").toLocaleDateString("de-AT", {
+                      day: "2-digit",
+                      month: "2-digit",
+                      year: "numeric",
+                    })}
+                  </p>
+                </div>
+              </a>
+            ))}
+          </div>
 
-          {/* Mehr laden */}
+          {/* Mehr laden (nur wenn es noch mehr gibt) */}
           <div className="mt-8 text-center">
             {nextToken ? (
               <button
