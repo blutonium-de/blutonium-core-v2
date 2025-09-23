@@ -7,6 +7,7 @@ export const dynamic = "force-dynamic"
 
 const LABEL_NAME = "Blutonium Records"
 
+// ---- Types ----
 type Artist = { id: string; name: string; url?: string }
 type Release = {
   id: string
@@ -28,29 +29,42 @@ type Release = {
 function ok(data: any, extraHeaders?: Record<string, string>) {
   return new NextResponse(JSON.stringify(data), {
     status: 200,
-    headers: { "content-type": "application/json; charset=utf-8", ...(extraHeaders || {}) },
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      ...(extraHeaders || {}),
+    },
   })
 }
 
+// Spotify → Base-Objekt
 function toBaseItem(a: any): Release {
-  const year = Number((a.release_date || "").slice(0, 4))
-  const mainArtist = a.artists?.[0]?.name ?? ""
-  const q = encodeURIComponent(`${mainArtist} ${a.name}`)
+  const rd: string | undefined = a?.release_date
+  const year = Number((rd || "").slice(0, 4)) || 0
+
+  const mainArtist = a?.artists?.[0]?.name ?? ""
+  const q = encodeURIComponent(`${mainArtist} ${a?.name ?? ""}`)
+
+  // album_type kann auch "appears_on" sein → als single behandeln
+  const rawType = (a?.album_type as string) || "single"
+  const normType: "album" | "single" | "compilation" =
+    rawType === "album" ? "album" :
+    rawType === "compilation" ? "compilation" : "single"
+
   return {
-    id: a.id,
+    id: a?.id,
     year,
-    releaseDate: a.release_date || null,
-    title: a.name,
-    type: (a.album_type as "album" | "single" | "compilation") || "single",
-    label: a.label || null,
-    coverUrl: a.images?.[0]?.url || null,
-    artists: (a.artists || []).map((ar: any) => ({
-      id: ar.id,
-      name: ar.name,
-      url: ar.external_urls?.spotify,
+    releaseDate: rd ?? null,
+    title: a?.name ?? "",
+    type: normType,
+    label: a?.label ?? null,
+    coverUrl: a?.images?.[0]?.url ?? null, // größte zuerst
+    artists: (a?.artists || []).map((ar: any) => ({
+      id: ar?.id,
+      name: ar?.name,
+      url: ar?.external_urls?.spotify,
     })),
     tracks: [],
-    spotifyUrl: `https://open.spotify.com/album/${a.id}`,
+    spotifyUrl: `https://open.spotify.com/album/${a?.id}`,
     appleUrl: `https://music.apple.com/de/search?term=${q}`,
     beatportUrl: `https://www.beatport.com/search?q=${q}`,
     catalogNumber: null,
@@ -58,6 +72,7 @@ function toBaseItem(a: any): Release {
   }
 }
 
+// Label-Suche (paged)
 async function searchAlbums({
   token,
   qParts,
@@ -81,19 +96,23 @@ async function searchAlbums({
     const r = await fetch(url, { headers, cache: "no-store" })
     if (r.status === 429) break
     if (!r.ok) break
+
     const data = await r.json()
     const items = data?.albums?.items || []
     results.push(...items)
+
     if (items.length < limit) {
       offset += items.length
       return { items: results, cursorNext: null as string | null }
     }
     offset += limit
   }
+
   const cursorNext = results.length >= limit * pages ? String(offset) : null
   return { items: results, cursorNext }
 }
 
+// Künstler-Feed (jahresgefiltert) – holt mehrere Seiten
 async function fetchArtistYearAlbums({
   token,
   artistId,
@@ -110,35 +129,96 @@ async function fetchArtistYearAlbums({
   const headers = { Authorization: `Bearer ${token}` }
   const results: any[] = []
   let offset = 0
+
   for (let i = 0; i < maxPages; i++) {
     const url = `https://api.spotify.com/v1/artists/${artistId}/albums?include_groups=album,single,compilation&market=DE&limit=${limit}&offset=${offset}`
     const r = await fetch(url, { headers, cache: "no-store" })
     if (r.status === 429) break
     if (!r.ok) break
+
     const data = await r.json()
     const items = (data?.items || []).filter((x: any) =>
-      (x.release_date || "").startsWith(String(year))
+      (x?.release_date || "").startsWith(String(year))
     )
     results.push(...items)
+
     if ((data?.items || []).length < limit) break
     offset += limit
   }
+
   return results
+}
+
+// Jahr komplett: Label-Suche + Artists mergen
+async function fetchFullYear({
+  token,
+  year,
+  limit,
+  pages,
+  offsetStart,
+  typeParam,
+}: {
+  token: string
+  year: number
+  limit: number
+  pages: number
+  offsetStart: number
+  typeParam?: "album" | "single" | "compilation" | null
+}) {
+  const [labelRes, artistBatches] = await Promise.all([
+    searchAlbums({
+      token,
+      qParts: [`label:"${LABEL_NAME}"`, `year:${year}`],
+      limit,
+      pages,
+      offsetStart,
+    }),
+    Promise.all(
+      (ARTISTS || []).map((aid) =>
+        fetchArtistYearAlbums({ token, artistId: aid, year, limit: 50, maxPages: 3 })
+      )
+    ),
+  ])
+
+  const fromLabel = labelRes.items
+  const fromArtists = artistBatches.flat()
+
+  const mergedMap = new Map<string, any>()
+  for (const it of [...fromLabel, ...fromArtists]) {
+    const existing = mergedMap.get(it.id)
+    if (!existing) {
+      mergedMap.set(it.id, it)
+    } else {
+      const existingIsBlutonium = (existing?.label || "").toLowerCase().includes("blutonium")
+      const incomingIsBlutonium = (it?.label || "").toLowerCase().includes("blutonium")
+      if (!existingIsBlutonium && incomingIsBlutonium) mergedMap.set(it.id, it)
+    }
+  }
+
+  let releases = Array.from(mergedMap.values()).map(toBaseItem)
+  releases = releases.filter((r) => r.year === year)
+  if (typeParam) releases = releases.filter((r) => r.type === typeParam)
+  releases.sort((b, a) => (a.releaseDate || "").localeCompare(b.releaseDate || ""))
+
+  return { releases, cursorNext: labelRes.cursorNext as string | null }
 }
 
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url)
-    const limit = Math.min(Number(searchParams.get("limit") || "50"), 50)
-    const pages = Math.min(Number(searchParams.get("pages") || "1"), 10)
+
+    // Limits defensiv begrenzen
+    const limit = Math.min(Math.max(Number(searchParams.get("limit") || "50"), 1), 50)
+    const pages = Math.min(Math.max(Number(searchParams.get("pages") || "1"), 1), 10)
     const cursorParam = searchParams.get("cursor")
     const offsetStart = cursorParam ? Number(cursorParam) || 0 : 0
 
+    // Jahr(e)
     const yearParam = searchParams.get("year")
-    const year = yearParam ? Number(yearParam) : undefined
+    const yearsParam = searchParams.get("years") // NEU: "2025,2024,2023"
     const typeParam = searchParams.get("type") as "album" | "single" | "compilation" | null
 
-    // Token
+    // Token holen, sonst Demo
     let token = ""
     try {
       token = await getSpotifyToken()
@@ -149,8 +229,37 @@ export async function GET(req: Request) {
       return ok({ releases: demoSorted, cursorNext: null, source: "demo-token" })
     }
 
-    // === GLOBAL (kein Jahr) → nur Label-Suche, paging ===
-    if (!year) {
+    // === Mehrjahres-Preload (NEU) ===
+    if (yearsParam) {
+      const years = yearsParam
+        .split(",")
+        .map(s => Number(s.trim()))
+        .filter(n => Number.isFinite(n) && n > 0)
+
+      if (!years.length) {
+        return ok({ releases: [], cursorNext: null, source: "years-empty" })
+      }
+
+      const all: Release[] = []
+      for (const y of years) {
+        const { releases } = await fetchFullYear({
+          token, year: y, limit, pages, offsetStart, typeParam
+          // cursorNext per Jahr ignorieren (wir holen Künstler ohnehin „voll“)
+        })
+        all.push(...releases)
+      }
+
+      // global sortiert (neueste zuerst)
+      const mergedMap = new Map<string, Release>()
+      for (const r of all) mergedMap.set(r.id, r)
+      const merged = Array.from(mergedMap.values())
+        .sort((b, a) => (a.releaseDate || "").localeCompare(b.releaseDate || ""))
+
+      return ok({ releases: merged, cursorNext: null, source: "spotify-years-batch" })
+    }
+
+    // === GLOBAL (kein Jahr) → Label-Suche mit paging ===
+    if (!yearParam) {
       const { items, cursorNext } = await searchAlbums({
         token,
         qParts: [`label:"${LABEL_NAME}"`],
@@ -164,53 +273,22 @@ export async function GET(req: Request) {
         )
         return ok({ releases: demoSorted, cursorNext: null, source: "demo-empty" })
       }
+
       let releases = items.map(toBaseItem)
-      if (typeParam) releases = releases.filter((r) => r.type === typeParam)
+      if (typeParam) releases = releases.filter(r => r.type === typeParam)
       releases.sort((b, a) => (a.releaseDate || "").localeCompare(b.releaseDate || ""))
+
       return ok({ releases, cursorNext, source: "spotify-global" })
     }
 
-    // === JAHR-SPEZIFISCH: Label-Suche + Artist-Feeds, dann mergen ===
-    const [labelRes, artistBatches] = await Promise.all([
-      searchAlbums({
-        token,
-        qParts: [`label:"${LABEL_NAME}"`, `year:${year}`],
-        limit,
-        pages,
-        offsetStart,
-      }),
-      // Artists parallel holen (gefiltert auf das Jahr)
-      Promise.all(
-        (ARTISTS || []).map((aid) => fetchArtistYearAlbums({ token, artistId: aid, year, limit: 50, maxPages: 3 }))
-      ),
-    ])
+    // === EINZELNES JAHR ===
+    const year = Number(yearParam)
+    if (!Number.isFinite(year) || year <= 0) return ok({ releases: [], cursorNext: null, source: "bad-year" })
 
-    const fromLabel = labelRes.items
-    const fromArtists = artistBatches.flat()
+    const { releases, cursorNext } = await fetchFullYear({
+      token, year, limit, pages, offsetStart, typeParam
+    })
 
-    // Falls Label leer war, helfen die Artist-Feeds → trotzdem alles nehmen
-    const mergedMap = new Map<string, any>()
-    for (const it of [...fromLabel, ...fromArtists]) {
-      // Bevorzugt Releases, die klar als Blutonium gelabelt sind
-      const existing = mergedMap.get(it.id)
-      if (!existing) {
-        mergedMap.set(it.id, it)
-      } else {
-        const existingIsBlutonium = (existing.label || "").toLowerCase().includes("blutonium")
-        const incomingIsBlutonium = (it.label || "").toLowerCase().includes("blutonium")
-        if (!existingIsBlutonium && incomingIsBlutonium) mergedMap.set(it.id, it)
-      }
-    }
-
-    let releases = Array.from(mergedMap.values()).map(toBaseItem)
-    releases = releases.filter((r) => r.year === year) // doppelt absichern
-    if (typeParam) releases = releases.filter((r) => r.type === typeParam)
-    releases.sort((b, a) => (a.releaseDate || "").localeCompare(b.releaseDate || ""))
-
-    // Cursor nur aus der Label-Suche weitergeben (Artists sind „voll“ fürs Jahr)
-    const cursorNext = labelRes.cursorNext
-
-    // Fallback Demo falls trotzdem leer
     if (!releases.length) {
       const demoSorted = [...(demo as Release[])].sort((b, a) =>
         (a.releaseDate || "").localeCompare(b.releaseDate || "")
@@ -223,6 +301,11 @@ export async function GET(req: Request) {
     const demoSorted = [...(demo as Release[])].sort((b, a) =>
       (a.releaseDate || "").localeCompare(b.releaseDate || "")
     )
-    return ok({ releases: demoSorted, cursorNext: null, error: err?.message ?? "unknown", source: "demo-catch" })
+    return ok({
+      releases: demoSorted,
+      cursorNext: null,
+      error: err?.message ?? "unknown",
+      source: "demo-catch",
+    })
   }
 }
