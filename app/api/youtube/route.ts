@@ -3,78 +3,75 @@ import { NextResponse } from "next/server"
 
 export const dynamic = "force-dynamic"
 
-/**
- * Wir holen die neuesten Uploads über den öffentlichen YouTube-RSS-Feed:
- * https://www.youtube.com/feeds/videos.xml?channel_id=...
- * -> Kein API-Key nötig, keine Referrer-Probleme.
- */
+// kleine Hilfe: Uploads-Playlist aus Channel-ID bilden (UCxxxx -> UUxxxx)
+function uploadsPlaylistId(channelId: string) {
+  if (!channelId) return ""
+  return channelId.startsWith("UC") ? ("UU" + channelId.slice(2)) : channelId
+}
+
 export async function GET(req: Request) {
   try {
-    const { searchParams } = new URL(req.url)
-    const channel = process.env.NEXT_PUBLIC_YT_CHANNEL_ID?.trim()
-    if (!channel) {
+    const key = process.env.NEXT_PUBLIC_YT_API_KEY
+    const channel = process.env.NEXT_PUBLIC_YT_CHANNEL_ID
+    if (!key || !channel) {
       return NextResponse.json(
-        { error: "Fehlende ENV: NEXT_PUBLIC_YT_CHANNEL_ID" },
+        { error: "Fehlende ENV (NEXT_PUBLIC_YT_API_KEY oder NEXT_PUBLIC_YT_CHANNEL_ID)" },
         { status: 500 }
       )
     }
 
-    // Optional: max= Anzahl der zurückgegebenen Videos (default 12, max 50)
+    const { searchParams } = new URL(req.url)
     const max = Math.min(Number(searchParams.get("max") || "12"), 50)
+    const pageToken = searchParams.get("pageToken") || undefined
 
-    const feedUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(
-      channel
-    )}`
+    // **NEU**: Uploads-Playlist nutzen (deutlich zuverlässiger als search)
+    const playlistId = uploadsPlaylistId(channel)
 
-    // 5 Min Revalidate ist meist angenehm
-    const resp = await fetch(feedUrl, { next: { revalidate: 300 } })
-    if (!resp.ok) {
-      const txt = await resp.text()
+    const url = new URL("https://www.googleapis.com/youtube/v3/playlistItems")
+    url.searchParams.set("key", key)
+    url.searchParams.set("playlistId", playlistId)
+    url.searchParams.set("part", "snippet,contentDetails")
+    url.searchParams.set("maxResults", String(max))
+    if (pageToken) url.searchParams.set("pageToken", pageToken)
+
+    const r = await fetch(url.toString(), { next: { revalidate: 600 } })
+    const data = await r.json()
+
+    if (!r.ok) {
+      // typische Fehlermeldung, wenn der API Key „HTTP-Referrer“ zu streng beschränkt ist
       return NextResponse.json(
-        { error: `RSS-Feed ${resp.status}`, raw: txt.slice(0, 2000) },
-        { status: resp.status }
+        { error: data?.error?.message || `YouTube API ${r.status}`, raw: data },
+        { status: r.status }
       )
     }
 
-    const xml = await resp.text()
+    // auf „Videos“ reduzieren
+    const videos =
+      (data.items || [])
+        .map((it: any) => {
+          const sn = it.snippet
+          const vid = it.contentDetails?.videoId
+          if (!sn || !vid) return null
+          return {
+            id: vid,
+            title: sn.title,
+            publishedAt: sn.publishedAt,
+            thumbnail:
+              sn.thumbnails?.maxres?.url ||
+              sn.thumbnails?.high?.url ||
+              sn.thumbnails?.medium?.url ||
+              sn.thumbnails?.default?.url ||
+              null,
+          }
+        })
+        .filter(Boolean)
 
-    // Sehr einfache XML-Extraktion für die Kernfelder
-    // (kein externes XML-Parser-Paket nötig)
-    const entries = xml.split("<entry>").slice(1) // [ ... each entry ... ]
-    const videos = entries.slice(0, max).map((chunk) => {
-      const pick = (tag: string) => {
-        const m = chunk.match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`))
-        return m ? m[1].trim() : null
-      }
-      // yt:videoId hat einen Namespace, deshalb eigener RegExp
-      const idMatch = chunk.match(/<yt:videoId>([\s\S]*?)<\/yt:videoId>/)
-      const id = idMatch ? idMatch[1].trim() : null
-
-      const title = pick("title")
-      const published = pick("published")
-      const authorMatch = chunk.match(/<name>([\s\S]*?)<\/name>/)
-      const author = authorMatch ? authorMatch[1].trim() : null
-
-      // Thumbnail: stabil über i.ytimg.com
-      const thumb = id
-        ? `https://i.ytimg.com/vi/${id}/hqdefault.jpg`
-        : null
-
-      return {
-        id,
-        title,
-        published,
-        author,
-        thumbnailUrl: thumb,
-        url: id ? `https://www.youtube.com/watch?v=${id}` : null,
-      }
+    return NextResponse.json({
+      videos,
+      nextPageToken: data.nextPageToken || null,
+      source: "playlistItems",
     })
-
-    return NextResponse.json({ videos, nextPageToken: null })
   } catch (e: any) {
-    return NextResponse.json(
-      { error: e?.message || "Unbekannter Fehler" },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: e?.message || "Unbekannter Fehler" }, { status: 500 })
   }
 }
