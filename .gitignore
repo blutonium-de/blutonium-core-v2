@@ -43,3 +43,6 @@ out/
 # ignore env files
 .env*
 
+
+# ignore env files
+.env*
