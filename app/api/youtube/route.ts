@@ -69,7 +69,6 @@ function parseYoutubeRss(xml: string, max: number): YTItem[] {
       decode(matchOne(raw, /<title>([\s\S]*?)<\/title>/)) || "Untitled"
     const published =
       matchOne(raw, /<published>([^<]+)<\/published>/) || ""
-    // media:thumbnail URL
     const thumb =
       matchOne(raw, /<media:thumbnail[^>]+url="([^"]+)"/) ||
       `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`
@@ -112,9 +111,9 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url)
     const max = Math.min(Number(searchParams.get("max") || "12"), 50)
 
-    // === 1) YouTube Data API (falls Key vorhanden) ===
+    // ============== 1) YouTube Data API ==============
     if (key) {
-      // 1a) uploads-Playlist ermitteln und playlistItems holen
+      // 1a) uploads-Playlist holen → playlistItems
       {
         const u1 = `https://www.googleapis.com/youtube/v3/channels?part=contentDetails&id=${channel}&key=${key}`
         const { r: r1, j: j1 } = await fetchJSON(u1)
@@ -133,43 +132,55 @@ export async function GET(req: Request) {
         }
       }
 
-      // 1b) Fallback: search.list (nur Videos)
+      // 1b) search.list – nur Videos
       {
         const base =
           `https://www.googleapis.com/youtube/v3/search` +
           `?part=snippet&channelId=${encodeURIComponent(channel)}` +
           `&order=date&maxResults=${max}&key=${encodeURIComponent(key)}`
-
-        // Versuch 1: nur Videos
-        {
-          const u = `${base}&type=video`
-          const { r, j } = await fetchJSON(u)
-          steps.push({ api: "search.list(type=video)", status: r.status })
-          if (r.ok) {
-            const videos = mapApiItems(j?.items || [], max)
-            if (videos.length) return ok({ videos, source: "youtube-api-search", steps })
-          } else {
-            steps.push({ api: "search.list(type=video).error", error: j })
-          }
+        const u = `${base}&type=video`
+        const { r, j } = await fetchJSON(u)
+        steps.push({ api: "search.list(type=video)", status: r.status })
+        if (r.ok) {
+          const videos = mapApiItems(j?.items || [], max)
+          if (videos.length) return ok({ videos, source: "youtube-api-search", steps })
+        } else {
+          steps.push({ api: "search.list(type=video).error", error: j })
         }
+      }
 
-        // Versuch 2: ohne type (manche Channels sind sonderbar gefiltert)
-        {
-          const u = base
-          const { r, j } = await fetchJSON(u)
-          steps.push({ api: "search.list(no-type)", status: r.status })
-          if (r.ok) {
-            const videos = mapApiItems(j?.items || [], max)
-            if (videos.length) return ok({ videos, source: "youtube-api-search", steps })
-          } else {
-            steps.push({ api: "search.list(no-type).error", error: j })
+      // 1c) **NEU**: Wenn es keine Uploads/Videos gibt → Kanal-Playlists durchgehen
+      {
+        const u = `https://www.googleapis.com/youtube/v3/playlists?part=snippet,contentDetails&channelId=${channel}&maxResults=25&key=${key}`
+        const { r, j } = await fetchJSON(u)
+        steps.push({ api: "playlists.list", status: r.status })
+        if (r.ok && Array.isArray(j?.items)) {
+          const acc: YTItem[] = []
+          for (const pl of j.items as any[]) {
+            if (acc.length >= max) break
+            const plId = pl?.id
+            if (!plId) continue
+            const uPl = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet,contentDetails&playlistId=${plId}&maxResults=${Math.min(
+              50,
+              max - acc.length
+            )}&key=${key}`
+            const { r: rPl, j: jPl } = await fetchJSON(uPl)
+            steps.push({ api: "playlistItems.from-playlist", status: rPl.status, playlistId: plId })
+            if (!rPl.ok) continue
+            const vids = mapApiItems(jPl?.items || [], max - acc.length)
+            acc.push(...vids)
+          }
+          if (acc.length) {
+            // Neueste zuerst sortieren
+            acc.sort((a, b) => (b.publishedAt || "").localeCompare(a.publishedAt || ""))
+            return ok({ videos: acc.slice(0, max), source: "youtube-api-playlists", steps })
           }
         }
       }
     }
 
-    // === 2) RSS-Fallback (ohne API-Key) ===
-    // a) Kanal-Feed
+    // ============== 2) RSS-Fallback ==============
+    // Kanal-Feed
     const rssA = `https://www.youtube.com/feeds/videos.xml?channel_id=${channel}`
     try {
       const ra = await fetch(rssA, { cache: "no-store" })
@@ -181,7 +192,7 @@ export async function GET(req: Request) {
       }
     } catch {}
 
-    // b) Legacy Playlist-Feed (UU + channel.substr(2))
+    // Legacy-Playlist-Feed (UU + channel.substr(2))
     const rssB = `https://www.youtube.com/feeds/videos.xml?playlist_id=UU${channel.substring(2)}`
     try {
       const rb = await fetch(rssB, { cache: "no-store" })
@@ -193,7 +204,7 @@ export async function GET(req: Request) {
       }
     } catch {}
 
-    // c) Proxy-RSS (um Referrer/geo-blocks zu umgehen)
+    // Proxy-RSS (Referrer/Geo umgehen)
     const prA = `https://r.jina.ai/http://www.youtube.com/feeds/videos.xml?channel_id=${channel}`
     try {
       const rpA = await fetch(prA, { cache: "no-store" })
