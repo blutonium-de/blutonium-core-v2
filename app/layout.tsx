@@ -1,7 +1,7 @@
 // app/layout.tsx
 import "./globals.css"
 import type { Metadata, Viewport } from "next"
-import Link from "next/link"
+import NavBar from "@/components/NavBar"
 
 export const metadata: Metadata = {
   title: "Blutonium Records",
@@ -19,23 +19,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="de">
       <body className="min-h-screen bg-black text-white antialiased">
-        {/* Header */}
-        <header className="sticky top-0 z-50 backdrop-blur bg-black/50 border-b border-white/10">
-          <nav className="mx-auto max-w-6xl px-4 py-3 flex items-center gap-6">
-            {/* Logo/Brand */}
-            <Link href="/" className="font-bold tracking-widest text-cyan-400 hover:text-cyan-300">
-              BLUTONIUM
-            </Link>
-
-            <div className="flex-1" />
-
-            <Link href="/de/releases" className="hover:text-cyan-300">Releases</Link>
-            <Link href="/de/artists"  className="hover:text-cyan-300">Artists &amp; Booking</Link>
-            <Link href="/de/merch"    className="hover:text-cyan-300">Merchandise</Link>
-            <Link href="/de/samples"  className="hover:text-cyan-300">Samples</Link>
-            <Link href="/de/videos"   className="hover:text-cyan-300">Videos</Link>
-          </nav>
-        </header>
+        {/* Globale, fixierte Navigation */}
+        <NavBar />
+        {/* Spacer, damit der Fix-Header nichts überlappt (NavBar-Höhe = 64px) */}
+        <div className="h-16" />
 
         {/* Content */}
         <main className="min-h-[calc(100vh-4rem)]">
