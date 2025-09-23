@@ -3,138 +3,186 @@ import { NextResponse } from "next/server"
 
 export const dynamic = "force-dynamic"
 
-// UC → UU (Uploads-Playlist)
-function uploadsPlaylistId(channelId: string) {
-  return channelId?.startsWith("UC") ? "UU" + channelId.slice(2) : ""
+type YTItem = {
+  id: string
+  title: string
+  thumb: string | null
+  publishedAt: string
+  url: string
 }
 
-function parseRss(xml: string) {
-  const entries = xml.match(/<entry\b[\s\S]*?<\/entry>/gi) || []
-  const get = (s: string, tag: string) => s.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i"))?.[1]?.trim() ?? null
-  const getAttr = (s: string, tag: string, attr: string) => s.match(new RegExp(`<${tag}\\b[^>]*\\b${attr}="([^"]+)"`, "i"))?.[1] ?? null
+function ok(data: any, status = 200) {
+  return NextResponse.json(data, { status })
+}
+function err(message: string, extra: any = {}, status = 500) {
+  return NextResponse.json({ error: message, ...extra }, { status })
+}
 
-  return entries.map((e) => {
-    const id =
-      get(e, "yt:videoId") ||
-      get(e, "id")?.match(/(?:videos|watch)[^A-Za-z0-9_-]*([A-Za-z0-9_-]{6,})/)?.[1] ||
+async function fetchJSON(url: string) {
+  const r = await fetch(url, { cache: "no-store" })
+  const j = await r.json().catch(() => ({}))
+  return { r, j }
+}
+
+function mapPlaylistItems(items: any[]): YTItem[] {
+  return (items || []).map((it) => {
+    const id = it?.contentDetails?.videoId || it?.id?.videoId || it?.id
+    const sn = it?.snippet || {}
+    const thumbs = sn?.thumbnails || {}
+    const thumb =
+      thumbs?.maxres?.url ||
+      thumbs?.standard?.url ||
+      thumbs?.high?.url ||
+      thumbs?.medium?.url ||
+      thumbs?.default?.url ||
       null
-    if (!id) return null
-    const title = get(e, "title") || "(ohne Titel)"
-    const published = get(e, "published")
-    const thumb = getAttr(e, "media:thumbnail", "url") || getAttr(e, "media:content", "url") || null
-    return { id, title, publishedAt: published, thumbnail: thumb }
-  }).filter(Boolean) as Array<{ id: string; title: string; publishedAt: string | null; thumbnail: string | null }>
+    return {
+      id,
+      title: sn?.title || "",
+      thumb,
+      publishedAt: sn?.publishedAt || "",
+      url: id ? `https://www.youtube.com/watch?v=${id}` : "",
+    }
+  })
 }
 
-async function fetchText(url: string) {
-  const r = await fetch(url, { cache: "no-store", next: { revalidate: 600 } })
-  const text = await r.text()
-  return { ok: r.ok, status: r.status, text, url }
+function parseRSS(xml: string): YTItem[] {
+  // sehr einfacher RSS-Parser (ohne XML lib)
+  const entries = xml.split("<entry>").slice(1)
+  return entries.map((e) => {
+    const get = (tag: string) => {
+      const m = e.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`))
+      return m ? m[1].trim() : ""
+    }
+    const id = (e.match(/<yt:videoId>([^<]+)<\/yt:videoId>/) || [])[1] || ""
+    const title = get("title")
+    const publishedAt = get("published")
+    const thumb =
+      (e.match(/media:thumbnail[^>]+url="([^"]+)"/) || [])[1] ||
+      (e.match(/<link[^>]+href="([^"]+)"/) || [])[1] ||
+      null
+    return {
+      id,
+      title,
+      thumb,
+      publishedAt,
+      url: id ? `https://www.youtube.com/watch?v=${id}` : "",
+    }
+  })
 }
 
 export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url)
-  const max = Math.min(Number(searchParams.get("max") || "12"), 50)
-  const pageToken = searchParams.get("pageToken") || undefined
-  const debug = searchParams.get("debug") === "1"
+  try {
+    const { searchParams } = new URL(req.url)
+    const max = Math.min(Number(searchParams.get("max") || "12"), 50)
+    const debug = searchParams.get("debug") === "1"
 
-  const channel = process.env.NEXT_PUBLIC_YT_CHANNEL_ID || ""
-  if (!channel) {
-    return NextResponse.json({ error: "Fehlende ENV: NEXT_PUBLIC_YT_CHANNEL_ID" }, { status: 500 })
-  }
+    const KEY = process.env.YOUTUBE_API_KEY || "" // serverseitig!
+    const CHANNEL = process.env.NEXT_PUBLIC_YT_CHANNEL_ID || ""
 
-  const out: any = { steps: [] }
+    const steps: any[] = []
 
-  // 1) YouTube Data API (Server-Key)
-  const serverKey = process.env.YOUTUBE_API_KEY || ""
-  if (serverKey) {
-    try {
-      const playlistId = uploadsPlaylistId(channel)
-      const url = new URL("https://www.googleapis.com/youtube/v3/playlistItems")
-      url.searchParams.set("key", serverKey)
-      url.searchParams.set("playlistId", playlistId)
-      url.searchParams.set("part", "snippet,contentDetails")
-      url.searchParams.set("maxResults", String(max))
-      if (pageToken) url.searchParams.set("pageToken", pageToken)
-
-      const r = await fetch(url.toString(), { next: { revalidate: 600 } })
-      const data = await r.json()
-      out.steps.push({ api: "youtube-api", status: r.status })
-
-      if (r.ok && Array.isArray(data.items)) {
-        const videos = data.items.map((it: any) => {
-          const sn = it.snippet
-          const vid = it.contentDetails?.videoId
-          if (!sn || !vid) return null
-          return {
-            id: vid,
-            title: sn.title,
-            publishedAt: sn.publishedAt,
-            thumbnail:
-              sn.thumbnails?.maxres?.url ||
-              sn.thumbnails?.high?.url ||
-              sn.thumbnails?.medium?.url ||
-              sn.thumbnails?.default?.url ||
-              null,
+    // 1) API-Weg (nur wenn Key vorhanden)
+    if (KEY && CHANNEL) {
+      // 1a) echte Upload-Playlist via channels.list ermitteln
+      {
+        const url =
+          `https://www.googleapis.com/youtube/v3/channels` +
+          `?part=contentDetails&id=${encodeURIComponent(CHANNEL)}&key=${encodeURIComponent(KEY)}`
+        const { r, j } = await fetchJSON(url)
+        steps.push({ api: "channels.list", status: r.status })
+        if (r.ok) {
+          const uploads = j?.items?.[0]?.contentDetails?.relatedPlaylists?.uploads
+          if (uploads) {
+            // 1b) playlistItems.list
+            const url2 =
+              `https://www.googleapis.com/youtube/v3/playlistItems` +
+              `?part=snippet,contentDetails&playlistId=${encodeURIComponent(uploads)}` +
+              `&maxResults=${max}&key=${encodeURIComponent(KEY)}`
+            const { r: r2, j: j2 } = await fetchJSON(url2)
+            steps.push({ api: "playlistItems.list", status: r2.status })
+            if (r2.ok) {
+              const videos = mapPlaylistItems(j2?.items || [])
+              if (videos.length) {
+                return ok({ videos, source: "youtube-api", steps })
+              }
+            } else {
+              steps.push({ api: "playlistItems-error", error: j2 })
+            }
+          } else {
+            steps.push({ api: "channels.list-no-uploads" })
           }
-        }).filter(Boolean)
-
-        const body = {
-          videos,
-          nextPageToken: data.nextPageToken || null,
-          source: "youtube-api",
-          ...(debug ? out : {}),
+        } else {
+          steps.push({ api: "channels.list-error", error: j })
         }
-        return NextResponse.json(body)
-      } else if (!r.ok) {
-        out.steps.push({ api: "youtube-api-error", error: data?.error || data })
       }
-    } catch (e: any) {
-      out.steps.push({ api: "youtube-api-ex", msg: e?.message })
+
+      // 1c) Fallback: search.list (Videos eines Channels, neueste zuerst)
+      {
+        const url =
+          `https://www.googleapis.com/youtube/v3/search` +
+          `?part=snippet&channelId=${encodeURIComponent(CHANNEL)}` +
+          `&order=date&type=video&maxResults=${max}&key=${encodeURIComponent(KEY)}`
+        const { r, j } = await fetchJSON(url)
+        steps.push({ api: "search.list", status: r.status })
+        if (r.ok) {
+          const videos = mapPlaylistItems(j?.items || [])
+          if (videos.length) {
+            return ok({ videos, source: "youtube-api-search", steps })
+          }
+        } else {
+          steps.push({ api: "search.list-error", error: j })
+        }
+      }
+    } else {
+      steps.push({ note: "YOUTUBE_API_KEY fehlt → gehe direkt zu RSS" })
     }
-  } else {
-    out.steps.push({ note: "YOUTUBE_API_KEY fehlt → gehe direkt zu RSS" })
-  }
 
-  // 2) RSS Kanal
-  const rss1 = await fetchText(`https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(channel)}`)
-  out.steps.push({ rssChannel: { url: rss1.url, status: rss1.status } })
-  let videos = rss1.ok ? parseRss(rss1.text) : []
-
-  // 3) RSS Uploads-Playlist
-  if (!videos.length) {
-    const pl = uploadsPlaylistId(channel)
-    const rss2 = await fetchText(`https://www.youtube.com/feeds/videos.xml?playlist_id=${encodeURIComponent(pl)}`)
-    out.steps.push({ rssPlaylist: { url: rss2.url, status: rss2.status } })
-    if (rss2.ok) videos = parseRss(rss2.text)
-  }
-
-  // 4) Proxy-Fallback (um 404/Bot-Sperren zu umgehen)
-  if (!videos.length) {
-    const prox1 = await fetchText(`https://r.jina.ai/http://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(channel)}`)
-    out.steps.push({ rssProxyChannel: { url: prox1.url, status: prox1.status } })
-    if (prox1.ok) videos = parseRss(prox1.text)
-
-    if (!videos.length) {
-      const pl = uploadsPlaylistId(channel)
-      const prox2 = await fetchText(`https://r.jina.ai/http://www.youtube.com/feeds/videos.xml?playlist_id=${encodeURIComponent(pl)}`)
-      out.steps.push({ rssProxyPlaylist: { url: prox2.url, status: prox2.status } })
-      if (prox2.ok) videos = parseRss(prox2.text)
+    // 2) RSS Fallback
+    // 2a) Channel-RSS
+    const rssChannel = `https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(CHANNEL)}`
+    let rRss = await fetch(rssChannel, { cache: "no-store" })
+    steps.push({ rssChannel: { url: rssChannel, status: rRss.status } })
+    if (rRss.ok) {
+      const xml = await rRss.text()
+      let videos = parseRSS(xml).slice(0, max)
+      if (videos.length) return ok({ videos, source: "rss", steps })
     }
-  }
 
-  if (videos.length) {
-    if (videos.length > max) videos = videos.slice(0, max)
-    return NextResponse.json({ videos, nextPageToken: null, source: "rss/proxy", ...(debug ? out : {}) })
-  }
+    // 2b) Uploads-Playlist-RSS (UU… – kann 404 sein, wir probieren es)
+    const uploadsGuess = CHANNEL.replace(/^UC/, "UU")
+    const rssPlaylist = `https://www.youtube.com/feeds/videos.xml?playlist_id=${uploadsGuess}`
+    rRss = await fetch(rssPlaylist, { cache: "no-store" })
+    steps.push({ rssPlaylist: { url: rssPlaylist, status: rRss.status } })
+    if (rRss.ok) {
+      const xml = await rRss.text()
+      let videos = parseRSS(xml).slice(0, max)
+      if (videos.length) return ok({ videos, source: "rss", steps })
+    }
 
-  // Nichts gefunden
-  return NextResponse.json(
-    {
-      error: "Kein Feed verfügbar (API geblockt/RSS leer)",
-      source: "rss",
-      ...(debug ? out : {}),
-    },
-    { status: 200 }
-  )
+    // 2c) Proxy-RSS (gegen Referrer/Geo-Issues)
+    const prox = (u: string) => `https://r.jina.ai/http://www.youtube.com/feeds/videos.xml?${u}`
+    const proxyChannel = prox(`channel_id=${encodeURIComponent(CHANNEL)}`)
+    let rProxy = await fetch(proxyChannel, { cache: "no-store" })
+    steps.push({ rssProxyChannel: { url: proxyChannel, status: rProxy.status } })
+    if (rProxy.ok) {
+      const xml = await rProxy.text()
+      let videos = parseRSS(xml).slice(0, max)
+      if (videos.length) return ok({ videos, source: "rss-proxy", steps })
+    }
+
+    const proxyPlaylist = prox(`playlist_id=${uploadsGuess}`)
+    rProxy = await fetch(proxyPlaylist, { cache: "no-store" })
+    steps.push({ rssProxyPlaylist: { url: proxyPlaylist, status: rProxy.status } })
+    if (rProxy.ok) {
+      const xml = await rProxy.text()
+      let videos = parseRSS(xml).slice(0, max)
+      if (videos.length) return ok({ videos, source: "rss-proxy", steps })
+    }
+
+    // nichts gefunden
+    return ok({ error: "Kein Feed verfügbar (API geblockt/RSS leer)", source: "rss", steps }, 404)
+  } catch (e: any) {
+    return err(e?.message || "unknown youtube error")
+  }
 }
