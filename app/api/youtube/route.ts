@@ -9,37 +9,44 @@ function uploadsPlaylistId(channelId: string) {
   return channelId.startsWith("UC") ? ("UU" + channelId.slice(2)) : channelId
 }
 
-// --- RSS-Fallback: einfache Parser-Helfer ---
-function pickTag(block: string, tag: string) {
-  const m = block.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`, "i"))
-  return m?.[1] ?? null
-}
-function pickAttr(block: string, tagWithNs: string, attr: string) {
-  const m = block.match(new RegExp(`<${tagWithNs}[^>]*\\b${attr}="([^"]+)"`, "i"))
-  return m?.[1] ?? null
-}
+// ---- RSS Parser (robust über globale <entry>...</entry>-Matches) ----
 function parseRss(xml: string) {
-  // splitte auf <entry>…</entry>
-  const entries = xml.split(/<entry[\s>]/i).slice(1)
-  const videos = entries.map((rest) => {
-    const entry = "<entry " + rest // für die Regex-Lesbarkeit
-    const id = pickTag(entry, "yt:videoId") || pickTag(entry, "id") // Fallback
-    const title = pickTag(entry, "title")
-    const published = pickTag(entry, "published")
-    // Thumbnail steckt in media:group / media:thumbnail url=""
+  const entries = xml.match(/<entry\b[\s\S]*?<\/entry>/gi) || []
+  const get = (s: string, tag: string) => {
+    const m = s.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`, "i"))
+    return m?.[1]?.trim() ?? null
+  }
+  const getAttr = (s: string, tag: string, attr: string) => {
+    const m = s.match(new RegExp(`<${tag}\\b[^>]*\\b${attr}="([^"]+)"`, "i"))
+    return m?.[1] ?? null
+  }
+
+  const vids = entries.map((entry) => {
+    const id =
+      get(entry, "yt:videoId") ||
+      // Fallback: id kann als URL mit ".../videos/<id>" kommen
+      (get(entry, "id")?.match(/(?:videos|watch)\W.*?([A-Za-z0-9_-]{6,})/)?.[1] ?? null)
+
+    const title = get(entry, "title") || "(ohne Titel)"
+    const published = get(entry, "published")
+
+    // Thumbnails: erst media:thumbnail, dann media:content (falls Video-Bild drin)
     const thumb =
-      pickAttr(entry, "media:thumbnail", "url") ||
-      pickAttr(entry, "media:content", "url") ||
+      getAttr(entry, "media:thumbnail", "url") ||
+      getAttr(entry, "media:content", "url") ||
       null
+
     if (!id) return null
-    return {
-      id,
-      title: title || "(ohne Titel)",
-      publishedAt: published || null,
-      thumbnail: thumb,
-    }
-  }).filter(Boolean) as Array<{id:string;title:string;publishedAt:string|null;thumbnail:string|null}>
-  return videos
+    return { id, title, publishedAt: published, thumbnail: thumb }
+  }).filter(Boolean) as Array<{ id: string; title: string; publishedAt: string | null; thumbnail: string | null }>
+
+  return vids
+}
+
+async function fetchRss(url: string) {
+  const r = await fetch(url, { cache: "no-store", next: { revalidate: 600 } })
+  const xml = await r.text()
+  return { ok: r.ok, status: r.status, xml }
 }
 
 export async function GET(req: Request) {
@@ -57,7 +64,7 @@ export async function GET(req: Request) {
     const max = Math.min(Number(searchParams.get("max") || "12"), 50)
     const pageToken = searchParams.get("pageToken") || undefined
 
-    // 1) Versuche YouTube Data API (nur wenn Key vorhanden)
+    // 1) YouTube Data API (nur wenn Key vorhanden). Holt die Uploads-Playlist (verlässlicher).
     if (key) {
       try {
         const playlistId = uploadsPlaylistId(channel)
@@ -97,33 +104,41 @@ export async function GET(req: Request) {
             source: "youtube-api",
           })
         }
-
-        // 403 wegen Referrer-Policy? → Fallback auf RSS
-        // (API_KEY_HTTP_REFERRER_BLOCKED / Requests from referer <empty> are blocked.)
-        // Wir fallen einfach unten in den RSS-Zweig.
+        // Wenn API 403 wegen Referrer/Restriktionen -> unten RSS-Fallback
       } catch {
-        // ignoriere, und nutze RSS
+        // stiller Fallback auf RSS
       }
     }
 
-    // 2) RSS-Fallback (keylos, stabil)
-    const rssUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(channel)}`
-    const rr = await fetch(rssUrl, { next: { revalidate: 600 } })
-    if (!rr.ok) {
+    // 2) RSS-Fallback:
+    //    a) Kanal-Feed
+    const rssChannelUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(channel)}`
+    let rss = await fetchRss(rssChannelUrl)
+    let videos = rss.ok ? parseRss(rss.xml) : []
+
+    //    b) Falls leer: Uploads-Playlist als RSS
+    if (!videos.length) {
+      const playlistId = uploadsPlaylistId(channel)
+      const rssPlaylistUrl = `https://www.youtube.com/feeds/videos.xml?playlist_id=${encodeURIComponent(playlistId)}`
+      rss = await fetchRss(rssPlaylistUrl)
+      videos = rss.ok ? parseRss(rss.xml) : []
+      if (videos.length) {
+        if (videos.length > max) videos = videos.slice(0, max)
+        return NextResponse.json({ videos, nextPageToken: null, source: "rss-playlist" })
+      }
+    }
+
+    //    c) Wenn immer noch leer: gib eine Diagnose zurück
+    if (!videos.length) {
+      const sample = (rss.xml || "").slice(0, 500) // kleiner Ausschnitt
       return NextResponse.json(
-        { error: `RSS ${rr.status}`, raw: await rr.text() },
-        { status: rr.status }
+        { error: "RSS lieferte keine Video-Entries", source: "rss", status: rss.status, sample },
+        { status: 200 }
       )
     }
-    const xml = await rr.text()
-    let videos = parseRss(xml)
-    if (videos.length > max) videos = videos.slice(0, max)
 
-    return NextResponse.json({
-      videos,
-      nextPageToken: null, // RSS paged nicht
-      source: "rss",
-    })
+    if (videos.length > max) videos = videos.slice(0, max)
+    return NextResponse.json({ videos, nextPageToken: null, source: "rss" })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || "Unbekannter Fehler" }, { status: 500 })
   }
