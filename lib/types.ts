@@ -35,7 +35,15 @@ export type Release = {
   credits?: string[]
 }
 
+// --------------------------------------
 // Shop
+// --------------------------------------
+
+export type ProductImage = {
+  full500: string   // Pfad zu 500x500
+  thumb250: string  // Pfad zu 250x250
+}
+
 export type Product = {
   id: string
   slug: string
@@ -43,16 +51,36 @@ export type Product = {
   subtitle?: string
   priceEUR: number
   currency?: "EUR"
-  image: string
+  image: string                      // Hauptbild (500x500)
+  images?: ProductImage[]            // weitere Bilder
   tags?: string[]
   active: boolean
 
   // Stripe (optional)
   stripePriceId?: string | null
 
-  // Versand (optional):
-  // - Falls gesetzt, überschreibt es die Heuristik in /api/shipping (Gramm pro Stück).
-  // - Für digitale Produkte (z.B. Samples) isDigital: true => wird im Versand mit 0g behandelt.
-  weightGrams?: number
+  // Zusatzfelder Shop
+  artist?: string | null
+  trackTitle?: string | null
+  format?:
+    | "CD Album"
+    | "Maxi CD"
+    | "1CD Compilation"
+    | "2CD Compilation"
+    | "4CD Compilation"
+    | "Maxi Vinyl"
+    | "Album Vinyl LP"
+    | "Album Vinyl 2LP"
+    | "DVD"
+    | "Blu-ray Disc"
+    | "Sonstiges"
+  year?: number | null
+  upcEan?: string | null
+  articleNumber?: string             // automatisch generiert
+  categoryCode?: "bv" | "sv" | "bcd" | "scd" | "bhs" | "ss"
+  weightGrams?: number | null
+  condition?: "Neu" | "Neuwertig" | "Gebraucht" | "Starke Gebrauchsspuren" | "OK"
+
+  // Für digitale Produkte (z.B. Samples)
   isDigital?: boolean
 }
