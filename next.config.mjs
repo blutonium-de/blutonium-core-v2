@@ -2,14 +2,18 @@
 const nextConfig = {
   async redirects() {
     return [
-      // Einheitliche DE-Pfade
-      { source: "/merchandise", destination: "/de/merch", permanent: true },
-      { source: "/videos",       destination: "/de/videos", permanent: true },
-      { source: "/samples",      destination: "/de/samples", permanent: true },
-      { source: "/releases",     destination: "/de/releases", permanent: true },
+      // Einheitliche DE-Pfade (Shortcuts oben halten)
+      { source: "/releases", destination: "/de/releases", permanent: true },
+      { source: "/videos",   destination: "/de/videos",   permanent: true },
 
-      // Falls versehentlich mal /de/merchandise verlinkt wurde:
-      { source: "/de/merchandise", destination: "/de/merch", permanent: true },
+      // Merchandise → Shop
+      { source: "/merchandise",      destination: "/de/shop", permanent: true },
+      { source: "/de/merchandise",   destination: "/de/shop", permanent: true },
+      { source: "/de/merch",         destination: "/de/shop", permanent: true },
+
+      // Samples (entfernt) → ebenfalls zum Shop
+      { source: "/samples",    destination: "/de/shop", permanent: true },
+      { source: "/de/samples", destination: "/de/shop", permanent: true },
     ]
   },
 }

@@ -18,6 +18,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="de">
+      {/* body mit fixer NavBar (64px/4rem) → main bekommt top-padding */}
       <body className="min-h-screen bg-black text-white antialiased">
         <NavBar />
         <main className="min-h-[calc(100vh-4rem)] pt-16">
