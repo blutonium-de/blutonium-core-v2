@@ -1,338 +1,312 @@
+// components/AdminProductForm.tsx
 "use client"
 
-import { useMemo, useRef, useState } from "react"
-import { CATEGORY_MAP, CategoryCode, CONDITIONS, FORMAT_DEFAULT_WEIGHT, ProductFormat } from "@/lib/catalog"
+import { useState } from "react"
 
-type ResizedImage = {
-  nameBase: string
-  full500Url: string
-  thumb250Url: string
-  fullBlob: Blob
-  thumbBlob: Blob
-}
+const CATEGORY_OPTIONS = [
+  { code: "bv",  label: "Blutonium Vinyls" },
+  { code: "sv",  label: "Sonstige Vinyls" },
+  { code: "bcd", label: "Blutonium CDs" },
+  { code: "scd", label: "Sonstige CDs" },
+  { code: "bhs", label: "Blutonium Hardstyle Samples" },
+  { code: "ss",  label: "Sonstiges & Specials" },
+] as const
 
-function parseArtistTitle(fileName: string) {
-  // Beispiel: "Artist - Titel.jpg" -> { artist, title }
-  const base = fileName.replace(/\.[a-z0-9]+$/i, "")
-  const m = base.split(" - ")
-  if (m.length >= 2) {
-    return { artist: m[0].trim(), title: m.slice(1).join(" - ").trim() }
-  }
-  return { artist: "", title: "" }
-}
+const FORMAT_OPTIONS = [
+  "CD",
+  "Maxi CD",
+  "Album",
+  "1CD Compilation",
+  "2CD Compilation",
+  "4CD Compilation",
+  "Maxi Vinyl",
+  "Album Vinyl LP",
+  "Album Vinyl 2LP",
+  "DVD",
+  "Blu-ray Disc",
+  "Sonstiges",
+] as const
 
-async function readFileAsImage(file: File): Promise<HTMLImageElement> {
-  const dataUrl = await file.arrayBuffer().then((b) => {
-    const blob = new Blob([new Uint8Array(b)], { type: file.type || "image/*" })
-    return URL.createObjectURL(blob)
-  })
-  return new Promise((resolve, reject) => {
-    const img = new Image()
-    img.onload = () => resolve(img)
-    img.onerror = reject
-    img.src = dataUrl
-  })
-}
-
-function drawToCanvas(img: HTMLImageElement, size: number): HTMLCanvasElement {
-  const c = document.createElement("canvas")
-  c.width = size
-  c.height = size
-  const ctx = c.getContext("2d")!
-  // quadratisch einpassen (center-crop)
-  const minSide = Math.min(img.width, img.height)
-  const sx = (img.width - minSide) / 2
-  const sy = (img.height - minSide) / 2
-  ctx.drawImage(img, sx, sy, minSide, minSide, 0, 0, size, size)
-  return c
-}
-
-async function canvasToJpegBlob(canvas: HTMLCanvasElement, quality = 0.9): Promise<Blob> {
-  return new Promise((resolve) => canvas.toBlob((b) => resolve(b!), "image/jpeg", quality))
-}
-
-function toSlug(s: string) {
-  return s
-    .toLowerCase()
-    .replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-}
-
-function genArticleNumber(prefix = "ART") {
-  // fortlaufend grob: Datum + Zufall (ohne Server/DB)
-  const now = new Date()
-  const stamp = now.toISOString().replace(/[-:TZ.]/g, "").slice(0, 14) // YYYYMMDDhhmmss
-  const rnd = Math.random().toString(36).slice(2, 6).toUpperCase()
-  return `${prefix}-${stamp}-${rnd}`
-}
+const CONDITION_OPTIONS = [
+  "Neu",
+  "Gebraucht",
+  "Neuwertig",
+  "Starke Gebrauchsspuren",
+  "OK",
+] as const
 
 export default function AdminProductForm() {
-  const [files, setFiles] = useState<File[]>([])
-  const [images, setImages] = useState<ResizedImage[]>([])
+  const [title, setTitle] = useState("")
+  const [slug, setSlug] = useState("")
+  const [priceEUR, setPriceEUR] = useState<number | "">("")
+  const [categoryCode, setCategoryCode] = useState<typeof CATEGORY_OPTIONS[number]["code"] | "">("")
+  const [format, setFormat] = useState<(typeof FORMAT_OPTIONS)[number] | "">("")
   const [artist, setArtist] = useState("")
-  const [trackTitle, setTrackTitle] = useState("")
-  const [productName, setProductName] = useState("")
-  const [subtitle, setSubtitle] = useState("")
-  const [format, setFormat] = useState<ProductFormat | "">("")
+  const [releaseTitle, setReleaseTitle] = useState("")
   const [year, setYear] = useState<number | "">("")
   const [upc, setUpc] = useState("")
-  const [categoryCode, setCategoryCode] = useState<CategoryCode | "">("")
-  const [condition, setCondition] = useState<string>("Neu")
-  const [price, setPrice] = useState<number | "">("")
-  const [weight, setWeight] = useState<number | "">("")
-  const [articleNumber, setArticleNumber] = useState(genArticleNumber("BLU"))
-  const [previewJson, setPreviewJson] = useState("")
+  const [articleNumber, setArticleNumber] = useState("") // kann später automatisch vergeben werden
+  const [condition, setCondition] = useState<(typeof CONDITION_OPTIONS)[number] | "">("")
+  const [weightGrams, setWeightGrams] = useState<number | "">("")
+  const [active, setActive] = useState(true)
 
-  const inputRef = useRef<HTMLInputElement>(null)
+  // bis zu 5 Bilder-URLs (Platzhalter – Upload-API kommt später)
+  const [images, setImages] = useState<string[]>(["", "", "", "", ""])
 
-  function onPickFiles(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = Array.from(e.target.files || []).slice(0, 5)
-    setFiles(f)
+  function autoSlug(v: string) {
+    const s = v
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+    setSlug(s)
   }
 
-  async function handleProcess() {
-    if (!files.length) return
-    const out: ResizedImage[] = []
-    for (const file of files) {
-      const img = await readFileAsImage(file)
-      const base = file.name.replace(/\.[a-z0-9]+$/i, "")
-      const c500 = drawToCanvas(img, 500)
-      const c250 = drawToCanvas(img, 250)
-      const b500 = await canvasToJpegBlob(c500, 0.9)
-      const b250 = await canvasToJpegBlob(c250, 0.9)
-      // Zielnamen (lege sie später manuell in /public/shop/ ab)
-      const safe = toSlug(base)
-      const fullName = `${safe}-500.jpg`
-      const thumbName = `${safe}-250.jpg`
-      out.push({
-        nameBase: safe,
-        full500Url: `/shop/${fullName}`,
-        thumb250Url: `/shop/${thumbName}`,
-        fullBlob: b500,
-        thumbBlob: b250,
-      })
-      // Downloads anstoßen
-      triggerDownload(b500, fullName)
-      triggerDownload(b250, thumbName)
-    }
-    setImages(out)
-
-    // Artist/Titel Vorschlag aus erstem Dateinamen
-    if (!artist || !trackTitle) {
-      const { artist: a, title: t } = parseArtistTitle(files[0].name)
-      if (!artist && a) setArtist(a)
-      if (!trackTitle && t) setTrackTitle(t)
+  function suggestedWeightFor(format: string): number | "" {
+    switch (format) {
+      case "CD":
+      case "1CD Compilation":
+        return 120
+      case "Maxi CD":
+        return 80
+      case "2CD Compilation":
+        return 180
+      case "4CD Compilation":
+        return 340
+      case "Maxi Vinyl":
+        return 250
+      case "Album Vinyl LP":
+        return 250
+      case "Album Vinyl 2LP":
+        return 400
+      case "DVD":
+        return 150
+      case "Blu-ray Disc":
+        return 120
+      default:
+        return ""
     }
   }
 
-  function triggerDownload(blob: Blob, filename: string) {
-    const a = document.createElement("a")
-    a.href = URL.createObjectURL(blob)
-    a.download = filename
-    a.click()
-    URL.revokeObjectURL(a.href)
+  function onFormatChange(v: string) {
+    setFormat(v as any)
+    // nur automatisch befüllen, wenn noch nichts eingetragen wurde:
+    if (weightGrams === "" || weightGrams === 0) {
+      const w = suggestedWeightFor(v)
+      setWeightGrams(w)
+    }
   }
 
-  // Gewicht automatisch aus Format
-  const autoWeight = useMemo(() => {
-    if (!format) return 0
-    return FORMAT_DEFAULT_WEIGHT[format as ProductFormat] ?? 0
-  }, [format])
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault()
 
-  // JSON Vorschau
-  function buildJson() {
-    const baseName = productName || `${artist ? artist + " – " : ""}${trackTitle || "Produkt"}`
-    const id = toSlug(baseName)
-    const slug = id
-    const imgMain = images[0]?.full500Url || ""
+    // Minimal-Validierung
+    if (!title || !slug || !priceEUR || !categoryCode) {
+      alert("Bitte Titel, Slug, Preis und Kategorie ausfüllen.")
+      return
+    }
 
-    const json = {
-      id,
+    // Dummy: Hier später POST an /api/admin/products (wird separat gebaut)
+    const payload = {
+      title,
       slug,
-      title: baseName,
-      subtitle: subtitle || undefined,
-      priceEUR: typeof price === "number" ? price : Number(price || 0),
-      currency: "EUR" as const,
-      image: imgMain,
-      images: images.map(i => ({ full500: i.full500Url, thumb250: i.thumb250Url })),
-      tags: [],
-      active: true,
-
-      artist: artist || null,
-      trackTitle: trackTitle || null,
-      format: (format || undefined) as ProductFormat | undefined,
-      year: year ? Number(year) : null,
-      upcEan: upc || null,
-      articleNumber,
-      categoryCode: (categoryCode || undefined) as CategoryCode | undefined,
-      weightGrams: (weight !== "" ? Number(weight) : (autoWeight || 0)) || null,
-      condition: (condition || undefined) as any,
-      isDigital: false,
-      stripePriceId: null,
+      priceEUR: Number(priceEUR),
+      categoryCode,
+      format: format || undefined,
+      artist: artist || undefined,
+      releaseTitle: releaseTitle || undefined,
+      year: year ? Number(year) : undefined,
+      upc: upc || undefined,
+      articleNumber: articleNumber || undefined,
+      condition: condition || undefined,
+      weightGrams: weightGrams === "" ? undefined : Number(weightGrams),
+      images: images.filter(Boolean),
+      active,
     }
 
-    setPreviewJson(JSON.stringify(json, null, 2))
+    console.log("DEBUG new product:", payload)
+    alert("Voransicht in Console. API folgt. (Build sollte jetzt passen.)")
   }
 
   return (
-    <div className="max-w-5xl mx-auto">
-      <h1 className="text-2xl font-bold mb-4">Produkt anlegen</h1>
-
-      {/* Upload */}
-      <div className="rounded-xl border border-white/10 p-4 mb-6 bg-white/5">
-        <div className="flex items-center gap-3 mb-3">
-          <input
-            ref={inputRef}
-            type="file"
-            accept="image/*"
-            multiple
-            onChange={onPickFiles}
-            className="hidden"
-          />
-          <button
-            onClick={() => inputRef.current?.click()}
-            className="px-3 py-2 rounded bg-white/10 border border-white/10 hover:bg-white/20"
-          >
-            Bilder auswählen (max. 5)
-          </button>
-          <button
-            onClick={handleProcess}
-            disabled={!files.length}
-            className="px-3 py-2 rounded bg-cyan-700/30 border border-cyan-400/30 hover:bg-cyan-700/40 disabled:opacity-50"
-          >
-            Bilder verkleinern & herunterladen
-          </button>
-          <span className="text-sm opacity-70">Erstellt 500×500 und 250×250 JPEGs</span>
-        </div>
-
-        {!!files.length && (
-          <ul className="text-sm opacity-80 list-disc pl-5 space-y-1">
-            {files.map(f => <li key={f.name}>{f.name} ({Math.round(f.size/1024)} KB)</li>)}
-          </ul>
-        )}
-      </div>
-
-      {/* Felder */}
+    <form onSubmit={onSubmit} className="space-y-6 max-w-3xl">
       <div className="grid sm:grid-cols-2 gap-4">
-        <div className="rounded border border-white/10 p-4">
-          <h2 className="font-semibold mb-3">Basis</h2>
-          <label className="block text-sm mb-2">Produktname</label>
-          <input value={productName} onChange={e=>setProductName(e.target.value)} className="w-full px-3 py-2 rounded bg-white/5 border border-white/10 mb-3"/>
+        <label className="block">
+          <span className="text-sm text-white/70">Produktname *</span>
+          <input
+            className="mt-1 w-full rounded-md bg-white/10 border border-white/10 px-3 py-2"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            onBlur={(e) => autoSlug(e.target.value)}
+            placeholder="z.B. Blutonium Boy – Hardstyle Sample Pack"
+          />
+        </label>
 
-          <label className="block text-sm mb-2">Untertitel</label>
-          <input value={subtitle} onChange={e=>setSubtitle(e.target.value)} className="w-full px-3 py-2 rounded bg-white/5 border border-white/10 mb-3"/>
+        <label className="block">
+          <span className="text-sm text-white/70">Slug *</span>
+          <input
+            className="mt-1 w-full rounded-md bg-white/10 border border-white/10 px-3 py-2"
+            value={slug}
+            onChange={(e) => setSlug(e.target.value)}
+            placeholder="blutonium-sample-pack"
+          />
+        </label>
 
-          <label className="block text-sm mb-2">Preis (€)</label>
-          <input type="number" min="0" step="0.01" value={price as any} onChange={e=>setPrice(e.target.value === "" ? "" : Number(e.target.value))} className="w-full px-3 py-2 rounded bg-white/5 border border-white/10"/>
-        </div>
+        <label className="block">
+          <span className="text-sm text-white/70">Preis (€) *</span>
+          <input
+            type="number"
+            min={0}
+            step="0.01"
+            className="mt-1 w-full rounded-md bg-white/10 border border-white/10 px-3 py-2"
+            value={priceEUR}
+            onChange={(e) => setPriceEUR(e.target.value === "" ? "" : Number(e.target.value))}
+            placeholder="z.B. 39.00"
+          />
+        </label>
 
-        <div className="rounded border border-white/10 p-4">
-          <h2 className="font-semibold mb-3">Musik-Felder</h2>
-          <label className="block text-sm mb-2">Artist (auto aus Dateiname möglich)</label>
-          <input value={artist} onChange={e=>setArtist(e.target.value)} className="w-full px-3 py-2 rounded bg-white/5 border border-white/10 mb-3"/>
-
-          <label className="block text-sm mb-2">Titel (auto aus Dateiname möglich)</label>
-          <input value={trackTitle} onChange={e=>setTrackTitle(e.target.value)} className="w-full px-3 py-2 rounded bg-white/5 border border-white/10 mb-3"/>
-
-          <label className="block text-sm mb-2">Format</label>
-          <select value={format} onChange={e=>setFormat(e.target.value as any)} className="w-full px-3 py-2 rounded bg-white/5 border border-white/10 mb-3">
-            <option value="">– nicht gesetzt –</option>
-            {Object.keys(FORMAT_DEFAULT_WEIGHT).map(k => <option key={k} value={k}>{k}</option>)}
-          </select>
-
-          <label className="block text-sm mb-2">Erscheinungsjahr</label>
-          <input type="number" value={year as any} onChange={e=>setYear(e.target.value === "" ? "" : Number(e.target.value))} className="w-full px-3 py-2 rounded bg-white/5 border border-white/10 mb-3"/>
-
-          <label className="block text-sm mb-2">UPC/EAN</label>
-          <input value={upc} onChange={e=>setUpc(e.target.value)} className="w-full px-3 py-2 rounded bg-white/5 border border-white/10"/>
-        </div>
-
-        <div className="rounded border border-white/10 p-4">
-          <h2 className="font-semibold mb-3">Shop & Versand</h2>
-          <label className="block text-sm mb-2">Kategorie-Kürzel</label>
-          <select value={categoryCode} onChange={e=>setCategoryCode(e.target.value as any)} className="w-full px-3 py-2 rounded bg-white/5 border border-white/10 mb-2">
-            <option value="">– nicht gesetzt –</option>
-            {Object.entries(CATEGORY_MAP).map(([code, name]) => (
-              <option key={code} value={code}>{code} — {name}</option>
+        <label className="block">
+          <span className="text-sm text-white/70">Kategorie *</span>
+          <select
+            className="mt-1 w-full rounded-md bg-white/10 border border-white/10 px-3 py-2"
+            value={categoryCode}
+            onChange={(e) => setCategoryCode(e.target.value as any)}
+          >
+            <option value="">— auswählen —</option>
+            {CATEGORY_OPTIONS.map(o => (
+              <option key={o.code} value={o.code}>{o.label} ({o.code})</option>
             ))}
           </select>
-          <p className="text-xs opacity-70 mb-3">
-            Legende: {Object.entries(CATEGORY_MAP).map(([c,n]) => `${c}=${n}`).join(" • ")}
-          </p>
+        </label>
 
-          <label className="block text-sm mb-2">Zustand</label>
-          <select value={condition} onChange={e=>setCondition(e.target.value)} className="w-full px-3 py-2 rounded bg-white/5 border border-white/10 mb-3">
-            {CONDITIONS.map(c => <option key={c} value={c}>{c}</option>)}
+        <label className="block">
+          <span className="text-sm text-white/70">Format</span>
+          <select
+            className="mt-1 w-full rounded-md bg-white/10 border border-white/10 px-3 py-2"
+            value={format}
+            onChange={(e) => onFormatChange(e.target.value)}
+          >
+            <option value="">— optional —</option>
+            {FORMAT_OPTIONS.map(f => (
+              <option key={f} value={f}>{f}</option>
+            ))}
           </select>
+        </label>
 
-          <label className="block text-sm mb-2">Gewicht (g)</label>
-          <div className="flex gap-2 items-center mb-3">
+        <label className="block">
+          <span className="text-sm text-white/70">Zustand</span>
+          <select
+            className="mt-1 w-full rounded-md bg-white/10 border border-white/10 px-3 py-2"
+            value={condition}
+            onChange={(e) => setCondition(e.target.value as any)}
+          >
+            <option value="">— optional —</option>
+            {CONDITION_OPTIONS.map(c => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+        </label>
+
+        <label className="block">
+          <span className="text-sm text-white/70">Artist (auto-erk.)</span>
+          <input
+            className="mt-1 w-full rounded-md bg-white/10 border border-white/10 px-3 py-2"
+            value={artist}
+            onChange={(e) => setArtist(e.target.value)}
+            placeholder="optional"
+          />
+        </label>
+
+        <label className="block">
+          <span className="text-sm text-white/70">Titel (auto-erk.)</span>
+          <input
+            className="mt-1 w-full rounded-md bg-white/10 border border-white/10 px-3 py-2"
+            value={releaseTitle}
+            onChange={(e) => setReleaseTitle(e.target.value)}
+            placeholder="optional"
+          />
+        </label>
+
+        <label className="block">
+          <span className="text-sm text-white/70">Erscheinungsjahr</span>
+          <input
+            type="number"
+            className="mt-1 w-full rounded-md bg-white/10 border border-white/10 px-3 py-2"
+            value={year}
+            onChange={(e) => setYear(e.target.value === "" ? "" : Number(e.target.value))}
+            placeholder="z.B. 2006"
+          />
+        </label>
+
+        <label className="block">
+          <span className="text-sm text-white/70">UPC/EAN</span>
+          <input
+            className="mt-1 w-full rounded-md bg-white/10 border border-white/10 px-3 py-2"
+            value={upc}
+            onChange={(e) => setUpc(e.target.value)}
+            placeholder="optional"
+          />
+        </label>
+
+        <label className="block">
+          <span className="text-sm text-white/70">Artikelnummer</span>
+          <input
+            className="mt-1 w-full rounded-md bg-white/10 border border-white/10 px-3 py-2"
+            value={articleNumber}
+            onChange={(e) => setArticleNumber(e.target.value)}
+            placeholder="wird später automatisch vergeben"
+          />
+        </label>
+
+        <label className="block">
+          <span className="text-sm text-white/70">Gewicht (Gramm)</span>
+          <input
+            type="number"
+            min={0}
+            step="1"
+            className="mt-1 w-full rounded-md bg-white/10 border border-white/10 px-3 py-2"
+            value={weightGrams}
+            onChange={(e) => setWeightGrams(e.target.value === "" ? "" : Number(e.target.value))}
+            placeholder="auto je nach Format oder manuell"
+          />
+        </label>
+      </div>
+
+      <div className="space-y-2">
+        <div className="text-sm text-white/70">Bilder (bis zu 5 URLs – Upload folgt)</div>
+        <div className="grid sm:grid-cols-2 gap-3">
+          {images.map((src, i) => (
             <input
-              type="number"
-              value={weight as any}
-              onChange={e=>setWeight(e.target.value === "" ? "" : Number(e.target.value))}
-              className="w-full px-3 py-2 rounded bg-white/5 border border-white/10"
+              key={i}
+              className="rounded-md bg-white/10 border border-white/10 px-3 py-2"
+              value={src}
+              onChange={(e) => {
+                const copy = [...images]
+                copy[i] = e.target.value
+                setImages(copy)
+              }}
+              placeholder={`Bild ${i + 1} URL (optional)`}
             />
-            <button
-              type="button"
-              onClick={()=> setWeight(autoWeight || 0)}
-              className="px-3 py-2 rounded bg-white/10 border border-white/10 hover:bg-white/20"
-              title="Gewicht aus Format übernehmen"
-            >
-              aus Format ({autoWeight} g)
-            </button>
-          </div>
-
-          <label className="block text-sm mb-2">Artikelnummer</label>
-          <div className="flex gap-2">
-            <input value={articleNumber} onChange={e=>setArticleNumber(e.target.value)} className="w-full px-3 py-2 rounded bg-white/5 border border-white/10"/>
-            <button
-              type="button"
-              onClick={()=> setArticleNumber(genArticleNumber("BLU"))}
-              className="px-3 py-2 rounded bg-white/10 border border-white/10 hover:bg-white/20"
-              title="Neue Nummer erzeugen"
-            >
-              neu
-            </button>
-          </div>
-        </div>
-
-        <div className="rounded border border-white/10 p-4">
-          <h2 className="font-semibold mb-3">Bilder-Vorschau</h2>
-          {!images.length && <div className="text-sm opacity-70">Noch keine verkleinerten Bilder. Erst „Bilder verkleinern & herunterladen“ klicken.</div>}
-          <div className="grid grid-cols-3 gap-3">
-            {images.map(img => (
-              <div key={img.nameBase} className="text-center">
-                <img src={img.thumb250Url} alt={img.nameBase} className="rounded mb-2 border border-white/10" />
-                <div className="text-xs opacity-70 break-all">{img.nameBase}</div>
-              </div>
-            ))}
-          </div>
+          ))}
         </div>
       </div>
 
-      <div className="mt-6 flex gap-3">
+      <div className="flex items-center gap-3">
+        <label className="inline-flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={active}
+            onChange={(e) => setActive(e.target.checked)}
+          />
+          <span className="text-sm">Aktiv</span>
+        </label>
+
         <button
-          onClick={buildJson}
-          className="px-4 py-2 rounded bg-cyan-700/30 border border-cyan-400/30 hover:bg-cyan-700/40"
+          type="submit"
+          className="ml-auto rounded-md bg-cyan-500 hover:bg-cyan-400 text-black font-semibold px-4 py-2"
         >
-          JSON erzeugen
+          Speichern (Demo)
         </button>
       </div>
-
-      {!!previewJson && (
-        <div className="mt-4">
-          <h2 className="font-semibold mb-2">JSON für <code>data/products.json</code></h2>
-          <p className="text-xs opacity-70 mb-2">
-            Diesen Block in das Array einfügen. <br />
-            Leere Felder erscheinen später im Shop **nicht** (du hast alles optional gestaltet).
-          </p>
-          <pre className="whitespace-pre-wrap text-xs bg-black/40 border border-white/10 rounded p-3">
-            {previewJson}
-          </pre>
-        </div>
-      )}
-    </div>
+    </form>
   )
 }
