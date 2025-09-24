@@ -6,22 +6,29 @@ import Image from "next/image"
 import { usePathname } from "next/navigation"
 import { useState, useEffect } from "react"
 
+type NavLink = { href: string; label: string }
+
 export default function NavBar() {
   const pathname = usePathname()
   const [open, setOpen] = useState(false)
 
+  // Mobile-Menu schließen, wenn Route wechselt
   useEffect(() => { setOpen(false) }, [pathname])
 
-  // Einheitliche Basis (aktuell "de")
-  const base = "/de"
-
-  const links = [
-    { href: `${base}/releases`, label: "Releases" },
-    { href: `${base}/artists`,  label: "Artists & Booking" },
-    { href: `${base}/merch`,    label: "Merchandise" },
-    { href: `${base}/samples`,  label: "Samples" },
-    { href: `${base}/videos`,   label: "Videos" },
+  // ⚠️ Menüstruktur: "Shop" statt "Samples" / "Merchandise"
+  const links: NavLink[] = [
+    { href: "/de/releases", label: "Releases" },
+    { href: "/de/artists",  label: "Artists & Booking" },
+    { href: "/de/shop",     label: "Shop" },
+    { href: "/de/videos",   label: "Videos" },
   ]
+
+  const isActive = (href: string) => {
+    // exakte oder verschachtelte Pfade als aktiv behandeln
+    if (pathname === href) return true
+    if (href !== "/" && pathname.startsWith(href + "/")) return true
+    return false
+  }
 
   return (
     <nav className="fixed top-0 left-0 w-full z-50 bg-black/70 backdrop-blur-md border-b border-white/10">
@@ -31,13 +38,14 @@ export default function NavBar() {
           <span className="hidden sm:inline text-sm font-bold tracking-wide">Blutonium Records</span>
         </Link>
 
+        {/* Desktop */}
         <div className="hidden md:flex items-center gap-6">
           {links.map(l => (
             <Link
               key={l.href}
               href={l.href}
-              className={`text-sm hover:text-cyan-300 transition ${
-                pathname === l.href ? "text-cyan-400 font-semibold" : "text-white/80"
+              className={`text-sm transition hover:text-cyan-300 ${
+                isActive(l.href) ? "text-cyan-400 font-semibold" : "text-white/80"
               }`}
             >
               {l.label}
@@ -45,9 +53,10 @@ export default function NavBar() {
           ))}
         </div>
 
+        {/* Burger */}
         <button
           onClick={() => setOpen(true)}
-          className="md:hidden inline-flex items-center justify-center w-10 h-10 rounded bg:white/10 hover:bg-white/20"
+          className="md:hidden inline-flex items-center justify-center w-10 h-10 rounded bg-white/10 hover:bg-white/20"
           aria-label="Open menu"
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
@@ -56,6 +65,7 @@ export default function NavBar() {
         </button>
       </div>
 
+      {/* Mobile Overlay */}
       <div
         className={`md:hidden fixed inset-0 bg-black/50 transition-opacity ${open ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
         onClick={() => setOpen(false)}
@@ -84,7 +94,7 @@ export default function NavBar() {
               key={l.href}
               href={l.href}
               className={`block rounded px-3 py-2 text-base hover:bg-white/10 ${
-                pathname === l.href ? "text-cyan-400 font-semibold" : "text-white/90"
+                isActive(l.href) ? "text-cyan-400 font-semibold" : "text-white/90"
               }`}
             >
               {l.label}
