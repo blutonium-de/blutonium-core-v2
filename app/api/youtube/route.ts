@@ -3,100 +3,164 @@ import { NextResponse } from "next/server"
 
 export const dynamic = "force-dynamic"
 
+type YtItem = {
+  id: string
+  title: string
+  thumb: string
+  publishedAt: string
+  url: string
+}
+
+function ok(body: any, status = 200) {
+  return NextResponse.json(body, { status, headers: { "cache-control": "no-store" } })
+}
+
+const YT_BASE = "https://www.googleapis.com/youtube/v3"
+
+async function yt<T>(path: string, params: Record<string, string>) {
+  const u = new URL(`${YT_BASE}/${path}`)
+  Object.entries(params).forEach(([k, v]) => u.searchParams.set(k, v))
+  const r = await fetch(u.toString(), { cache: "no-store" })
+  const j = await r.json()
+  return { ok: r.ok, status: r.status, data: j }
+}
+
 export async function GET(req: Request) {
-  try {
-    const key = process.env.YOUTUBE_API_KEY
-    const channel = process.env.NEXT_PUBLIC_YT_CHANNEL_ID
-    if (!key || !channel) {
-      return NextResponse.json(
-        { error: "Fehlende ENV Variablen (YOUTUBE_API_KEY oder NEXT_PUBLIC_YT_CHANNEL_ID)" },
-        { status: 500 }
-      )
+  const url = new URL(req.url)
+  const key = process.env.YOUTUBE_API_KEY
+  const channelId = process.env.NEXT_PUBLIC_YT_CHANNEL_ID || url.searchParams.get("channelId") || ""
+  const max = Math.min(parseInt(url.searchParams.get("max") || "18", 10), 50)
+  const pageToken = url.searchParams.get("pageToken") || undefined
+
+  if (!channelId) return ok({ error: "Kein channelId gesetzt", videos: [] }, 400)
+  if (!key) {
+    // Letzter Fallback: RSS (über Proxy, damit CORS sicher klappt)
+    const rss = `https://r.jina.ai/http://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`
+    try {
+      const r = await fetch(rss, { cache: "no-store" })
+      const xml = await r.text()
+      const items = [...xml.matchAll(/<entry>[\s\S]*?<\/entry>/g)]
+      const videos: YtItem[] = items.slice(0, max).map((m) => {
+        const id = (m[0].match(/<yt:videoId>(.*?)<\/yt:videoId>/)?.[1] || "").trim()
+        const title = (m[0].match(/<title>(.*?)<\/title>/)?.[1] || "").trim()
+        const publishedAt = (m[0].match(/<published>(.*?)<\/published>/)?.[1] || "").trim()
+        const thumb = `https://i.ytimg.com/vi/${id}/hqdefault.jpg`
+        return { id, title, publishedAt, thumb, url: `https://www.youtube.com/watch?v=${id}` }
+      })
+      return ok({ videos, nextPageToken: null, source: "rss-proxy" })
+    } catch (e: any) {
+      return ok({ error: e?.message || "RSS-Fallback fehlgeschlagen", videos: [] }, 500)
     }
+  }
 
-    const { searchParams } = new URL(req.url)
-    const max = Math.min(Number(searchParams.get("max") || "12"), 50)
-    const pageToken = searchParams.get("pageToken") || undefined
+  // 1) Kanal → uploads-Playlist ermitteln
+  const channels = await yt<any>("channels", {
+    part: "contentDetails",
+    id: channelId,
+    key,
+  })
 
-    // Uploads-Playlist aus Channel holen
-    const channelUrl = new URL("https://www.googleapis.com/youtube/v3/channels")
-    channelUrl.searchParams.set("key", key)
-    channelUrl.searchParams.set("id", channel)
-    channelUrl.searchParams.set("part", "contentDetails")
+  // wenn Kanal nicht gefunden → sauber zurück
+  if (!channels.ok || !channels.data?.items?.length) {
+    return ok({ videos: [], nextPageToken: null, source: "youtube-api", note: "channel not found" }, 404)
+  }
 
-    const channelRes = await fetch(channelUrl.toString())
-    const channelData = await channelRes.json()
+  const uploadsPlaylist = channels.data.items[0]?.contentDetails?.relatedPlaylists?.uploads as string | undefined
 
-    let uploadsId =
-      channelData?.items?.[0]?.contentDetails?.relatedPlaylists?.uploads || null
+  // 2) Wenn uploads-Playlist existiert → Playlist-Items holen
+  if (uploadsPlaylist) {
+    const items = await yt<any>("playlistItems", {
+      part: "snippet,contentDetails",
+      playlistId: uploadsPlaylist,
+      maxResults: String(max),
+      key,
+      ...(pageToken ? { pageToken } : {}),
+    })
 
-    let videos: any[] = []
-    let source = ""
-
-    if (uploadsId) {
-      // PlaylistItems abrufen
-      const playlistUrl = new URL("https://www.googleapis.com/youtube/v3/playlistItems")
-      playlistUrl.searchParams.set("key", key)
-      playlistUrl.searchParams.set("playlistId", uploadsId)
-      playlistUrl.searchParams.set("part", "snippet")
-      playlistUrl.searchParams.set("maxResults", String(max))
-      if (pageToken) playlistUrl.searchParams.set("pageToken", pageToken)
-
-      const r = await fetch(playlistUrl.toString())
-      const data = await r.json()
-
-      if (r.ok) {
-        videos = (data.items || []).map((it: any) => ({
-          id: it.snippet.resourceId.videoId,
-          title: it.snippet.title,
-          thumb: it.snippet.thumbnails.high?.url || it.snippet.thumbnails.default?.url,
-          publishedAt: it.snippet.publishedAt,
-          url: `https://www.youtube.com/watch?v=${it.snippet.resourceId.videoId}`,
-        }))
-        return NextResponse.json({
-          videos,
-          nextPageToken: data.nextPageToken || null,
-          source: "youtube-api-playlist",
-        })
-      }
-    }
-
-    // Fallback → search.list
-    const searchUrl = new URL("https://www.googleapis.com/youtube/v3/search")
-    searchUrl.searchParams.set("key", key)
-    searchUrl.searchParams.set("channelId", channel)
-    searchUrl.searchParams.set("part", "snippet")
-    searchUrl.searchParams.set("order", "date")
-    searchUrl.searchParams.set("type", "video")
-    searchUrl.searchParams.set("maxResults", String(max))
-    if (pageToken) searchUrl.searchParams.set("pageToken", pageToken)
-
-    const r = await fetch(searchUrl.toString())
-    const data = await r.json()
-
-    if (r.ok) {
-      videos = (data.items || []).map((it: any) => ({
-        id: it.id.videoId,
-        title: it.snippet.title,
-        thumb: it.snippet.thumbnails.high?.url || it.snippet.thumbnails.default?.url,
-        publishedAt: it.snippet.publishedAt,
-        url: `https://www.youtube.com/watch?v=${it.id.videoId}`,
-      }))
-      return NextResponse.json({
+    if (items.ok && items.data?.items?.length) {
+      const videos: YtItem[] = items.data.items.map((it: any) => {
+        const id = it.contentDetails?.videoId || it.snippet?.resourceId?.videoId || ""
+        const title = it.snippet?.title || ""
+        const publishedAt = it.contentDetails?.videoPublishedAt || it.snippet?.publishedAt || ""
+        const thumb =
+          it.snippet?.thumbnails?.maxres?.url ||
+          it.snippet?.thumbnails?.high?.url ||
+          it.snippet?.thumbnails?.medium?.url ||
+          `https://i.ytimg.com/vi/${id}/hqdefault.jpg`
+        return { id, title, publishedAt, thumb, url: `https://www.youtube.com/watch?v=${id}` }
+      })
+      return ok({
         videos,
-        nextPageToken: data.nextPageToken || null,
-        source: "youtube-api-search",
+        nextPageToken: items.data.nextPageToken || null,
+        source: "youtube-api-playlist",
       })
     }
-
-    return NextResponse.json(
-      { error: "Kein Feed verfügbar", raw: data },
-      { status: 404 }
-    )
-  } catch (e: any) {
-    return NextResponse.json(
-      { error: e?.message || "Unbekannter Fehler" },
-      { status: 500 }
-    )
   }
+
+  // 3) Fallback: playlists.list → erste Playlist nehmen (z. B. “Uploads” manuell erstellt)
+  const playlists = await yt<any>("playlists", {
+    part: "snippet,contentDetails",
+    channelId,
+    maxResults: "5",
+    key,
+  })
+  if (playlists.ok && playlists.data?.items?.length) {
+    const plId = playlists.data.items[0].id as string
+    const items = await yt<any>("playlistItems", {
+      part: "snippet,contentDetails",
+      playlistId: plId,
+      maxResults: String(max),
+      key,
+      ...(pageToken ? { pageToken } : {}),
+    })
+    if (items.ok && items.data?.items?.length) {
+      const videos: YtItem[] = items.data.items.map((it: any) => {
+        const id = it.contentDetails?.videoId || it.snippet?.resourceId?.videoId || ""
+        const title = it.snippet?.title || ""
+        const publishedAt = it.contentDetails?.videoPublishedAt || it.snippet?.publishedAt || ""
+        const thumb =
+          it.snippet?.thumbnails?.maxres?.url ||
+          it.snippet?.thumbnails?.high?.url ||
+          it.snippet?.thumbnails?.medium?.url ||
+          `https://i.ytimg.com/vi/${id}/hqdefault.jpg`
+        return { id, title, publishedAt, thumb, url: `https://www.youtube.com/watch?v=${id}` }
+      })
+      return ok({
+        videos,
+        nextPageToken: items.data.nextPageToken || null,
+        source: "youtube-api-playlists",
+      })
+    }
+  }
+
+  // 4) Letzter Fallback: search (type=video)
+  const search = await yt<any>("search", {
+    part: "snippet",
+    channelId,
+    type: "video",
+    order: "date",
+    maxResults: String(max),
+    key,
+    ...(pageToken ? { pageToken } : {}),
+  })
+  if (search.ok && search.data?.items?.length) {
+    const videos: YtItem[] = search.data.items.map((it: any) => {
+      const id = it.id?.videoId || ""
+      const title = it.snippet?.title || ""
+      const publishedAt = it.snippet?.publishedAt || ""
+      const thumb =
+        it.snippet?.thumbnails?.maxres?.url ||
+        it.snippet?.thumbnails?.high?.url ||
+        it.snippet?.thumbnails?.medium?.url ||
+        `https://i.ytimg.com/vi/${id}/hqdefault.jpg`
+      return { id, title, publishedAt, thumb, url: `https://www.youtube.com/watch?v=${id}` }
+    })
+    return ok({
+      videos,
+      nextPageToken: search.data.nextPageToken || null,
+      source: "youtube-api-search",
+    })
+  }
+
+  return ok({ videos: [], nextPageToken: null, source: "empty" }, 200)
 }
