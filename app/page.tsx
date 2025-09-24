@@ -41,9 +41,8 @@ export default function Home() {
           </p>
         </div>
 
-        {/* kleiner Scroll-Hinweis */}
         <div className="absolute inset-x-0 bottom-4 flex justify-center opacity-70">
-          <div className="text-xs tracking-widest">SCROLL</div>
+          
         </div>
       </section>
 
