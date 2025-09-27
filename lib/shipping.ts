@@ -1,147 +1,130 @@
 // lib/shipping.ts
-// Zonen, Carrier, Gewichts-Staffeln & Preise + "Versandkostenfrei ab X €"
+/**
+ * Versandlogik (einfach & robust):
+ * - Regionen: "AT" | "EU" | "WORLD"
+ * - Carrier: "POST" | "DPD" | "GLS"
+ * - Preise sind Beispiel-/Startwerte, leicht anpassbar
+ *
+ * Gewichtseinheit: Gramm
+ * Preiseinheit: EUR
+ */
 
-export type Zone = "AT" | "DE" | "EU" | "WORLD"
-export type Carrier = "POST_DHL" | "DPD" | "GLS"
+export type RegionCode = "AT" | "EU" | "WORLD";
+export type CarrierCode = "POST" | "DPD" | "GLS";
 
-export const CARRIERS: Record<Carrier, string> = {
-  POST_DHL: "Post/DHL",
-  DPD: "DPD",
-  GLS: "GLS",
+export type ShippingOption = {
+  carrier: CarrierCode;
+  name: string;              // Anzeigename (mit Region)
+  region: RegionCode;
+  maxWeightGrams: number;    // Obergrenze dieses Tiers
+  amountEUR: number;         // Bruttopreis in EUR
+};
+
+export type ShippingQuote = {
+  name: string;         // z. B. "Österreichische Post (AT)"
+  region: RegionCode;
+  carrier: CarrierCode;
+  amountEUR: number;    // 0 wenn Freigrenze erreicht
+  weightGrams: number;  // gesamtes Sendungsgewicht
+  freeByThreshold: boolean;
+};
+
+// Basistarife (leicht editierbar)
+const TABLE: Record<RegionCode, ShippingOption[]> = {
+  AT: [
+    { carrier: "POST", name: "Österreichische Post (AT)", region: "AT", maxWeightGrams: 500,  amountEUR: 4.5 },
+    { carrier: "POST", name: "Österreichische Post (AT)", region: "AT", maxWeightGrams: 2000, amountEUR: 6.9 },
+    { carrier: "POST", name: "Österreichische Post (AT)", region: "AT", maxWeightGrams: 5000, amountEUR: 8.9 },
+    { carrier: "POST", name: "Österreichische Post (AT)", region: "AT", maxWeightGrams: 10000, amountEUR: 11.9 },
+
+    { carrier: "DPD",  name: "DPD (AT)",                   region: "AT", maxWeightGrams: 2000, amountEUR: 6.5 },
+    { carrier: "DPD",  name: "DPD (AT)",                   region: "AT", maxWeightGrams: 5000, amountEUR: 8.5 },
+    { carrier: "DPD",  name: "DPD (AT)",                   region: "AT", maxWeightGrams: 10000, amountEUR: 10.9 },
+
+    { carrier: "GLS",  name: "GLS (AT)",                   region: "AT", maxWeightGrams: 2000, amountEUR: 6.9 },
+    { carrier: "GLS",  name: "GLS (AT)",                   region: "AT", maxWeightGrams: 5000, amountEUR: 8.9 },
+    { carrier: "GLS",  name: "GLS (AT)",                   region: "AT", maxWeightGrams: 10000, amountEUR: 11.9 },
+  ],
+  EU: [
+    { carrier: "POST", name: "Österreichische Post (EU)",  region: "EU", maxWeightGrams: 500,  amountEUR: 9.9 },
+    { carrier: "POST", name: "Österreichische Post (EU)",  region: "EU", maxWeightGrams: 2000, amountEUR: 14.9 },
+    { carrier: "POST", name: "Österreichische Post (EU)",  region: "EU", maxWeightGrams: 5000, amountEUR: 19.9 },
+    { carrier: "POST", name: "Österreichische Post (EU)",  region: "EU", maxWeightGrams: 10000, amountEUR: 29.9 },
+
+    { carrier: "DPD",  name: "DPD (EU)",                   region: "EU", maxWeightGrams: 2000, amountEUR: 12.9 },
+    { carrier: "DPD",  name: "DPD (EU)",                   region: "EU", maxWeightGrams: 5000, amountEUR: 17.9 },
+    { carrier: "DPD",  name: "DPD (EU)",                   region: "EU", maxWeightGrams: 10000, amountEUR: 24.9 },
+
+    { carrier: "GLS",  name: "GLS (EU)",                   region: "EU", maxWeightGrams: 2000, amountEUR: 13.9 },
+    { carrier: "GLS",  name: "GLS (EU)",                   region: "EU", maxWeightGrams: 5000, amountEUR: 18.9 },
+    { carrier: "GLS",  name: "GLS (EU)",                   region: "EU", maxWeightGrams: 10000, amountEUR: 26.9 },
+  ],
+  WORLD: [
+    { carrier: "POST", name: "Österreichische Post (WORLD)", region: "WORLD", maxWeightGrams: 500,  amountEUR: 14.9 },
+    { carrier: "POST", name: "Österreichische Post (WORLD)", region: "WORLD", maxWeightGrams: 2000, amountEUR: 24.9 },
+    { carrier: "POST", name: "Österreichische Post (WORLD)", region: "WORLD", maxWeightGrams: 5000, amountEUR: 39.9 },
+    { carrier: "POST", name: "Österreichische Post (WORLD)", region: "WORLD", maxWeightGrams: 10000, amountEUR: 59.9 },
+  ],
+};
+
+// Freigrenze aus ENV
+function getFreeThreshold(): number {
+  const raw = process.env.SHOP_FREE_SHIPPING_MIN;
+  const n = raw ? Number(raw) : NaN;
+  return Number.isFinite(n) ? n : 0; // 0 = keine Freigrenze aktiv
 }
 
-// Land -> Zone (vereinfachte Abbildung; erweiterbar)
-export const COUNTRY_TO_ZONE: Record<string, Zone> = {
-  AT: "AT",
-  DE: "DE",
-  BE: "EU", NL: "EU", LU: "EU", IT: "EU", FR: "EU", ES: "EU", PT: "EU",
-  DK: "EU", SE: "EU", FI: "EU", NO: "EU", IE: "EU", PL: "EU", CZ: "EU",
-  SK: "EU", SI: "EU", HR: "EU", HU: "EU", RO: "EU", BG: "EU", GR: "EU",
-  EE: "EU", LV: "EU", LT: "EU", MT: "EU", CY: "EU",
-  CH: "EU", // CH separat behandeln? -> Zone anpassen, falls gewünscht
-}
+export function getShippingOptions(params: {
+  region: RegionCode;
+  totalWeightGrams: number;
+  subtotalEUR: number;
+}): ShippingQuote[] {
+  const { region, totalWeightGrams, subtotalEUR } = params;
+  const freeMin = getFreeThreshold();
 
-// ⚠️ jetzt exportiert (wurde zuvor nur const BRACKETS)
-export const BRACKETS = [500, 1000, 2000, 5000] // Gramm-Grenzen: ≤500, ≤1000, ≤2000, ≤5000
-
-// Preise in Cent pro Carrier/Zone/Gewichts-Stufe (4 Stufen entsprechend BRACKETS)
-const RATES: Record<Carrier, Record<Zone, number[]>> = {
-  POST_DHL: {
-    AT:    [  399,  599,  899, 1299],
-    DE:    [  699,  899, 1299, 1799],
-    EU:    [  899, 1299, 1799, 2499],
-    WORLD: [ 1499, 1999, 2999, 4999],
-  },
-  DPD: {
-    AT:    [  499,  699,  999, 1399],
-    DE:    [  799,  999, 1399, 1899],
-    EU:    [ 1099, 1499, 1999, 2799],
-    WORLD: [ 1999, 2599, 3499, 5499],
-  },
-  GLS: {
-    AT:    [  449,  649,  949, 1349],
-    DE:    [  749,  949, 1349, 1849],
-    EU:    [  999, 1399, 1899, 2699],
-    WORLD: [ 1899, 2499, 3399, 5299],
-  },
-}
-
-// ---- Hilfsfunktionen
-
-export function resolveZone(countryCode: string): Zone {
-  const cc = (countryCode || "").toUpperCase()
-  return COUNTRY_TO_ZONE[cc] ?? "WORLD"
-}
-
-export function weightBracketIndex(totalGrams: number): number {
-  for (let i = 0; i < BRACKETS.length; i++) {
-    if (totalGrams <= BRACKETS[i]) return i
+  // passende Tiers
+  const tiers = (TABLE[region] || []).filter(t => t.maxWeightGrams >= Math.max(1, totalWeightGrams));
+  if (tiers.length === 0) {
+    // über 10 kg → erstmal pauschal nicht berechnet (kannst du nachpflegen)
+    return [{
+      name: "Versand wird nachträglich berechnet",
+      region,
+      carrier: "POST",
+      amountEUR: 0,
+      weightGrams: totalWeightGrams,
+      freeByThreshold: false,
+    }];
   }
-  return BRACKETS.length - 1
-}
 
-// Nutzt die Tabellen oben (Basisfunktion)
-export function shippingPriceFor(carrier: Carrier, zone: Zone, totalGrams: number): number {
-  const idx = weightBracketIndex(totalGrams)
-  return RATES[carrier][zone][idx]
-}
+  const free = freeMin > 0 && subtotalEUR >= freeMin;
 
-// ► Alias, damit Import-Name 'priceFor' funktioniert
-export const priceFor = shippingPriceFor
-
-// ► Neu exportiert: Label für die jeweilige Gewichts-Stufe
-export function labelForBracket(grams: number): string {
-  const idx = weightBracketIndex(Math.max(0, Math.floor(grams || 0)))
-  const cap = BRACKETS[idx]
-  return `bis ${Math.round(cap / 1000)} kg`
-}
-
-// ---- Cart/Produkte Typen (leicht generisch gehalten)
-
-export type CartItem = { id: string; qty: number }
-export type ProductLike = {
-  id: string
-  priceEUR: number
-  weightGrams?: number | null
-  isDigital?: boolean
-}
-
-// Summiert Gewicht aller physischen Produkte (Digital & „kostenloser Versand“ via weight=0 werden ignoriert)
-export function computeCartWeight(items: CartItem[], productMap: Map<string, ProductLike>): number {
-  let grams = 0
-  for (const it of items) {
-    const p = productMap.get(it.id)
-    if (!p) continue
-    const isDigital = !!p.isDigital
-    const w = Math.max(0, Math.floor(Number(p.weightGrams ?? 0)))
-    if (!isDigital && w > 0) grams += w * Math.max(1, Math.floor(it.qty || 1))
+  // pro Carrier die günstigste Stufe für das Gewicht
+  const byCarrier = new Map<CarrierCode, ShippingOption>();
+  for (const opt of tiers) {
+    const prev = byCarrier.get(opt.carrier);
+    if (!prev || opt.amountEUR < prev.amountEUR) byCarrier.set(opt.carrier, opt);
   }
-  return grams
+
+  const quotes: ShippingQuote[] = Array.from(byCarrier.values()).map(opt => ({
+    name: opt.name,
+    region,
+    carrier: opt.carrier,
+    amountEUR: free ? 0 : opt.amountEUR,
+    weightGrams: totalWeightGrams,
+    freeByThreshold: free,
+  }));
+
+  // nach Preis sortieren
+  quotes.sort((a, b) => a.amountEUR - b.amountEUR);
+  return quotes;
 }
 
-// Netto-Warenwert (in Cent) – ohne Versand
-export function computeMerchSubtotalCents(items: CartItem[], productMap: Map<string, ProductLike>): number {
-  let cents = 0
-  for (const it of items) {
-    const p = productMap.get(it.id)
-    if (!p) continue
-    cents += Math.round(p.priceEUR * 100) * Math.max(1, Math.floor(it.qty || 1))
-  }
-  return cents
-}
-
-export type ShippingComputeParams = {
-  items: CartItem[]
-  products: ProductLike[] | Map<string, ProductLike>
-  destinationCountry: string // z.B. "AT", "DE", "NL", "CH", ...
-  carrier: Carrier
-  freeShippingMinEUR?: number // z.B. 100 -> ab 100 € versandfrei
-}
-
-export type ShippingResult = {
-  zone: Zone
-  totalGrams: number
-  shippingCents: number
-  freeApplied: boolean
-  thresholdCents: number
-}
-
-// Hauptroutine: berechnet Versandkosten unter Berücksichtigung der Schwelle
-export function computeShipping(params: ShippingComputeParams): ShippingResult {
-  const map = params.products instanceof Map
-    ? params.products
-    : new Map(params.products.map(p => [p.id, p] as const))
-
-  const zone = resolveZone(params.destinationCountry)
-  const totalGrams = computeCartWeight(params.items, map)
-  const subtotalCents = computeMerchSubtotalCents(params.items, map)
-
-  const thresholdCents = Math.max(0, Math.round((params.freeShippingMinEUR ?? 0) * 100))
-  const freeApplied = thresholdCents > 0 && subtotalCents >= thresholdCents
-
-  const shippingCents = freeApplied
-    ? 0
-    : (totalGrams > 0 ? shippingPriceFor(params.carrier, zone, totalGrams) : 0)
-
-  return { zone, totalGrams, shippingCents, freeApplied, thresholdCents }
+export function chooseBestShipping(params: {
+  region: RegionCode;
+  totalWeightGrams: number;
+  subtotalEUR: number;
+}): ShippingQuote {
+  const q = getShippingOptions(params);
+  // nimm günstigste Option
+  return q[0];
 }

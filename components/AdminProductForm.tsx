@@ -1,312 +1,414 @@
 // components/AdminProductForm.tsx
-"use client"
+"use client";
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import ImageDrop from "./ImageDrop";
+import BarcodeScanner from "./BarcodeScanner";
 
-const CATEGORY_OPTIONS = [
-  { code: "bv",  label: "Blutonium Vinyls" },
-  { code: "sv",  label: "Sonstige Vinyls" },
-  { code: "bcd", label: "Blutonium CDs" },
-  { code: "scd", label: "Sonstige CDs" },
-  { code: "bhs", label: "Blutonium Hardstyle Samples" },
-  { code: "ss",  label: "Sonstiges & Specials" },
-] as const
-
-const FORMAT_OPTIONS = [
-  "CD",
-  "Maxi CD",
-  "Album",
-  "1CD Compilation",
-  "2CD Compilation",
-  "4CD Compilation",
-  "Maxi Vinyl",
-  "Album Vinyl LP",
-  "Album Vinyl 2LP",
-  "DVD",
-  "Blu-ray Disc",
-  "Sonstiges",
-] as const
-
-const CONDITION_OPTIONS = [
-  "Neu",
-  "Gebraucht",
-  "Neuwertig",
-  "Starke Gebrauchsspuren",
-  "OK",
-] as const
+type ProductPayload = {
+  slug: string;
+  productName?: string;
+  subtitle?: string;
+  artist?: string;
+  trackTitle?: string;
+  priceEUR: number;
+  currency?: string;
+  categoryCode: string;
+  format?: string;
+  year?: number;
+  upcEan?: string;
+  catalogNumber?: string;
+  condition?: string;
+  weightGrams?: number;
+  isDigital?: boolean;
+  sku?: string;
+  active?: boolean;
+  image: string;
+  images: string[];
+};
 
 export default function AdminProductForm() {
-  const [title, setTitle] = useState("")
-  const [slug, setSlug] = useState("")
-  const [priceEUR, setPriceEUR] = useState<number | "">("")
-  const [categoryCode, setCategoryCode] = useState<typeof CATEGORY_OPTIONS[number]["code"] | "">("")
-  const [format, setFormat] = useState<(typeof FORMAT_OPTIONS)[number] | "">("")
-  const [artist, setArtist] = useState("")
-  const [releaseTitle, setReleaseTitle] = useState("")
-  const [year, setYear] = useState<number | "">("")
-  const [upc, setUpc] = useState("")
-  const [articleNumber, setArticleNumber] = useState("") // kann später automatisch vergeben werden
-  const [condition, setCondition] = useState<(typeof CONDITION_OPTIONS)[number] | "">("")
-  const [weightGrams, setWeightGrams] = useState<number | "">("")
-  const [active, setActive] = useState(true)
+  const router = useRouter();
 
-  // bis zu 5 Bilder-URLs (Platzhalter – Upload-API kommt später)
-  const [images, setImages] = useState<string[]>(["", "", "", "", ""])
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
 
-  function autoSlug(v: string) {
-    const s = v
+  const [images, setImages] = useState<string[]>([]);
+  const [filenames, setFilenames] = useState<string[]>([]);
+
+  const [productName, setProductName] = useState("");
+  const [artist, setArtist] = useState("");
+  const [trackTitle, setTrackTitle] = useState("");
+  const [category, setCategory] = useState("ss");
+  const [format, setFormat] = useState("");
+  const [weight, setWeight] = useState<string>("");
+  const [condition, setCondition] = useState<string>("");
+  const [slugTouched, setSlugTouched] = useState(false);
+
+  const formRef = useRef<HTMLFormElement | null>(null);
+  const upcRef = useRef<HTMLInputElement | null>(null);
+  const priceRef = useRef<HTMLInputElement | null>(null);
+
+  // Scanner-Overlay
+  const [scannerOpen, setScannerOpen] = useState(false);
+
+  // Helpers
+  function strOrNull(v: FormDataEntryValue | null): string | undefined {
+    const s = (v == null ? "" : String(v)).trim();
+    return s ? s : undefined;
+  }
+  function numOrNull(v: FormDataEntryValue | null): number | undefined {
+    const s = (v == null ? "" : String(v)).trim();
+    if (!s) return undefined;
+    const n = Number(s);
+    return Number.isFinite(n) ? n : undefined;
+  }
+  function toSlug(s: string) {
+    return s
       .toLowerCase()
+      .normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "")
-    setSlug(s)
+      .slice(0, 80);
   }
 
-  function suggestedWeightFor(format: string): number | "" {
-    switch (format) {
-      case "CD":
-      case "1CD Compilation":
-        return 120
-      case "Maxi CD":
-        return 80
-      case "2CD Compilation":
-        return 180
-      case "4CD Compilation":
-        return 340
-      case "Maxi Vinyl":
-        return 250
-      case "Album Vinyl LP":
-        return 250
-      case "Album Vinyl 2LP":
-        return 400
-      case "DVD":
-        return 150
-      case "Blu-ray Disc":
-        return 120
-      default:
-        return ""
+  // Auto Artist/Title aus Produktname (nur wenn beide leer)
+  useEffect(() => {
+    if (!productName || artist || trackTitle) return;
+    const parts = productName.split(/\s[-–—]\s|[-–—]/);
+    if (parts.length >= 2) {
+      const a = parts[0]?.trim();
+      const t = parts.slice(1).join(" - ").trim();
+      if (a && t) {
+        setArtist(a);
+        setTrackTitle(t);
+      }
+    }
+  }, [productName, artist, trackTitle]);
+
+  // Vinyl default weight
+  useEffect(() => {
+    const isVinyl = category === "bv" || category === "sv" || /vinyl|lp/i.test(format);
+    if (isVinyl && !weight) setWeight("150");
+  }, [category, format, weight]);
+
+  // Auto-Slug, solange User Feld nicht anfasst
+  useEffect(() => {
+    const slugInput = document.querySelector<HTMLInputElement>('input[name="slug"]');
+    if (!slugInput || slugTouched) return;
+
+    const baseName =
+      productName ||
+      (artist && trackTitle ? `${artist} – ${trackTitle}` : "") ||
+      "";
+
+    if (baseName && !slugInput.value) {
+      slugInput.value = toSlug(baseName);
+    }
+  }, [artist, trackTitle, productName, slugTouched]);
+
+  // *** Auto-Preis 9,90 bei gebrauchtem Vinyl ***
+  useEffect(() => {
+    const isVinyl = category === "bv" || category === "sv" || /vinyl|lp/i.test(format);
+    const usedConditions = ["ok", "gebraucht", "stark"];
+    const isUsed = usedConditions.includes((condition || "").toLowerCase());
+    if (isVinyl && isUsed && priceRef.current) {
+      const cur = parseFloat(priceRef.current.value || "0");
+      if (!cur) priceRef.current.value = "9.90";
+    }
+  }, [condition, category, format]);
+
+  // Discogs Lookup (über UPC/EAN)
+  async function lookupDiscogs(code: string) {
+    if (!code) return;
+    setMsg(null);
+    try {
+      const r = await fetch(`/api/utils/discogs?barcode=${encodeURIComponent(code)}`, { cache: "no-store" });
+      const text = await r.text();
+      let j: any; try { j = JSON.parse(text); } catch { j = { error: text || "Discogs Antwort ungültig" }; }
+
+      if (!r.ok) {
+        setMsg(j?.error || "Discogs Fehler");
+        return;
+      }
+
+      if (j.artist) setArtist(j.artist);
+      if (j.title) {
+        setTrackTitle(j.title);
+        if (!productName) setProductName(`${j.artist ? j.artist + " – " : ""}${j.title}`);
+      }
+      if (j.format) setFormat(j.format);
+
+      if (j.catno) {
+        const cat = document.querySelector<HTMLInputElement>('input[name="catalogNumber"]');
+        if (cat) cat.value = j.catno;
+      }
+      if (j.year) {
+        const y = document.querySelector<HTMLInputElement>('input[name="year"]');
+        if (y) y.value = String(j.year);
+      }
+
+      if (j.cover && images.length === 0) setImages([j.cover]);
+
+      const slugInput = document.querySelector<HTMLInputElement>('input[name="slug"]');
+      if (slugInput && !slugTouched && j.artist && j.title) {
+        const slug = `${j.artist}-${j.title}-${j.year || ""}`
+          .toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+        if (!slugInput.value) slugInput.value = slug;
+      }
+
+      setMsg("Gefunden via Discogs");
+    } catch (e: any) {
+      setMsg(e?.message || "Discogs Lookup Fehler");
     }
   }
 
-  function onFormatChange(v: string) {
-    setFormat(v as any)
-    // nur automatisch befüllen, wenn noch nichts eingetragen wurde:
-    if (weightGrams === "" || weightGrams === 0) {
-      const w = suggestedWeightFor(v)
-      setWeightGrams(w)
-    }
+  // Scanner -> EAN füllen -> Lookup
+  function handleBarcodeDetected(code: string) {
+    if (upcRef.current) upcRef.current.value = code;
+    setScannerOpen(false);
+    lookupDiscogs(code);
   }
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault()
+  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setMsg(null);
 
-    // Minimal-Validierung
-    if (!title || !slug || !priceEUR || !categoryCode) {
-      alert("Bitte Titel, Slug, Preis und Kategorie ausfüllen.")
-      return
+    const form = e.currentTarget;
+    const fd = new FormData(form);
+
+    const payload: ProductPayload = {
+      slug: String(fd.get("slug") || "").trim(),
+      productName: productName.trim() || undefined,
+      subtitle: strOrNull(fd.get("subtitle")),
+      artist: artist.trim() || undefined,
+      trackTitle: trackTitle.trim() || undefined,
+      priceEUR: Number(fd.get("priceEUR") || 0),
+      currency: String(fd.get("currency") || "EUR"),
+      categoryCode: category,
+      format: format.trim() || undefined,
+      year: numOrNull(fd.get("year")),
+      upcEan: strOrNull(fd.get("upcEan")),
+      catalogNumber: strOrNull(fd.get("catalogNumber")),
+      condition: strOrNull(fd.get("condition")),
+      weightGrams: weight ? Number(weight) : undefined,
+      isDigital: fd.get("isDigital") === "on",
+      sku: strOrNull(fd.get("sku")),
+      active: fd.get("active") === "on",
+      image: images[0] || String(fd.get("image") || ""),
+      images: images.length ? images : safeJsonArray(String(fd.get("imagesJson") || "[]")),
+    };
+
+    if (!payload.slug) return setMsg("Slug ist Pflicht.");
+    if (!payload.image) return setMsg("Bitte mindestens ein Bild hinzufügen.");
+
+    setBusy(true);
+    try {
+      const adminKey =
+        (typeof window !== "undefined" && localStorage.getItem("admin_key")) ||
+        process.env.NEXT_PUBLIC_ADMIN_TOKEN ||
+        "";
+
+      const res = await fetch("/api/admin/products", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-key": adminKey },
+        body: JSON.stringify(payload),
+      });
+
+      const text = await res.text();
+      let j: any; try { j = JSON.parse(text); } catch { j = { error: text || "Unknown server error" }; }
+      if (!res.ok) throw new Error(j?.error || "Fehler beim Speichern");
+
+      // ✔ Reset + Weiterleitung
+      try { formRef.current?.reset(); } catch {}
+      setImages([]);
+      setFilenames([]);
+      setProductName(""); setArtist(""); setTrackTitle("");
+      setCategory("ss"); setFormat(""); setWeight("");
+      setCondition(""); setSlugTouched(false);
+      if (priceRef.current) priceRef.current.value = "";
+
+      setMsg("Gespeichert ✔");
+      router.push("/admin/products"); // Redirect zur Liste
+    } catch (err: any) {
+      setMsg(err?.message || "Fehler");
+    } finally {
+      setBusy(false);
     }
-
-    // Dummy: Hier später POST an /api/admin/products (wird separat gebaut)
-    const payload = {
-      title,
-      slug,
-      priceEUR: Number(priceEUR),
-      categoryCode,
-      format: format || undefined,
-      artist: artist || undefined,
-      releaseTitle: releaseTitle || undefined,
-      year: year ? Number(year) : undefined,
-      upc: upc || undefined,
-      articleNumber: articleNumber || undefined,
-      condition: condition || undefined,
-      weightGrams: weightGrams === "" ? undefined : Number(weightGrams),
-      images: images.filter(Boolean),
-      active,
-    }
-
-    console.log("DEBUG new product:", payload)
-    alert("Voransicht in Console. API folgt. (Build sollte jetzt passen.)")
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-6 max-w-3xl">
-      <div className="grid sm:grid-cols-2 gap-4">
-        <label className="block">
-          <span className="text-sm text-white/70">Produktname *</span>
-          <input
-            className="mt-1 w-full rounded-md bg-white/10 border border-white/10 px-3 py-2"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            onBlur={(e) => autoSlug(e.target.value)}
-            placeholder="z.B. Blutonium Boy – Hardstyle Sample Pack"
-          />
-        </label>
+    <form ref={formRef} onSubmit={onSubmit} className="space-y-6">
+      {/* Bilder */}
+      <ImageDrop
+        max={5}
+        onChange={(arr, names) => {
+          setImages(arr);
+          setFilenames(names || []);
+          if ((!artist && !trackTitle && !productName) && names && names[0]) {
+            const base = names[0].replace(/\.[a-z0-9]+$/i, "").trim();
+            const generic = /^photo[-_]\d+$/i.test(base) || /^\d+$/.test(base);
+            if (!generic) {
+              const parts = base.split(/\s[-–—]\s|[-–—]/);
+              if (parts.length >= 2) {
+                const a = parts[0]?.trim();
+                const t = parts.slice(1).join(" - ").trim();
+                if (a && t) {
+                  setArtist(a);
+                  setTrackTitle(t);
+                  setProductName(`${a} – ${t}`);
+                }
+              }
+            }
+          }
+        }}
+      />
 
-        <label className="block">
-          <span className="text-sm text-white/70">Slug *</span>
+      {/* Felder */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <L label="Slug* (auto — du kannst überschreiben)">
           <input
-            className="mt-1 w-full rounded-md bg-white/10 border border-white/10 px-3 py-2"
-            value={slug}
-            onChange={(e) => setSlug(e.target.value)}
-            placeholder="blutonium-sample-pack"
+            name="slug"
+            className="input"
+            placeholder="z. B. artist-title-2024"
+            onInput={() => setSlugTouched(true)}
+            required
           />
-        </label>
+        </L>
+        <L label="Produktname (optional)">
+          <input className="input" value={productName} onChange={(e) => setProductName(e.target.value)} placeholder="Artist – Titel" />
+        </L>
+        <L label="Subtitle">
+          <input name="subtitle" className="input" placeholder="zusätzliche Info" />
+        </L>
+        <L label="Artist">
+          <input className="input" value={artist} onChange={(e) => setArtist(e.target.value)} />
+        </L>
+        <L label="TrackTitle">
+          <input className="input" value={trackTitle} onChange={(e) => setTrackTitle(e.target.value)} />
+        </L>
 
-        <label className="block">
-          <span className="text-sm text-white/70">Preis (€) *</span>
-          <input
-            type="number"
-            min={0}
-            step="0.01"
-            className="mt-1 w-full rounded-md bg-white/10 border border-white/10 px-3 py-2"
-            value={priceEUR}
-            onChange={(e) => setPriceEUR(e.target.value === "" ? "" : Number(e.target.value))}
-            placeholder="z.B. 39.00"
-          />
-        </label>
+        <L label="Preis (EUR)*">
+          <input ref={priceRef} name="priceEUR" type="number" step="0.01" min="0" className="input" required />
+        </L>
+        <L label="Währung">
+          <input name="currency" className="input" defaultValue="EUR" />
+        </L>
 
-        <label className="block">
-          <span className="text-sm text-white/70">Kategorie *</span>
-          <select
-            className="mt-1 w-full rounded-md bg-white/10 border border-white/10 px-3 py-2"
-            value={categoryCode}
-            onChange={(e) => setCategoryCode(e.target.value as any)}
-          >
-            <option value="">— auswählen —</option>
-            {CATEGORY_OPTIONS.map(o => (
-              <option key={o.code} value={o.code}>{o.label} ({o.code})</option>
-            ))}
+        <L label="Kategorie-Code*">
+          <select name="categoryCode" className="input" value={category} onChange={(e) => setCategory(e.target.value)} required>
+            <option value="bv">Blutonium Vinyls</option>
+            <option value="sv">Sonstige Vinyls</option>
+            <option value="bcd">Blutonium CDs</option>
+            <option value="scd">Sonstige CDs</option>
+            <option value="bhs">Blutonium Hardstyle Samples</option>
+            <option value="ss">Sonstiges & Specials</option>
           </select>
-        </label>
+        </L>
 
-        <label className="block">
-          <span className="text-sm text-white/70">Format</span>
-          <select
-            className="mt-1 w-full rounded-md bg-white/10 border border-white/10 px-3 py-2"
-            value={format}
-            onChange={(e) => onFormatChange(e.target.value)}
-          >
-            <option value="">— optional —</option>
-            {FORMAT_OPTIONS.map(f => (
-              <option key={f} value={f}>{f}</option>
-            ))}
-          </select>
-        </label>
+        <L label="Format">
+          <input name="format" className="input" placeholder="z. B. Vinyl 12''" value={format} onChange={(e) => setFormat(e.target.value)} />
+        </L>
+        <L label="Jahr">
+          <input name="year" type="number" className="input" />
+        </L>
 
-        <label className="block">
-          <span className="text-sm text-white/70">Zustand</span>
+        {/* UPC/EAN + Scanner */}
+        <L label="UPC/EAN">
+          <div className="flex gap-2">
+            <input ref={upcRef} name="upcEan" className="input flex-1" />
+            <button
+              type="button"
+              className="px-3 rounded bg-cyan-600 hover:bg-cyan-500 text-black font-semibold"
+              onClick={() => setScannerOpen(true)}
+            >
+              Scanner
+            </button>
+          </div>
+        </L>
+
+        <L label="Katalognummer">
+          <input name="catalogNumber" className="input" />
+        </L>
+
+        <L label="Zustand*">
           <select
-            className="mt-1 w-full rounded-md bg-white/10 border border-white/10 px-3 py-2"
+            name="condition"
+            className="input"
             value={condition}
-            onChange={(e) => setCondition(e.target.value as any)}
+            onChange={(e) => setCondition(e.target.value)}
+            required
           >
-            <option value="">— optional —</option>
-            {CONDITION_OPTIONS.map(c => (
-              <option key={c} value={c}>{c}</option>
-            ))}
+            <option value="" disabled>neu / gebraucht / …</option>
+            <option value="neu">Neu</option>
+            <option value="neuwertig">Neuwertig</option>
+            <option value="ok">Gebraucht – ok</option>
+            <option value="gebraucht">Gebraucht</option>
+            <option value="stark">Stark gebraucht</option>
           </select>
-        </label>
+        </L>
 
-        <label className="block">
-          <span className="text-sm text-white/70">Artist (auto-erk.)</span>
-          <input
-            className="mt-1 w-full rounded-md bg-white/10 border border-white/10 px-3 py-2"
-            value={artist}
-            onChange={(e) => setArtist(e.target.value)}
-            placeholder="optional"
-          />
-        </label>
-
-        <label className="block">
-          <span className="text-sm text-white/70">Titel (auto-erk.)</span>
-          <input
-            className="mt-1 w-full rounded-md bg-white/10 border border-white/10 px-3 py-2"
-            value={releaseTitle}
-            onChange={(e) => setReleaseTitle(e.target.value)}
-            placeholder="optional"
-          />
-        </label>
-
-        <label className="block">
-          <span className="text-sm text-white/70">Erscheinungsjahr</span>
-          <input
-            type="number"
-            className="mt-1 w-full rounded-md bg-white/10 border border-white/10 px-3 py-2"
-            value={year}
-            onChange={(e) => setYear(e.target.value === "" ? "" : Number(e.target.value))}
-            placeholder="z.B. 2006"
-          />
-        </label>
-
-        <label className="block">
-          <span className="text-sm text-white/70">UPC/EAN</span>
-          <input
-            className="mt-1 w-full rounded-md bg-white/10 border border-white/10 px-3 py-2"
-            value={upc}
-            onChange={(e) => setUpc(e.target.value)}
-            placeholder="optional"
-          />
-        </label>
-
-        <label className="block">
-          <span className="text-sm text-white/70">Artikelnummer</span>
-          <input
-            className="mt-1 w-full rounded-md bg-white/10 border border-white/10 px-3 py-2"
-            value={articleNumber}
-            onChange={(e) => setArticleNumber(e.target.value)}
-            placeholder="wird später automatisch vergeben"
-          />
-        </label>
-
-        <label className="block">
-          <span className="text-sm text-white/70">Gewicht (Gramm)</span>
-          <input
-            type="number"
-            min={0}
-            step="1"
-            className="mt-1 w-full rounded-md bg-white/10 border border-white/10 px-3 py-2"
-            value={weightGrams}
-            onChange={(e) => setWeightGrams(e.target.value === "" ? "" : Number(e.target.value))}
-            placeholder="auto je nach Format oder manuell"
-          />
-        </label>
+        <L label="Gewicht (g)">
+          <input name="weightGrams" type="number" className="input" value={weight} onChange={(e) => setWeight(e.target.value)} />
+        </L>
+        <L label="SKU">
+          <input name="sku" className="input" />
+        </L>
+        <L label="Aktiv">
+          <input name="active" type="checkbox" defaultChecked />
+        </L>
+        <L label="Digital?">
+          <input name="isDigital" type="checkbox" />
+        </L>
       </div>
 
-      <div className="space-y-2">
-        <div className="text-sm text-white/70">Bilder (bis zu 5 URLs – Upload folgt)</div>
-        <div className="grid sm:grid-cols-2 gap-3">
-          {images.map((src, i) => (
-            <input
-              key={i}
-              className="rounded-md bg-white/10 border border-white/10 px-3 py-2"
-              value={src}
-              onChange={(e) => {
-                const copy = [...images]
-                copy[i] = e.target.value
-                setImages(copy)
-              }}
-              placeholder={`Bild ${i + 1} URL (optional)`}
-            />
-          ))}
-        </div>
-      </div>
+      {msg && <div className="text-sm">{msg}</div>}
 
-      <div className="flex items-center gap-3">
-        <label className="inline-flex items-center gap-2">
-          <input
-            type="checkbox"
-            checked={active}
-            onChange={(e) => setActive(e.target.checked)}
-          />
-          <span className="text-sm">Aktiv</span>
-        </label>
+      <button
+        type="submit"
+        disabled={busy}
+        className="px-4 py-2 rounded bg-cyan-500 hover:bg-cyan-400 text-black font-semibold disabled:opacity-60"
+      >
+        {busy ? "Speichere …" : "Speichern"}
+      </button>
 
-        <button
-          type="submit"
-          className="ml-auto rounded-md bg-cyan-500 hover:bg-cyan-400 text-black font-semibold px-4 py-2"
-        >
-          Speichern (Demo)
-        </button>
-      </div>
+      {/* Scanner Overlay */}
+      {scannerOpen && (
+        <BarcodeScanner
+          onDetected={(code) => handleBarcodeDetected(code)}
+          onClose={() => setScannerOpen(false)}
+          formats={["ean_13", "ean_8", "upc_a", "upc_e", "code_128"]}
+        />
+      )}
+
+      <style jsx>{`
+        .input {
+          width: 100%;
+          border-radius: 0.5rem;
+          padding: 0.5rem 0.75rem;
+          background: rgba(255,255,255,0.05);
+          border: 1px solid rgba(255,255,255,0.12);
+        }
+      `}</style>
     </form>
-  )
+  );
+}
+
+function L({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block">
+      <div className="text-sm mb-1 opacity-70">{label}</div>
+      {children}
+    </label>
+  );
+}
+
+function safeJsonArray(s: string): string[] {
+  try {
+    const a = JSON.parse(s);
+    return Array.isArray(a) ? a : [];
+  } catch {
+    return [];
+  }
 }

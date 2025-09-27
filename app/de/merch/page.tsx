@@ -1,318 +1,294 @@
-"use client"
+// app/de/merch/page.tsx
+"use client";
 
-import { useEffect, useMemo, useState } from "react"
-import type { Product } from "../../../lib/types"
-import {
-  CARRIERS,
-  type Carrier,
-  computeShipping,
-  computeMerchSubtotalCents,
-  resolveZone,
-  type CartItem,
-} from "../../../lib/shipping"
+import { useEffect, useMemo, useState } from "react";
 
-type Cart = Record<string, CartItem>
+export const dynamic = "force-dynamic";
 
-function formatEUR(n: number) {
-  try { return new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" }).format(n) }
-  catch { return `${n.toFixed(2)} €` }
+type CartItem = { id: string; qty: number };
+type Cart = Record<string, CartItem>;
+
+type Product = {
+  id: string;
+  slug: string;
+  productName?: string | null;
+  artist?: string | null;
+  trackTitle?: string | null;
+  subtitle?: string | null;
+  image?: string | null;
+  priceEUR?: number | null;
+  currency?: string | null;
+  categoryCode?: string | null;
+  year?: number | null;
+  weightGrams?: number | null;
+};
+
+type RegionCode = "AT" | "EU" | "WORLD";
+
+// --- gleiche Logik wie Server (leichtgewichtige Kopie)
+function getFreeMin(): number {
+  const raw = process.env.NEXT_PUBLIC_FREE_SHIP_MIN || process.env.SHOP_FREE_SHIPPING_MIN;
+  const n = raw ? Number(raw) : NaN;
+  return Number.isFinite(n) ? n : 0;
+}
+function estimateShipping(region: RegionCode, weight: number, subtotal: number): { label: string; amount: number; free: boolean } {
+  const freeMin = getFreeMin();
+  const free = freeMin > 0 && subtotal >= freeMin;
+
+  // einfache Spiegellogik zu lib/shipping.ts (nur günstigste Option)
+  const T: Record<RegionCode, Array<{ max: number; post: number; dpd?: number; gls?: number }>> = {
+    AT: [
+      { max: 500, post: 4.5 },
+      { max: 2000, post: 6.9, dpd: 6.5, gls: 6.9 },
+      { max: 5000, post: 8.9, dpd: 8.5, gls: 8.9 },
+      { max: 10000, post: 11.9, dpd: 10.9, gls: 11.9 },
+    ],
+    EU: [
+      { max: 500, post: 9.9 },
+      { max: 2000, post: 14.9, dpd: 12.9, gls: 13.9 },
+      { max: 5000, post: 19.9, dpd: 17.9, gls: 18.9 },
+      { max: 10000, post: 29.9, dpd: 24.9, gls: 26.9 },
+    ],
+    WORLD: [
+      { max: 500, post: 14.9 },
+      { max: 2000, post: 24.9 },
+      { max: 5000, post: 39.9 },
+      { max: 10000, post: 59.9 },
+    ],
+  };
+
+  const row = (T[region] || []).find(r => r.max >= Math.max(1, weight));
+  if (!row) return { label: "Versand wird nachträglich berechnet", amount: 0, free: false };
+
+  const prices = [row.post, row.dpd, row.gls].filter((v) => typeof v === "number") as number[];
+  const cheapest = prices.length ? Math.min(...prices) : row.post;
+  return { label: free ? "Versand – frei" : "Versand", amount: free ? 0 : cheapest, free };
 }
 
-const FREE_SHIPPING_MIN_EUR = 100
-const DEFAULT_COUNTRY = "AT" as const
-const DEFAULT_CARRIER: Carrier = "POST_DHL"
+function formatEUR(n: number | null | undefined) {
+  if (n == null) return "—";
+  return `${n.toFixed(2)} €`;
+}
 
 export default function MerchPage() {
-  const [products, setProducts] = useState<Product[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [cart, setCart] = useState<Cart>({})
+  const [cart, setCart] = useState<Cart>({});
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [region, setRegion] = useState<RegionCode>("AT");
 
-  const [country, setCountry] = useState<string>(DEFAULT_COUNTRY)
-  const [carrier, setCarrier] = useState<Carrier>(DEFAULT_CARRIER)
-  const [busy, setBusy] = useState(false)
-
-  // Laden
-  useEffect(() => {
-    const base = typeof window === "undefined" ? "" : window.location.origin
-    fetch(`${base}/api/products`, { cache: "no-store" })
-      .then(async r => {
-        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`)
-        const j = await r.json()
-        setProducts(j.products || [])
-      })
-      .catch(e => setError(e.message || "Fehler beim Laden"))
-  }, [])
-
-  // Cart aus LocalStorage
+  // 1) Cart aus LocalStorage laden (clientseitig)
   useEffect(() => {
     try {
-      const raw = localStorage.getItem("cart")
-      if (raw) setCart(JSON.parse(raw))
-    } catch {}
-  }, [])
+      const raw = localStorage.getItem("cart");
+      const parsed = raw ? (JSON.parse(raw) as Cart) : {};
+      setCart(parsed);
+    } catch (e) {
+      console.error("Fehler beim Lesen des Carts:", e);
+      setCart({});
+    }
+  }, []);
 
-  // Cart speichern
+  // 2) Produktliste laden und auf Cart-IDs filtern
   useEffect(() => {
-    try { localStorage.setItem("cart", JSON.stringify(cart)) } catch {}
-  }, [cart])
+    let done = false;
+    async function load() {
+      try {
+        setLoading(true);
+        const r = await fetch("/api/products", { cache: "no-store" });
+        const j = await r.json();
+        const all: Product[] = Array.isArray(j?.products) ? j.products : [];
+        const ids = new Set(Object.keys(cart));
+        const filtered = all.filter((p) => ids.has(p.id));
+        if (!done) setProducts(filtered);
+      } catch (e) {
+        console.error("Produkte laden fehlgeschlagen:", e);
+        if (!done) setProducts([]);
+      } finally {
+        if (!done) setLoading(false);
+      }
+    }
+    load();
+    return () => { done = true; };
+  }, [cart]);
 
-  function addToCart(id: string, qty = 1) {
-    setCart(prev => {
-      const cur = prev[id]?.qty || 0
-      return { ...prev, [id]: { id, qty: Math.max(1, cur + qty) } }
-    })
-  }
+  // Summen
+  const subtotal = useMemo(() => {
+    return products.reduce((sum, p) => {
+      const qty = cart[p.id]?.qty || 0;
+      const price = typeof p.priceEUR === "number" ? p.priceEUR : 0;
+      return sum + price * qty;
+    }, 0);
+  }, [products, cart]);
+
+  const totalWeight = useMemo(() => {
+    return products.reduce((sum, p) => {
+      const qty = cart[p.id]?.qty || 0;
+      const w = typeof p.weightGrams === "number" ? p.weightGrams : 0;
+      return sum + Math.max(0, w) * qty;
+    }, 0);
+  }, [products, cart]);
+
+  const shippingPreview = useMemo(() => estimateShipping(region, totalWeight, subtotal), [region, totalWeight, subtotal]);
+
   function setQty(id: string, qty: number) {
-    setCart(prev => ({ ...prev, [id]: { id, qty: Math.max(1, Math.floor(qty || 1)) } }))
+    setCart((prev) => {
+      const next: Cart = { ...prev };
+      if (qty <= 0) {
+        delete next[id];
+      } else {
+        next[id] = { id, qty };
+      }
+      localStorage.setItem("cart", JSON.stringify(next));
+      return next;
+    });
   }
-  function removeFromCart(id: string) {
-    setCart(prev => {
-      const cp = { ...prev }
-      delete cp[id]
-      return cp
-    })
+
+  function clearCart() {
+    const empty: Cart = {};
+    localStorage.setItem("cart", JSON.stringify(empty));
+    setCart(empty);
   }
-  function clearCart() { setCart({}) }
-
-  const cartList = useMemo(() => Object.values(cart), [cart])
-  const productMap = useMemo(
-    () => new Map((products || []).map(p => [p.id, p] as const)),
-    [products]
-  )
-
-  const subtotalEUR = useMemo(() => {
-    const cents = computeMerchSubtotalCents(cartList, productMap)
-    return cents / 100
-  }, [cartList, productMap])
-
-  const ship = useMemo(() => {
-    return computeShipping({
-      items: cartList,
-      products: productMap,
-      destinationCountry: country,
-      carrier,
-      freeShippingMinEUR: FREE_SHIPPING_MIN_EUR,
-    })
-  }, [cartList, productMap, country, carrier])
-
-  const shippingEUR = ship.shippingCents / 100
-  const totalEUR = subtotalEUR + shippingEUR
-  const missingForFree = Math.max(0, (ship.thresholdCents / 100) - subtotalEUR)
 
   async function goCheckout() {
     try {
-      setBusy(true)
-      const base = typeof window === "undefined" ? "" : window.location.origin
-      const res = await fetch(`${base}/api/checkout`, {
+      const r = await fetch("/api/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items: cartList,
-          country,
-          carrier,
-        }),
-      })
-      const j = await res.json()
-      if (!res.ok) throw new Error(j?.error || `Checkout failed (${res.status})`)
-      if (j?.url) window.location.href = j.url
+        cache: "no-store",
+        body: JSON.stringify({ items: cart, region }),
+      });
+      const j = await r.json();
+      if (j?.url) {
+        window.location.assign(j.url);
+      } else {
+        alert("Checkout fehlgeschlagen: " + (j?.error || "Unbekannter Fehler"));
+      }
     } catch (e: any) {
-      alert(e?.message || "Konnte Checkout nicht starten.")
-    } finally {
-      setBusy(false)
+      alert("Checkout Fehler: " + (e?.message || e));
     }
   }
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-10">
-      <header className="mb-6">
-        <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight">
-          Merchandise &amp; Classics
-        </h1>
-        <p className="mt-3 text-white/70">
-          Hoodie, Shirts & CDs. Versandkosten werden live berechnet (inkl. versandfrei ab {formatEUR(FREE_SHIPPING_MIN_EUR)}).
-        </p>
-      </header>
+      <h1 className="text-3xl sm:text-4xl font-extrabold">Warenkorb</h1>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Produkte */}
-        <section className="lg:col-span-2">
-          {!products && !error && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="card animate-pulse">
-                  <div className="w-full aspect-square rounded-xl bg-white/10" />
-                  <div className="h-4 w-2/3 mt-4 bg-white/10 rounded" />
-                  <div className="h-3 w-1/3 mt-2 bg-white/10 rounded" />
-                </div>
-              ))}
-            </div>
-          )}
-          {error && <div className="text-red-300">Fehler: {error}</div>}
-          {products && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {products.map(p => (
-                <article key={p.id} className="card">
-                  <div className="aspect-square w-full overflow-hidden rounded-xl bg-white/10">
+      {/* Region-Auswahl */}
+      <div className="mt-3 flex items-center gap-3">
+        <div className="text-sm opacity-70">Lieferregion:</div>
+        <select
+          className="bg-white/10 border border-white/10 rounded px-2 py-1"
+          value={region}
+          onChange={(e) => setRegion(e.target.value as RegionCode)}
+        >
+          <option value="AT">Österreich</option>
+          <option value="EU">EU (ohne AT)</option>
+          <option value="WORLD">Weltweit</option>
+        </select>
+      </div>
+
+      {loading && <div className="mt-6 text-white/70">Lade …</div>}
+
+      {!loading && products.length === 0 && (
+        <div className="mt-6 text-white/70">Dein Warenkorb ist leer.</div>
+      )}
+
+      {!loading && products.length > 0 && (
+        <div className="mt-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Liste */}
+          <div className="lg:col-span-2 space-y-4">
+            {products.map((p) => {
+              const qty = cart[p.id]?.qty || 0;
+              const title =
+                p.productName ??
+                `${p.artist ?? ""}${p.artist && p.trackTitle ? " – " : ""}${p.trackTitle ?? ""}` ||
+                p.slug;
+
+              return (
+                <div key={p.id} className="flex gap-4 p-3 rounded border border-white/10 bg-white/5">
+                  <div className="w-24 h-24 bg-white/10 shrink-0">
                     <img
-                      src={p.image}
-                      alt={p.title}
+                      src={p.image || "/shop/placeholder-500.jpg"}
+                      alt={title}
                       className="w-full h-full object-cover"
-                      loading="lazy"
                     />
                   </div>
-                  <h2 className="mt-3 text-lg font-semibold">{p.title}</h2>
-                  {p.subtitle && <p className="text-white/70 text-sm">{p.subtitle}</p>}
-                  <div className="mt-2 font-semibold">{formatEUR(p.priceEUR)}</div>
+                  <div className="flex-1">
+                    <div className="font-semibold">{title}</div>
+                    {p.subtitle && <div className="text-sm text-white/60">{p.subtitle}</div>}
+                    <div className="text-sm text-white/60 mt-1">
+                      {String(p.categoryCode || "").toUpperCase()} {p.year ? `· ${p.year}` : ""}
+                    </div>
 
-                  {p.isDigital && (
-                    <div className="mt-1 text-xs text-white/60">Digitales Produkt – kein Versand nötig</div>
-                  )}
-                  {!p.isDigital && (p.weightGrams ?? 0) === 0 && (
-                    <div className="mt-1 text-xs text-white/60">🚚 Versandkostenfrei</div>
-                  )}
-
-                  <div className="mt-3 flex gap-2">
-                    <button className="btn" onClick={() => addToCart(p.id, 1)}>In den Warenkorb</button>
-                    <a href={`/de/merch/${p.slug}`} className="btn">Details</a>
+                    <div className="mt-2 flex items-center gap-3">
+                      <div className="font-bold">{formatEUR(p.priceEUR ?? 0)}</div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          className="px-2 py-1 rounded bg-white/10 hover:bg-white/20"
+                          onClick={() => setQty(p.id, Math.max(0, qty - 1))}
+                        >
+                          −
+                        </button>
+                        <div className="min-w-8 text-center">{qty}</div>
+                        <button
+                          className="px-2 py-1 rounded bg-white/10 hover:bg-white/20"
+                          onClick={() => setQty(p.id, qty + 1)}
+                        >
+                          +
+                        </button>
+                        <button
+                          className="ml-2 px-2 py-1 rounded bg-red-500/80 hover:bg-red-500 text-black font-semibold"
+                          onClick={() => setQty(p.id, 0)}
+                        >
+                          Entfernen
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
-
-        {/* Warenkorb + Versand-Vorschau */}
-        <aside className="card h-fit sticky top-24">
-          <h3 className="text-xl font-bold">Warenkorb</h3>
-
-          {/* Versand-Block */}
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <div>
-              <label className="text-xs text-white/60">Lieferland</label>
-              <select
-                className="mt-1 w-full rounded bg-black/30 border border-white/10 px-2 py-1"
-                value={country}
-                onChange={(e) => setCountry(e.target.value)}
-              >
-                <option value="AT">Österreich</option>
-                <option value="DE">Deutschland</option>
-                <option value="CH">Schweiz</option>
-                <option disabled>──────────</option>
-                <option value="BE">Belgien</option>
-                <option value="NL">Niederlande</option>
-                <option value="LU">Luxemburg</option>
-                <option value="IT">Italien</option>
-                <option value="FR">Frankreich</option>
-                <option value="ES">Spanien</option>
-                <option value="PT">Portugal</option>
-                <option value="PL">Polen</option>
-                <option value="CZ">Tschechien</option>
-                <option value="SK">Slowakei</option>
-                <option value="SI">Slowenien</option>
-                <option value="HU">Ungarn</option>
-                <option value="RO">Rumänien</option>
-                <option value="BG">Bulgarien</option>
-                <option value="GR">Griechenland</option>
-                <option value="IE">Irland</option>
-                <option value="DK">Dänemark</option>
-                <option value="SE">Schweden</option>
-                <option value="FI">Finnland</option>
-                <option value="NO">Norwegen</option>
-                <option disabled>──────────</option>
-                <option value="US">USA</option>
-                <option value="CA">Kanada</option>
-                <option value="AU">Australien</option>
-                <option value="NZ">Neuseeland</option>
-                <option value="JP">Japan</option>
-                <option value="BR">Brasilien</option>
-                <option value="MX">Mexiko</option>
-              </select>
-              <div className="text-xs text-white/50 mt-1">
-                Zone: {resolveZone(country)}
-              </div>
-            </div>
-            <div>
-              <label className="text-xs text-white/60">Versanddienst</label>
-              <select
-                className="mt-1 w-full rounded bg-black/30 border border-white/10 px-2 py-1"
-                value={carrier}
-                onChange={(e) => setCarrier(e.target.value as Carrier)}
-              >
-                {Object.entries(CARRIERS).map(([key, label]) => (
-                  <option key={key} value={key}>{label}</option>
-                ))}
-              </select>
-            </div>
+                </div>
+              );
+            })}
           </div>
 
-          {cartList.length === 0 && (
-            <p className="mt-3 text-white/60 text-sm">Noch leer.</p>
-          )}
+          {/* Zusammenfassung */}
+          <aside className="lg:col-span-1 p-4 rounded border border-white/10 bg-white/5">
+            <div className="flex items-center justify-between">
+              <div>Zwischensumme</div>
+              <div className="font-bold">{formatEUR(subtotal)}</div>
+            </div>
 
-          {cartList.length > 0 && (
-            <>
-              <div className="mt-3 space-y-3">
-                {cartList.map(item => {
-                  const p = productMap.get(item.id)
-                  if (!p) return null
-                  return (
-                    <div key={item.id} className="flex items-center gap-3">
-                      <img src={p.image} alt="" className="w-14 h-14 rounded-lg object-cover" />
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate">{p.title}</div>
-                        <div className="text-white/60 text-sm">{formatEUR(p.priceEUR)}</div>
-                      </div>
-                      <input
-                        type="number"
-                        min={1}
-                        className="w-16 rounded bg-black/30 border border-white/10 px-2 py-1"
-                        value={item.qty}
-                        onChange={e => setQty(item.id, Number(e.target.value))}
-                      />
-                      <button className="btn" onClick={() => removeFromCart(item.id)}>×</button>
-                    </div>
-                  )
-                })}
+            <div className="mt-2 flex items-center justify-between">
+              <div>{shippingPreview.label}</div>
+              <div className="font-bold">{formatEUR(shippingPreview.amount)}</div>
+            </div>
+
+            <div className="mt-2 flex items-center justify-between">
+              <div>Gesamt</div>
+              <div className="font-extrabold">
+                {formatEUR(subtotal + shippingPreview.amount)}
               </div>
+            </div>
 
-              <div className="pt-3 mt-4 border-t border-white/10 space-y-1 text-sm">
-                <div className="flex items-center justify-between">
-                  <span>Zwischensumme</span>
-                  <span className="font-semibold">{formatEUR(subtotalEUR)}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Versand</span>
-                  <span className="font-semibold">
-                    {ship.freeApplied ? "0,00 € (versandfrei)" : formatEUR(shippingEUR)}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between text-base font-bold pt-1 border-t border-white/10 mt-2">
-                  <span>Gesamt</span>
-                  <span>{formatEUR(totalEUR)}</span>
-                </div>
+            <div className="text-sm text-white/60 mt-1">
+              Versand & Steuern final im Checkout. Freigrenze:{" "}
+              {getFreeMin() > 0 ? `${getFreeMin().toFixed(2)} €` : "keine"}
+            </div>
 
-                {!ship.freeApplied && ship.thresholdCents > 0 && missingForFree > 0 && (
-                  <div className="mt-2 text-xs text-white/70">
-                    Noch {formatEUR(missingForFree)} bis <b>versandkostenfrei ab {formatEUR(ship.thresholdCents/100)}</b>.
-                  </div>
-                )}
-                {ship.freeApplied && (
-                  <div className="mt-2 text-xs text-emerald-300">
-                    ✅ Versandkostenfrei (ab {formatEUR(ship.thresholdCents/100)})
-                  </div>
-                )}
-              </div>
+            <button
+              className="mt-4 w-full px-4 py-2 rounded bg-cyan-500 hover:bg-cyan-400 text-black font-semibold"
+              onClick={goCheckout}
+            >
+              Zur Kasse
+            </button>
 
-              <div className="flex gap-2 mt-3">
-                <button className="btn flex-1" onClick={clearCart}>Leeren</button>
-                <button className="btn flex-1" onClick={goCheckout} disabled={busy}>
-                  {busy ? "Weiter zur Kasse …" : "Zur Kasse"}
-                </button>
-              </div>
-            </>
-          )}
-        </aside>
-      </div>
+            <button
+              className="mt-2 w-full px-4 py-2 rounded bg-white/10 hover:bg-white/20"
+              onClick={clearCart}
+            >
+              Warenkorb leeren
+            </button>
+          </aside>
+        </div>
+      )}
     </div>
-  )
+  );
 }

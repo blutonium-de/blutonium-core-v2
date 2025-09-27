@@ -1,34 +1,32 @@
-// app/middleware.ts
-import { NextResponse } from "next/server"
-import type { NextRequest } from "next/server"
+// middleware.ts (Root!) — neutral + Cart/Merch explizit erlauben
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 
 export function middleware(req: NextRequest) {
-  const { pathname } = req.nextUrl
+  const { pathname } = req.nextUrl;
 
-  // Debug-/System-Routen unverändert durchlassen
-  if (pathname.startsWith("/__")) {
-    return NextResponse.next()
-  }
-
-  // nichts tun für Dateien, API, Assets
+  // Assets & APIs immer durchlassen
   if (
     pathname.startsWith("/api") ||
     pathname.startsWith("/_next") ||
     pathname.match(/\.(png|jpg|jpeg|gif|svg|ico|webp|txt|xml)$/)
-  ) {
-    return NextResponse.next()
+  ) return NextResponse.next();
+
+  // Cart-Flow nie anfassen
+  if (pathname.startsWith("/de/cart") || pathname.startsWith("/de/merch")) {
+    return NextResponse.next();
   }
 
-  // Root auf /de umleiten
+  // Root → /de
   if (pathname === "/") {
-    const url = req.nextUrl.clone()
-    url.pathname = "/de"
-    return NextResponse.redirect(url)
+    const url = req.nextUrl.clone();
+    url.pathname = "/de";
+    return NextResponse.redirect(url);
   }
 
-  return NextResponse.next()
+  return NextResponse.next();
 }
 
 export const config = {
   matcher: ["/((?!_next|.*\\..*|api).*)"],
-}
+};

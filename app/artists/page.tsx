@@ -1,65 +1,107 @@
-"use client"
-import { useEffect, useState } from "react"
+// app/artists/page.tsx
+import { prisma } from "../../lib/db";
 
-export default function ArtistsPage() {
-  const [artists, setArtists] = useState<any[]>([])
-  const [selected, setSelected] = useState<any | null>(null)
+export const dynamic = "force-dynamic";
 
-  useEffect(() => {
-    fetch("/api/artists")
-      .then((res) => res.json())
-      .then((data) => setArtists(data.artists))
-  }, [])
+type Artist = {
+  id: string;
+  name: string;
+  photo?: string | null;      // 500x500
+  bio?: string | null;
+  bookingEmail?: string | null;
+  instagram?: string | null;
+  spotify?: string | null;
+  soundcloud?: string | null;
+};
+
+export default async function ArtistsPage() {
+  // 👉 Passe select an deine Artist-Tabelle an.
+  const artists = (await prisma.artist.findMany({
+    orderBy: { name: "asc" },
+    select: {
+      id: true,
+      name: true,
+      photo: true,
+      bio: true,
+      bookingEmail: true,
+      instagram: true,
+      spotify: true,
+      soundcloud: true,
+    },
+  })) as Artist[];
 
   return (
-    <main className="min-h-screen bg-black text-white px-6 py-12">
-      <h1 className="text-3xl font-bold text-center mb-10">Blutonium Records Artists & Booking</h1>
+    <div className="mx-auto max-w-6xl px-4 py-10">
+      <h1 className="text-4xl sm:text-5xl font-extrabold">Artists &amp; Booking</h1>
+      <p className="opacity-70 mt-2">
+        Offizielle Blutonium Records Artists. Hör rein, folge ihnen und stelle
+        deine Booking-Anfrage.
+      </p>
 
-      {/* Artist Grid */}
-      <div className="grid gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+      <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
         {artists.map((a) => (
-          <div key={a.id} className="card p-4 flex flex-col items-center text-center">
-            {a.image && <img src={a.image} alt={a.name} className="w-32 h-32 object-cover rounded-full mb-4" />}
-            <h3 className="font-semibold">{a.name}</h3>
-            <div className="flex gap-3 mt-2 text-sm opacity-80">
-              <a href={a.spotifyUrl} target="_blank" rel="noreferrer" className="link">Spotify</a>
-              <a href={a.appleUrl} target="_blank" rel="noreferrer" className="link">Apple</a>
-              <a href={a.beatportUrl} target="_blank" rel="noreferrer" className="link">Beatport</a>
+          <article
+            key={a.id}
+            className="rounded-2xl bg-white/5 border border-white/10 p-3"
+          >
+            <div className="w-full h-[250px] rounded-xl overflow-hidden bg-black/30">
+              <img
+                src={a.photo || "/placeholder.png"}
+                alt={a.name}
+                width={500}
+                height={500}
+                className="w-full h-full object-cover"
+              />
             </div>
-            <button
-              onClick={() => setSelected(a)}
-              className="mt-4 px-4 py-2 rounded bg-cyan-500 hover:bg-cyan-600 text-black font-semibold"
-            >
-              Book Now
-            </button>
-          </div>
+            <div className="mt-3">
+              <div className="text-lg font-semibold">{a.name}</div>
+              {a.bio ? (
+                <div className="text-sm opacity-80 line-clamp-3 mt-1">{a.bio}</div>
+              ) : null}
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {a.spotify ? (
+                <a
+                  href={a.spotify}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-2 py-1 rounded bg-green-500/30 hover:bg-green-500/40 text-sm"
+                >
+                  Spotify
+                </a>
+              ) : null}
+              {a.soundcloud ? (
+                <a
+                  href={a.soundcloud}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-2 py-1 rounded bg-orange-500/30 hover:bg-orange-500/40 text-sm"
+                >
+                  SoundCloud
+                </a>
+              ) : null}
+              {a.instagram ? (
+                <a
+                  href={a.instagram}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-2 py-1 rounded bg-pink-500/30 hover:bg-pink-500/40 text-sm"
+                >
+                  Instagram
+                </a>
+              ) : null}
+              {a.bookingEmail ? (
+                <a
+                  href={`mailto:${a.bookingEmail}`}
+                  className="px-2 py-1 rounded bg-white/20 hover:bg-white/30 text-sm"
+                >
+                  Booking
+                </a>
+              ) : null}
+            </div>
+          </article>
         ))}
       </div>
-
-      {/* Booking Modal */}
-      {selected && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-          <div className="bg-zinc-900 p-6 rounded-xl w-full max-w-lg">
-            <h2 className="text-xl font-bold mb-4">Booking Request: {selected.name}</h2>
-            <form method="POST" action="/api/booking" className="flex flex-col gap-3">
-              <input type="hidden" name="artist" value={selected.name} />
-              <input type="text" name="firstName" placeholder="First Name" className="input" required />
-              <input type="text" name="lastName" placeholder="Last Name" className="input" required />
-              <input type="email" name="email" placeholder="Email" className="input" required />
-              <input type="text" name="company" placeholder="Company" className="input" />
-              <input type="text" name="event" placeholder="Event Name" className="input" required />
-              <input type="text" name="location" placeholder="Event Location" className="input" required />
-              <input type="date" name="date" className="input" required />
-              <input type="number" name="capacity" placeholder="Capacity (expected guests)" className="input" />
-              <textarea name="message" placeholder="Your message..." className="input h-24" required />
-              <div className="flex gap-3 mt-3">
-                <button type="submit" className="px-4 py-2 bg-cyan-500 text-black rounded">Send</button>
-                <button type="button" onClick={() => setSelected(null)} className="px-4 py-2 bg-zinc-700 rounded">Cancel</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-    </main>
-  )
+    </div>
+  );
 }

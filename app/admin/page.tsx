@@ -1,19 +1,54 @@
 // app/admin/page.tsx
-import AdminProductForm from "../../components/AdminProductForm"
+"use client";
 
-export const dynamic = "force-dynamic"
+import Link from "next/link";
 
-export default function AdminPage() {
+export const dynamic = "force-dynamic";
+
+export default function AdminHome() {
   return (
-    <div className="max-w-6xl mx-auto px-4 py-10">
-      <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">Admin · Produkt anlegen</h1>
-      <p className="mt-2 text-white/70">
-        Bilder-Upload & Auto-Erkennung folgen. Aktuell: Felder ausfüllen, „Speichern (Demo)“ schreibt in die Console.
+    <div className="max-w-5xl mx-auto px-4 py-12">
+      <h1 className="text-3xl sm:text-4xl font-extrabold">Backend · Admin</h1>
+      <p className="mt-2 opacity-70">
+        Wohin möchtest du?
       </p>
 
-      <div className="mt-8">
-        <AdminProductForm />
+      <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-6">
+        <Link
+          href="/admin/products"
+          className="group rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition-colors p-6 block"
+        >
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold">Produktliste</h2>
+            <span className="text-2xl">📋</span>
+          </div>
+          <p className="mt-2 opacity-70">
+            Alle Produkte ansehen, suchen, filtern, aktiv/inaktiv schalten,
+            bearbeiten oder löschen.
+          </p>
+          <div className="mt-4 inline-flex items-center gap-2 text-cyan-400 group-hover:underline">
+            Öffnen
+            <span>→</span>
+          </div>
+        </Link>
+
+        <Link
+          href="/admin/new"
+          className="group rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition-colors p-6 block"
+        >
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold">Neues Produkt anlegen</h2>
+            <span className="text-2xl">➕</span>
+          </div>
+          <p className="mt-2 opacity-70">
+            Neues Produkt mit Fotos/Barcode anlegen. Discogs-Lookup &amp; Auto-Felder inklusive.
+          </p>
+          <div className="mt-4 inline-flex items-center gap-2 text-cyan-400 group-hover:underline">
+            Öffnen
+            <span>→</span>
+          </div>
+        </Link>
       </div>
     </div>
-  )
+  );
 }

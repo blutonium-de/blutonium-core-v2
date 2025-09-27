@@ -1,139 +1,131 @@
 // app/api/checkout/route.ts
-import { NextResponse } from "next/server"
-import { stripe } from "../../../lib/stripe"
-import type Stripe from "stripe"
-import { computeShipping, resolveZone, type Carrier } from "../../../lib/shipping"
+import { NextResponse } from "next/server";
+import { prisma } from "../../../lib/db";
+import { stripe } from "../../../lib/stripe";
+import type Stripe from "stripe";
+import { chooseBestShipping, type RegionCode } from "../../../lib/shipping";
 
-type CartItem = { id: string; qty: number }
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-type Product = {
-  id: string
-  title: string
-  subtitle?: string
-  image: string
-  priceEUR: number
-  slug: string
-  weightGrams?: number | null
-  isDigital?: boolean
-}
-
-export const dynamic = "force-dynamic"
-
-// bisher: const FREE_SHIPPING_MIN_EUR = 100
-const FREE_SHIPPING_MIN_EUR =
-  Number(process.env.SHOP_FREE_SHIPPING_MIN ?? 150)
-
-async function loadProducts(origin: string): Promise<Product[]> {
-  const r = await fetch(`${origin}/api/products`, { cache: "no-store" })
-  if (!r.ok) throw new Error(`Products API ${r.status}`)
-  const j = await r.json()
-  return j.products || []
-}
+type Cart = Record<string, { id: string; qty: number }>;
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json()
-    const items: CartItem[] = Array.isArray(body?.items) ? body.items : []
-    const country: string = (body?.country || "AT").toUpperCase()
-    const carrier: Carrier = body?.carrier || "POST_DHL"
+    const origin = process.env.SITE_URL || req.headers.get("origin") || "http://localhost:3000";
 
-    if (items.length === 0) {
-      return NextResponse.json({ error: "Warenkorb leer" }, { status: 400 })
+    let body: unknown;
+    try { body = await req.json(); } catch { return NextResponse.json({ error: "Body muss JSON sein" }, { status: 415 }); }
+
+    const { items, region } = (body as { items?: Cart; region?: RegionCode }) || {};
+    if (!items || typeof items !== "object") {
+      return NextResponse.json({ error: "Ungültiger Warenkorb" }, { status: 400 });
     }
 
-    const origin = process.env.NEXT_PUBLIC_SITE_URL || new URL(req.url).origin
-    const products = await loadProducts(origin)
-    const map = new Map(products.map(p => [p.id, p] as const))
+    const regionCode: RegionCode = (region as RegionCode) || "AT";
 
-    // Stripe LineItems streng typisieren
-    const line_items: Stripe.Checkout.SessionCreateParams.LineItem[] = items
-      .map((ci) => {
-        const p = map.get(ci.id)
-        if (!p) return null
-        const qty = Math.max(1, Math.floor(ci.qty || 1))
-        return {
-          quantity: qty,
-          price_data: {
-            currency: "eur",
-            unit_amount: Math.round(p.priceEUR * 100),
-            product_data: {
-              name: p.title,
-              description: p.subtitle || undefined,
-              images: p.image ? [new URL(p.image, origin).toString()] : [],
-            },
-          },
-        }
-      })
-      .filter(Boolean) as Stripe.Checkout.SessionCreateParams.LineItem[]
-
-    if (line_items.length === 0) {
-      return NextResponse.json({ error: "Ungültige Artikel" }, { status: 400 })
+    const ids = Object.keys(items);
+    if (ids.length === 0) {
+      return NextResponse.json({ error: "Warenkorb ist leer" }, { status: 400 });
     }
 
-    // Versand berechnen
-    const ship = computeShipping({
-      items,
-      products: map,
-      destinationCountry: country,
-      carrier,
-      freeShippingMinEUR: FREE_SHIPPING_MIN_EUR,
-    })
+    const products = await prisma.product.findMany({ where: { id: { in: ids }, active: true } });
+    if (products.length === 0) {
+      return NextResponse.json({ error: "Keine Produkte gefunden" }, { status: 400 });
+    }
 
-    // Eine (fixe) Versandoption, exakt wie in der Vorschau berechnet
-    const shipping_options: Stripe.Checkout.SessionCreateParams.ShippingOption[] = [
-      {
-        shipping_rate_data: {
-          display_name: ship.freeApplied
-            ? `Versand (${carrier}) – versandfrei`
-            : `Versand (${carrier})`,
-          type: "fixed_amount",
-          fixed_amount: { amount: ship.shippingCents, currency: "eur" },
-          delivery_estimate: {
-            minimum: { unit: "business_day", value: 2 },
-            maximum: { unit: "business_day", value: 7 },
+    // Summen bilden
+    let subtotalEUR = 0;
+    let totalWeightGrams = 0;
+
+    for (const p of products) {
+      const qty = items[p.id]?.qty || 0;
+      if (qty <= 0) continue;
+      const price = typeof p.priceEUR === "number" ? p.priceEUR : 0;
+      const w = typeof p.weightGrams === "number" ? p.weightGrams : 0;
+      subtotalEUR += price * qty;
+      totalWeightGrams += Math.max(0, w) * qty;
+    }
+
+    // Versand berechnen (cheapest/Best)
+    const ship = chooseBestShipping({
+      region: regionCode,
+      totalWeightGrams,
+      subtotalEUR,
+    });
+
+    const line_items: Stripe.Checkout.SessionCreateParams.LineItem[] = [];
+
+    // Produktzeilen
+    for (const p of products) {
+      const qty = items[p.id]?.qty || 0;
+      if (qty <= 0) continue;
+
+      const unitAmount = typeof p.priceEUR === "number" ? Math.round(p.priceEUR * 100) : 0;
+      if (unitAmount <= 0) continue;
+
+      const artistTitle = (p.artist ?? "") + ((p.artist && p.trackTitle) ? " – " : "") + (p.trackTitle ?? "");
+      const title = (p.productName ?? artistTitle) || p.slug || "Artikel";
+
+      let images: string[] | undefined = undefined;
+      if (p.image && /^https?:\/\//i.test(p.image) && p.image.length < 2000) {
+        images = [p.image];
+      } else if (p.image) {
+        const abs = p.image.startsWith("http") ? p.image : `${origin}${p.image.startsWith("/") ? "" : "/"}${p.image}`;
+        if (abs.length < 2000) images = [abs];
+      }
+
+      line_items.push({
+        quantity: qty,
+        price_data: {
+          currency: "eur",
+          unit_amount: unitAmount,
+          product_data: {
+            name: title,
+            images,
+            metadata: { id: p.id, slug: p.slug || "", category: p.categoryCode || "" },
           },
         },
-      },
-    ]
-
-    // Zulässige Lieferländer – als exakter Stripe-Union-Typ
-    const allowedCountries: Stripe.Checkout.SessionCreateParams.ShippingAddressCollection.AllowedCountry[] = [
-      "AT","DE","CH","BE","NL","LU","IT","FR","ES","PT","PL","CZ","SK","SI","HU","RO","BG","GR",
-      "DK","SE","FI","NO","IE",
-      "US","CA","AU","NZ","JP","BR","MX"
-    ]
-
-    const params: Stripe.Checkout.SessionCreateParams = {
-      mode: "payment",
-      // payment_method_types NICHT mehr setzen (SDK wählt selbst)
-      line_items,
-      // ✨ NEU: immer einen Customer aus der Checkout-E-Mail erstellen
-      customer_creation: "always",
-
-      shipping_address_collection: { allowed_countries: allowedCountries },
-      shipping_options,
-
-      success_url: `${origin}/de/merch/success`,
-      cancel_url: `${origin}/de/merch/cancel`,
-
-      billing_address_collection: "auto",
-      automatic_tax: { enabled: false },
-
-      metadata: {
-        chosen_country: country,
-        chosen_zone: resolveZone(country),
-        chosen_carrier: carrier,
-        free_applied: String(ship.freeApplied),
-        shipping_cents: String(ship.shippingCents),
-        threshold_cents: String(ship.thresholdCents),
-      },
+      });
     }
 
-    const session = await stripe.checkout.sessions.create(params)
+    // Versand hinzufügen (0, wenn Freigrenze erreicht)
+    if (ship) {
+      line_items.push({
+        quantity: 1,
+        price_data: {
+          currency: "eur",
+          unit_amount: Math.round(ship.amountEUR * 100),
+          product_data: {
+            name: ship.freeByThreshold
+              ? `Versand (${ship.name}) – frei`
+              : `Versand (${ship.name})`,
+            metadata: {
+              type: "shipping",
+              region: ship.region,
+              carrier: ship.carrier,
+              weightGrams: String(ship.weightGrams ?? ""),
+            },
+          },
+        },
+      });
+    }
 
-    return NextResponse.json({ url: session.url })
+    if (line_items.length === 0) {
+      return NextResponse.json({ error: "Keine gültigen Positionen" }, { status: 400 });
+    }
+
+    const session = await stripe.checkout.sessions.create({
+      mode: "payment",
+      line_items,
+      success_url: `${origin}/de/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${origin}/de/merch`,
+    });
+
+    return NextResponse.json({ url: session.url });
   } catch (err: any) {
-    console.error("checkout error:", err)
-    return NextResponse.json({ error: err?.message || "Checkout failed" }, { status: 500 })
+    const msg = err?.message || "Checkout-Fehler";
+    console.error("POST /api/checkout error:", err);
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

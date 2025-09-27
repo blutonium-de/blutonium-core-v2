@@ -1,147 +1,118 @@
-"use client"
+// app/de/artists/page.tsx
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
-import { useEffect, useState } from "react"
+import { headers } from "next/headers";
 
 type Artist = {
-  id: string
-  name: string
-  image?: string | null
-  genres: string[]
-  followersTotal: number
-  spotifyUrl?: string | null
-  appleUrl?: string
-  beatportUrl?: string
+  id: string;
+  name: string;
+  followers?: number | null;
+  genre?: string | null;
+  photo?: string | null;
+  spotifyUrl?: string | null;
+  appleUrl?: string | null;
+  beatportUrl?: string | null;
+};
+
+function getBaseUrl() {
+  const h = headers();
+  const proto = h.get("x-forwarded-proto") ?? "http";
+  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
+  return `${proto}://${host}`;
 }
 
-export default function ArtistsPage() {
-  const [artists, setArtists] = useState<Artist[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    const base = typeof window === "undefined" ? "" : window.location.origin
-    fetch(`${base}/api/artists`, { cache: "no-store" })
-      .then(async (r) => {
-        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`)
-        const j = await r.json()
-        setArtists(j.artists ?? [])
-      })
-      .catch((e) => setError(e.message || "Fehler beim Laden"))
-  }, [])
-
-  if (error) {
-    return (
-      <div className="max-w-6xl mx-auto px-4 py-16 text-center text-red-300">
-        Fehler beim Laden: {error}
-      </div>
-    )
+async function getArtists(): Promise<Artist[]> {
+  try {
+    const res = await fetch(`${getBaseUrl()}/api/spotify/artists`, {
+      cache: "no-store",
+    });
+    if (!res.ok) return [];
+    const j = await res.json();
+    return Array.isArray(j?.items) ? (j.items as Artist[]) : [];
+  } catch {
+    return [];
   }
+}
 
-  if (!artists) {
-    return (
-      <div className="max-w-6xl mx-auto px-4 py-16 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="card animate-pulse">
-            <div className="w-full aspect-square rounded-full bg-white/10" />
-            <div className="h-4 w-2/3 mt-4 bg-white/10 rounded" />
-            <div className="h-3 w-1/3 mt-2 bg-white/10 rounded" />
-          </div>
-        ))}
-      </div>
-    )
-  }
-
-  // Sortierung: erst bestimmte Artists, dann nach Followern
-  const normalized = [...artists].sort((A, B) => {
-    const priority = ["Blutonium Boy", "Blutonium Boys", "Kris Grey"]
-    const ai = priority.findIndex((n) => n.toLowerCase() === A.name.toLowerCase())
-    const bi = priority.findIndex((n) => n.toLowerCase() === B.name.toLowerCase())
-    if (ai !== -1 && bi === -1) return -1
-    if (bi !== -1 && ai === -1) return 1
-    if (ai !== -1 && bi !== -1) return ai - bi
-    return (B.followersTotal ?? 0) - (A.followersTotal ?? 0)
-  })
+export default async function ArtistsPage() {
+  const artists = await getArtists();
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-10">
-      <header className="mb-6">
-        <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight">
-          Artists &amp; Booking
-        </h1>
-        <p className="mt-3 text-white/70">
-          Offizielle Blutonium Records Artists. Hör rein, folge ihnen und stelle deine Booking-Anfrage.
-        </p>
-      </header>
+    <div className="mx-auto max-w-6xl px-4 py-10">
+      <h1 className="text-4xl sm:text-5xl font-extrabold">Artists & Booking</h1>
+      <p className="opacity-70 mt-2">
+        Offizielle Blutonium Records Artists. Hör rein, folge ihnen und stelle deine Booking-Anfrage.
+      </p>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        {normalized.map((a) => (
-          <article key={a.id} className="card text-center p-4">
-            {/* Avatar */}
-            <div className="aspect-square w-40 mx-auto overflow-hidden rounded-full bg-white/10">
-              {a.image ? (
+      {artists.length === 0 ? (
+        <p className="opacity-70 mt-6">Noch keine Artists angelegt.</p>
+      ) : (
+        <div className="mt-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {artists.map((a) => (
+            <article
+              key={a.id}
+              className="rounded-2xl bg-white/5 border border-white/10 p-5 flex flex-col items-center"
+            >
+              <div className="w-28 h-28 rounded-full overflow-hidden bg-black/30">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={a.image}
+                  src={a.photo || "/placeholder.png"}
                   alt={a.name}
-                  className="w-full h-full object-cover"
-                  loading="lazy"
+                  width={112}
+                  height={112}
+                  className="w-28 h-28 object-cover"
                 />
-              ) : (
-                <div className="w-full h-full grid place-items-center text-white/40 text-sm">
-                  Kein Bild
-                </div>
-              )}
-            </div>
+              </div>
+              <div className="mt-3 text-lg font-semibold">{a.name}</div>
+              <div className="text-sm opacity-80">
+                {a.followers ? `${a.followers.toLocaleString()} Follower` : "—"}
+              </div>
+              {a.genre && <div className="text-xs opacity-70">{a.genre}</div>}
 
-            {/* Name + Meta */}
-            <h2 className="mt-4 text-lg font-semibold">{a.name}</h2>
-            <p className="text-sm text-white/60">
-              {(a.followersTotal ?? 0).toLocaleString()} Follower
-            </p>
-            {a.genres.length > 0 && (
-              <p className="text-xs text-white/50">{a.genres.slice(0, 2).join(", ")}</p>
-            )}
+              <div className="mt-3 flex gap-2">
+                {a.spotifyUrl ? (
+                  <a
+                    href={a.spotifyUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-2 py-1 rounded bg-green-500/30 hover:bg-green-500/40 text-sm"
+                  >
+                    Spotify
+                  </a>
+                ) : null}
+                {a.appleUrl ? (
+                  <a
+                    href={a.appleUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-2 py-1 rounded bg-white/20 hover:bg-white/30 text-sm"
+                  >
+                    Apple Music
+                  </a>
+                ) : null}
+                {a.beatportUrl ? (
+                  <a
+                    href={a.beatportUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-2 py-1 rounded bg-cyan-500/30 hover:bg-cyan-500/40 text-sm"
+                  >
+                    Beatport
+                  </a>
+                ) : null}
+              </div>
 
-            {/* Links */}
-            <div className="mt-3 flex flex-wrap gap-2 justify-center">
-              {a.spotifyUrl && (
-                <a
-                  href={a.spotifyUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="px-3 py-1.5 rounded-md text-sm bg-[#1DB954]/20 hover:bg-[#1DB954]/30 border border-white/10"
-                >
-                  Spotify
-                </a>
-              )}
-              <a
-                href={a.appleUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="px-3 py-1.5 rounded-md text-sm bg-white/10 hover:bg-white/20 border border-white/10"
-              >
-                Apple Music
-              </a>
-              <a
-                href={a.beatportUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="px-3 py-1.5 rounded-md text-sm bg-white/10 hover:bg-white/20 border border-white/10"
-              >
-                Beatport
-              </a>
-            </div>
-
-            {/* Booking */}
-            <div className="mt-4">
-              <a
-                href={`/de/booking?artist=${encodeURIComponent(a.name)}`}
-                className="btn w-full text-center"
+              <button
+                type="button"
+                className="mt-4 w-full px-3 py-2 rounded bg-white/10 hover:bg-white/20 text-sm"
               >
                 Book now
-              </a>
-            </div>
-          </article>
-        ))}
-      </div>
+              </button>
+            </article>
+          ))}
+        </div>
+      )}
     </div>
-  )
+  );
 }
