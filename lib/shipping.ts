@@ -181,3 +181,8 @@ export function sumWeight(items: Array<{ weightGrams?: number | null; qty?: numb
     return acc;
   }, 0);
 }
+
+/* ---------- Typ-Aliases für bestehende Imports ---------- */
+export type Carrier = CarrierCode;
+export type Region  = RegionCode;
+export type Quote   = ShippingQuote;
