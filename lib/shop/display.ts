@@ -1,22 +1,41 @@
 // lib/shop/display.ts
-import type { Product } from "../types";
 
-export function getProductDisplayTitle(p: Product) {
-  // 1) wenn Productname gepflegt ist → diesen zeigen
-  if (p.productName && p.productName.trim().length > 0) return p.productName.trim();
+// Minimaler Shape, damit die Funktion mit unterschiedlichen Product-Typen
+// (z. B. Prisma Product oder eigene schlanke Typen) problemlos arbeitet.
+export type DisplayableProduct = {
+  slug: string;
+  productName?: string | null;
+  artist?: string | null;
+  trackTitle?: string | null;
+};
 
-  // 2) sonst Artist + Titel, wenn vorhanden
-  const a = (p.artist || "").trim();
-  const t = (p.trackTitle || "").trim();
+/**
+ * Titel für die Produktanzeige:
+ * 1) productName, wenn vorhanden
+ * 2) Artist – TrackTitle, wenn beide vorhanden
+ * 3) Fallback: slug
+ */
+export function getProductDisplayTitle(p: DisplayableProduct): string {
+  const productName = (p.productName ?? "").trim();
+  if (productName) return productName;
+
+  const a = (p.artist ?? "").trim();
+  const t = (p.trackTitle ?? "").trim();
   if (a && t) return `${a} – ${t}`;
-  if (t) return t;
-  if (a) return a;
 
-  // 3) absoluter Fallback
-  return "Unbenanntes Produkt";
+  return p.slug;
 }
 
-export function getProductDisplaySubtitle(p: Product) {
-  // Subtitel nur zeigen, wenn vorhanden
-  return (p.subtitle || "").trim() || null;
+/**
+ * Optional: Unterzeile (z. B. nur Artist oder nur TrackTitle),
+ * wenn du sie irgendwo brauchst. Falls nicht benötigt, kannst du
+ * diese Funktion einfach ignorieren oder entfernen.
+ */
+export function getProductSubtitle(p: DisplayableProduct): string {
+  const a = (p.artist ?? "").trim();
+  const t = (p.trackTitle ?? "").trim();
+
+  if (a && !t) return a;
+  if (!a && t) return t;
+  return "";
 }
