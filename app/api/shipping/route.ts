@@ -15,7 +15,7 @@ type CartItem = { id: string; qty: number }
 type ReqBody = {
   items: CartItem[]
   countryIso2?: string | null
-  carrier?: "POST" | "DPD" | "GLS" | null
+  // carrier?: "POST" | "DPD" | "GLS" | null  // <- aktuell ungenutzt, weil priceFor nur 2 Args hat
 }
 
 export async function POST(req: NextRequest) {
@@ -33,7 +33,6 @@ export async function POST(req: NextRequest) {
       select: { id: true, priceEUR: true, weightGrams: true },
     })
 
-    // Map für schnellen Zugriff
     const map = new Map(products.map((p) => [p.id, p]))
 
     // Summen bilden
@@ -56,13 +55,8 @@ export async function POST(req: NextRequest) {
     const freeApplied =
       Number.isFinite(freeMin) && freeMin > 0 && subtotalEUR >= freeMin
 
-    // Versandpreis
-    const carrier = body.carrier ?? null
-    const shippingEUR = freeApplied
-      ? 0
-      : carrier
-      ? priceFor(carrier, zone, totalGrams) // carrier-spezifisch (3-Arg)
-      : priceFor(totalGrams, zone) // POST-Referenz (2-Arg)
+    // Versandpreis (2-Arg-Variante)
+    const shippingEUR = freeApplied ? 0 : priceFor(totalGrams, zone)
 
     const bracketLabel = labelForBracket(totalGrams)
 
@@ -74,7 +68,7 @@ export async function POST(req: NextRequest) {
       shippingEUR,
       bracket: bracketLabel,
       freeByThreshold: !!freeApplied,
-      carrier: carrier ?? "AUTO",
+      carrier: "AUTO", // solange wir keine carrier-spezifische priceFor haben
     })
   } catch (e: any) {
     return NextResponse.json(
