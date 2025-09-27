@@ -1,35 +1,51 @@
 // app/de/checkout/success/page.tsx
 "use client";
 
-import { useEffect } from "react";
-import { useSearchParams } from "next/navigation";
+import { Suspense, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 export default function CheckoutSuccessPage() {
-  const params = useSearchParams();
-  const sessionId = params.get("session_id");
+  // WICHTIG: Alles, was useSearchParams nutzt, in Suspense kapseln
+  return (
+    <Suspense fallback={<div className="p-6">Lade Bestellbestätigung …</div>}>
+      <CheckoutSuccessInner />
+    </Suspense>
+  );
+}
 
+function CheckoutSuccessInner() {
+  const router = useRouter();
+  const search = useSearchParams();
+
+  // Beispiel: session_id aus Query holen, Cart leeren, Danke anzeigen / weiterleiten
   useEffect(() => {
-    // Nach Erfolg: Cart leeren
+    const sessionId = search.get("session_id") || "";
+    // → hier deine bestehende Success-Logik:
+    //  - optional: /api/checkout/verify?session_id=...
+    //  - Warenkorb leeren
     try {
       localStorage.removeItem("cart");
     } catch {}
-  }, []);
+
+    // Wenn du hier bleiben willst, tue nichts.
+    // Oder kleine Verzögerung + Redirect zurück zum Shop/Warenkorb:
+    // router.replace("/de/cart");
+  }, [search, router]);
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-16 text-center">
-      <h1 className="text-3xl font-extrabold">Danke für deine Bestellung!</h1>
-      <p className="text-white/70 mt-3">
-        Deine Zahlung wurde erfolgreich verarbeitet.
+    <div className="mx-auto max-w-3xl px-4 py-10">
+      <h1 className="text-3xl sm:text-4xl font-extrabold">Danke für deine Bestellung!</h1>
+      <p className="mt-2 opacity-80">
+        Deine Zahlung war erfolgreich. Du erhältst in Kürze eine Bestätigung per E-Mail.
       </p>
-      {sessionId && (
-        <p className="text-white/50 mt-2 text-sm">Session: {sessionId}</p>
-      )}
-      <a
-        href="/de/shop"
-        className="inline-block mt-6 px-4 py-2 rounded bg-cyan-500 hover:bg-cyan-400 text-black font-semibold"
-      >
-        Weiter shoppen
-      </a>
+      <div className="mt-6">
+        <a
+          href="/de/shop"
+          className="inline-block px-4 py-2 rounded bg-cyan-500 hover:bg-cyan-400 text-black font-semibold"
+        >
+          Weiter shoppen
+        </a>
+      </div>
     </div>
   );
 }
