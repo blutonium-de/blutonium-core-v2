@@ -128,3 +128,56 @@ export function chooseBestShipping(params: {
   // nimm günstigste Option
   return q[0];
 }
+
+/* ------------------------------------------------------------------ */
+/*  Kompatibilitäts-Exports für bestehende API-Imports                 */
+/*  (priceFor, resolveZone, labelForBracket, BRACKETS)                 */
+/* ------------------------------------------------------------------ */
+
+// EU-Länderliste (ISO2)
+const EU_ISO = new Set([
+  "AT","BE","BG","HR","CY","CZ","DK","EE","FI","FR","DE","GR","HU","IE","IT",
+  "LV","LT","LU","MT","NL","PL","PT","RO","SK","SI","ES","SE"
+]);
+
+/** Land → RegionCode (AT/EU/WORLD) */
+export function resolveZone(countryIso2?: string | null): RegionCode {
+  const c = (countryIso2 || "").toUpperCase();
+  if (c === "AT") return "AT";
+  if (EU_ISO.has(c)) return "EU";
+  return "WORLD";
+}
+
+/** Generische Brackets nur zur Anzeige/Beschriftung */
+export const BRACKETS = [
+  { max: 500,    label: "bis 0,5 kg" },
+  { max: 2000,   label: "bis 2 kg" },
+  { max: 5000,   label: "bis 5 kg" },
+  { max: 10000,  label: "bis 10 kg" },
+  { max: Infinity, label: "über 10 kg" },
+] as const;
+
+/** Liefert die Bracket-Beschriftung für ein Gewicht */
+export function labelForBracket(totalWeightGrams: number): string {
+  const w = Math.max(0, Math.floor(totalWeightGrams));
+  const b = BRACKETS.find(b => w <= b.max) || BRACKETS[BRACKETS.length - 1];
+  return b.label;
+}
+
+/** Preis in EUR für Gewicht (g) + Zone (nimmt POST-Tarif als Referenz) */
+export function priceFor(totalWeightGrams: number, zone: RegionCode): number {
+  const w = Math.max(0, Math.floor(totalWeightGrams));
+  const options = (TABLE[zone] || []).filter(o => o.carrier === "POST");
+  const tier = options.find(o => w <= o.maxWeightGrams) || options[options.length - 1];
+  return tier ? tier.amountEUR : 0;
+}
+
+/** Optional: Gesamtgewicht aus Positionen */
+export function sumWeight(items: Array<{ weightGrams?: number | null; qty?: number | null }>): number {
+  return items.reduce((acc, it) => {
+    const w = Number(it.weightGrams ?? 0);
+    const q = Number(it.qty ?? 1);
+    if (Number.isFinite(w) && Number.isFinite(q)) return acc + w * q;
+    return acc;
+  }, 0);
+}
