@@ -197,11 +197,12 @@ export default function MerchPage() {
           {/* Liste */}
           <div className="lg:col-span-2 space-y-4">
             {products.map((p) => {
-              const qty = cart[p.id]?.qty || 0;
-              const title =
-                p.productName ??
-                `${p.artist ?? ""}${p.artist && p.trackTitle ? " – " : ""}${p.trackTitle ?? ""}` ||
-                p.slug;
+              // Zeilen ~200
+const qty = cart[p.id]?.qty || 0;
+const title =
+  (p.productName ??
+    `${p.artist ?? ""}${p.artist && p.trackTitle ? " – " : ""}${p.trackTitle ?? ""}`) ||
+  p.slug;
 
               return (
                 <div key={p.id} className="flex gap-4 p-3 rounded border border-white/10 bg-white/5">
