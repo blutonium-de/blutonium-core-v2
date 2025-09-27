@@ -1,27 +1,20 @@
-// app/api/debug/spotify/route.ts
+// app/api/spotify/route.ts
 import { NextResponse } from "next/server";
-import { getSpotifyToken, fetchArtists, fetchLabelReleases } from "../../../../lib/spotify";
+import { getSpotifyToken } from "../../../lib/spotify"; // KORRIGIERT: nur 3 Punkte
 
-export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const token = await getSpotifyToken();
-    const artists = await fetchArtists();
-    // wir holen nur 5 Releases zur Probe (damit es schnell ist)
-    const releases = (await fetchLabelReleases()).slice(0, 5);
-    return NextResponse.json({
-      ok: true,
-      env: {
-        hasId: !!process.env.SPOTIFY_CLIENT_ID,
-        hasSecret: !!process.env.SPOTIFY_CLIENT_SECRET,
-      },
-      tokenPresent: !!token,
-      artistsCount: artists.length,
-      sampleReleases: releases.map(r => ({ title: r.title, year: r.year })),
-    });
+    // Nur Testaufruf, um sicherzustellen, dass die Spotify-Verbindung funktioniert
+    await getSpotifyToken();
+    return NextResponse.json({ ok: true });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: String(e?.message || e) }, { status: 500 });
+    console.error("/api/spotify error:", e);
+    return NextResponse.json(
+      { error: e?.message || "server error" },
+      { status: 500 }
+    );
   }
 }
