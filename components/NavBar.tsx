@@ -5,6 +5,7 @@ import Link from "next/link"
 import Image from "next/image"
 import { usePathname } from "next/navigation"
 import { useState, useEffect } from "react"
+import CartButton from "./CartButton" // ← hinzugefügt
 
 type NavLink = { href: string; label: string }
 
@@ -15,7 +16,7 @@ export default function NavBar() {
   // Mobile-Menu schließen, wenn Route wechselt
   useEffect(() => { setOpen(false) }, [pathname])
 
-  // ⚠️ Menüstruktur: "Shop" statt "Samples" / "Merchandise"
+  // ⚠️ Menüstruktur
   const links: NavLink[] = [
     { href: "/de/releases", label: "Releases" },
     { href: "/de/artists",  label: "Artists & Booking" },
@@ -24,7 +25,6 @@ export default function NavBar() {
   ]
 
   const isActive = (href: string) => {
-    // exakte oder verschachtelte Pfade als aktiv behandeln
     if (pathname === href) return true
     if (href !== "/" && pathname.startsWith(href + "/")) return true
     return false
@@ -51,6 +51,9 @@ export default function NavBar() {
               {l.label}
             </Link>
           ))}
+
+          {/* Cart rechts */}
+          <CartButton />
         </div>
 
         {/* Burger */}
@@ -86,6 +89,11 @@ export default function NavBar() {
               <path d="M6 6l12 12M18 6l-12 12" stroke="currentColor" strokeWidth="2" />
             </svg>
           </button>
+        </div>
+
+        {/* Cart im Drawer Kopfbereich */}
+        <div className="px-4 py-3 border-b border-white/10">
+          <CartButton />
         </div>
 
         <div className="px-4 py-3 flex flex-col gap-2">
