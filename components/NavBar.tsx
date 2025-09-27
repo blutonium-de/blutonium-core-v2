@@ -4,19 +4,19 @@
 import Link from "next/link"
 import Image from "next/image"
 import { usePathname } from "next/navigation"
-import { useState, useEffect } from "react"
-import CartButton from "./CartButton" // ← hinzugefügt
+import { useState, useEffect, type ReactNode } from "react"
 
 type NavLink = { href: string; label: string }
+type Props = { children?: ReactNode } // ← NEU: Slot für z. B. CartButton
 
-export default function NavBar() {
+export default function NavBar({ children }: Props) {
   const pathname = usePathname()
   const [open, setOpen] = useState(false)
 
   // Mobile-Menu schließen, wenn Route wechselt
   useEffect(() => { setOpen(false) }, [pathname])
 
-  // ⚠️ Menüstruktur
+  // Menüstruktur
   const links: NavLink[] = [
     { href: "/de/releases", label: "Releases" },
     { href: "/de/artists",  label: "Artists & Booking" },
@@ -32,7 +32,7 @@ export default function NavBar() {
 
   return (
     <nav className="fixed top-0 left-0 w-full z-50 bg-black/70 backdrop-blur-md border-b border-white/10">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
         <Link href="/" className="flex items-center gap-2">
           <Image src="/logo.png" alt="Blutonium" width={32} height={32} className="rounded" priority />
           <span className="hidden sm:inline text-sm font-bold tracking-wide">Blutonium Records</span>
@@ -51,9 +51,7 @@ export default function NavBar() {
               {l.label}
             </Link>
           ))}
-
-          {/* Cart rechts */}
-          <CartButton />
+          {children ? <div className="ml-2">{children}</div> : null}
         </div>
 
         {/* Burger */}
@@ -91,11 +89,6 @@ export default function NavBar() {
           </button>
         </div>
 
-        {/* Cart im Drawer Kopfbereich */}
-        <div className="px-4 py-3 border-b border-white/10">
-          <CartButton />
-        </div>
-
         <div className="px-4 py-3 flex flex-col gap-2">
           {links.map(l => (
             <Link
@@ -108,6 +101,7 @@ export default function NavBar() {
               {l.label}
             </Link>
           ))}
+          {children ? <div className="mt-3">{children}</div> : null}
         </div>
       </div>
     </nav>
