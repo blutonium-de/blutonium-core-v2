@@ -3,37 +3,78 @@
 
 import { useEffect, useRef } from "react";
 
-type Props = {
+type BaseProps = {
   open: boolean;
   title?: string;
+  /** Primäre Nachricht unter dem Titel */
   message?: string;
+  /** Beschreibungs-Alias (wird auf message gemappt) */
+  description?: string;
+  /** Beschriftung Bestätigen */
   confirmLabel?: string;
+  /** Alias für confirmLabel */
+  confirmText?: string;
+  /** Beschriftung Abbrechen */
   cancelLabel?: string;
+  /** Alias für cancelLabel */
+  cancelText?: string;
+  /** Farbton des Bestätigen-Buttons */
   tone?: "danger" | "default";
-  onConfirm: () => void;
-  onClose: () => void;
+  /** Bestätigen-Handler */
+  onConfirm: () => void | Promise<void>;
+  /** Schließen/Abbrechen-Handler */
+  onClose?: () => void;
+  /** Alias für onClose */
+  onCancel?: () => void;
 };
 
-export default function ConfirmDialog({
-  open,
-  title = "Bist du sicher?",
-  message = "Diese Aktion kann nicht rückgängig gemacht werden.",
-  confirmLabel = "Ja, löschen",
-  cancelLabel = "Abbrechen",
-  tone = "danger",
-  onConfirm,
-  onClose,
-}: Props) {
+export default function ConfirmDialog(rawProps: BaseProps) {
+  // --- Normalisierung der Props (Aliases zusammenführen) ---
+  const {
+    open,
+    title = "Bist du sicher?",
+    // description alias -> message
+    message: messageRaw,
+    description,
+    // confirmText alias -> confirmLabel
+    confirmLabel: confirmLabelRaw,
+    confirmText,
+    // cancelText alias -> cancelLabel
+    cancelLabel: cancelLabelRaw,
+    cancelText,
+    tone = "danger",
+    onConfirm,
+    // onCancel alias -> onClose
+    onClose: onCloseRaw,
+    onCancel,
+  } = rawProps;
+
+  const message =
+    (typeof description === "string" && description) ||
+    (typeof messageRaw === "string" && messageRaw) ||
+    "Diese Aktion kann nicht rückgängig gemacht werden.";
+
+  const confirmLabel =
+    (typeof confirmText === "string" && confirmText) ||
+    (typeof confirmLabelRaw === "string" && confirmLabelRaw) ||
+    "Ja, löschen";
+
+  const cancelLabel =
+    (typeof cancelText === "string" && cancelText) ||
+    (typeof cancelLabelRaw === "string" && cancelLabelRaw) ||
+    "Abbrechen";
+
+  const onClose = onCancel ?? onCloseRaw ?? (() => {});
+
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const firstBtnRef = useRef<HTMLButtonElement | null>(null);
 
-  // ESC schließen + Focus setzen
+  // ESC schließen + einfacher Focus-Trap
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
       if (e.key === "Tab") {
-        // sehr einfacher Focus-Trap
         const focusables = dialogRef.current?.querySelectorAll<HTMLElement>(
           'button,[href],[tabindex]:not([tabindex="-1"])'
         );
@@ -64,7 +105,7 @@ export default function ConfirmDialog({
       aria-labelledby="confirm-title"
       aria-describedby="confirm-message"
       onMouseDown={(e) => {
-        // Klick auf Overlay -> schließen (aber nicht, wenn Dialog selbst)
+        // Klick auf Overlay -> schließen (außer Klick im Dialog)
         if (e.target === e.currentTarget) onClose();
       }}
     >
