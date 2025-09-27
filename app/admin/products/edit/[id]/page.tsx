@@ -329,14 +329,15 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
 
       {/* Lösch-Bestätigung */}
       <ConfirmDialog
-        open={confirmOpen}
-        title="Produkt löschen?"
-        description="Dieser Vorgang kann nicht rückgängig gemacht werden. Bilder und Datensätze werden endgültig entfernt."
-        confirmText="Ja, löschen"
-        cancelText="Abbrechen"
-        onConfirm={confirmDelete}
-        onCancel={() => setConfirmOpen(false)}
-      />
+  open={confirmOpen}
+  title="Produkt löschen?"
+  message="Dieser Vorgang kann nicht rückgängig gemacht werden. Bilder und Datensätze werden endgültig entfernt."
+  confirmLabel="Ja, löschen"
+  cancelLabel="Abbrechen"
+  tone="danger"
+  onConfirm={confirmDelete}
+  onClose={() => setConfirmOpen(false)}
+/>
     </div>
   );
 }
