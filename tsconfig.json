@@ -15,6 +15,11 @@
     "jsx": "preserve",
     "incremental": true,
     "baseUrl": ".",
+    "paths": {
+      "@/*": ["*"],             // Hauptalias (z. B. @/lib/db → lib/db)
+      "@/lib/*": ["lib/*"],     // Shortcut für lib
+      "@/components/*": ["components/*"] // Shortcut für Components
+    },
     "plugins": [
       {
         "name": "next"

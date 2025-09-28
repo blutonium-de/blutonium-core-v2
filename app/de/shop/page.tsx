@@ -1,6 +1,6 @@
 // app/de/shop/page.tsx
-import ProductCard from "../../components/ProductCard";
-import { prisma } from "../../lib/db";
+import ProductCard from "../../../components/ProductCard";
+import { prisma } from "../../../lib/db";
 
 export const dynamic = "force-dynamic";
 
