@@ -1,4 +1,4 @@
-// middleware.ts (Root!) — neutral + Cart/Merch explizit erlauben
+// middleware.ts
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
@@ -12,7 +12,7 @@ export function middleware(req: NextRequest) {
     pathname.match(/\.(png|jpg|jpeg|gif|svg|ico|webp|txt|xml)$/)
   ) return NextResponse.next();
 
-  // Cart-Flow nie anfassen
+  // Cart-Flow frei
   if (pathname.startsWith("/de/cart") || pathname.startsWith("/de/merch")) {
     return NextResponse.next();
   }
@@ -22,6 +22,16 @@ export function middleware(req: NextRequest) {
     const url = req.nextUrl.clone();
     url.pathname = "/de";
     return NextResponse.redirect(url);
+  }
+
+  // Admin-Bereich schützen
+  if (pathname.startsWith("/admin")) {
+    const token = req.cookies.get("admin_auth")?.value;
+    if (token !== process.env.ADMIN_TOKEN) {
+      const loginUrl = req.nextUrl.clone();
+      loginUrl.pathname = "/admin/login";
+      return NextResponse.redirect(loginUrl);
+    }
   }
 
   return NextResponse.next();

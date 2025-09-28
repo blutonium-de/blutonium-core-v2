@@ -4,6 +4,8 @@ import type { Metadata, Viewport } from "next"
 import NavBar from "../components/NavBar"
 import CartButton from "../components/CartButton"
 import FloatingCheckoutBar from "../components/FloatingCheckoutBar"
+import SiteFooter from "../components/SiteFooter"
+import CookieConsent from "../components/CookieConsent"
 
 export const metadata: Metadata = {
   title: "Blutonium Records",
@@ -31,14 +33,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           {children}
         </main>
 
-        <footer className="border-t border-white/10 py-10 mt-16 text-sm opacity-80">
-          <div className="max-w-6xl mx-auto px-4 text-center">
-            © {new Date().getFullYear()} Blutonium Records — Since 1995
-          </div>
-        </footer>
+        {/* Footer mit Impressum/Datenschutz-Links */}
+        <SiteFooter />
 
         {/* Sticky Checkout-Bar (unten) */}
         <FloatingCheckoutBar href="/de/cart" />
+
+        {/* Cookie-Banner (unten fix) */}
+        <CookieConsent />
       </body>
     </html>
   )
