@@ -1,7 +1,8 @@
 // components/ProductCard.tsx
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
+import Link from "next/link";
 
 type Product = {
   id: string;
@@ -13,7 +14,7 @@ type Product = {
   categoryCode: string;
   priceEUR: number;
   image: string;
-  stock?: number; // << NEU
+  stock?: number; // << Bestand
 };
 
 type CartMap = Record<string, { qty: number; price?: number }>;
@@ -33,6 +34,8 @@ function writeCart(next: CartMap) {
 
 export default function ProductCard({ p }: { p: Product }) {
   const [open, setOpen] = useState(false);
+  const [added, setAdded] = useState(false);          // << NEU: Kurz-Bestätigung
+  const addedTimer = useRef<number | null>(null);     // für Timeout cleanup
 
   const title =
     p.productName ||
@@ -51,10 +54,20 @@ export default function ProductCard({ p }: { p: Product }) {
 
     cart[p.id] = { ...(cart[p.id] || {}), qty: nextQty, price: p.priceEUR };
     writeCart(cart);
+
+    // visuelles Feedback für 1.5s
+    setAdded(true);
+    if (addedTimer.current) window.clearTimeout(addedTimer.current);
+    addedTimer.current = window.setTimeout(() => setAdded(false), 1500);
   }
 
   return (
     <div className="rounded-2xl bg-white/5 border border-white/10 p-3 w-[270px]">
+      {/* SR-Only Live Region für Screenreader */}
+      <div className="sr-only" aria-live="polite">
+        {added ? `${title} zum Warenkorb hinzugefügt` : ""}
+      </div>
+
       {/* Thumbnail 250x250 */}
       <button
         type="button"
@@ -97,16 +110,28 @@ export default function ProductCard({ p }: { p: Product }) {
             type="button"
             onClick={addToCart}
             disabled={soldOut}
-            className={`px-3 py-1 rounded text-sm font-semibold ${
-              soldOut
+            className={`px-3 py-1 rounded text-sm font-semibold transition
+              ${soldOut
                 ? "bg-white/10 text-white/50 cursor-not-allowed"
+                : added
+                ? "bg-emerald-500 text-black"      // << NEU: „Hinzugefügt“
                 : "bg-cyan-500 text-black hover:bg-cyan-400"
-            }`}
+              }`}
             title={soldOut ? "Nicht verfügbar" : "In den Warenkorb"}
           >
-            {soldOut ? "Nicht verfügbar" : "In den Warenkorb"}
+            {soldOut ? "Nicht verfügbar" : added ? "Hinzugefügt ✓" : "In den Warenkorb"}
           </button>
         </div>
+
+        {/* Kleiner, temporärer Hinweis-Link zum Warenkorb */}
+        {!soldOut && added && (
+          <div className="mt-2 text-[12px]">
+            <Link href="/de/cart" className="underline underline-offset-2 opacity-90 hover:opacity-100">
+              Zum Warenkorb →
+            </Link>
+          </div>
+        )}
+
         {!soldOut && typeof p.stock === "number" && (
           <div className="mt-1 text-[11px] opacity-70">Lagerbestand: {p.stock}</div>
         )}

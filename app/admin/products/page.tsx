@@ -17,13 +17,14 @@ type Row = {
   currency: string | null;
   active: boolean;
   createdAt: string;
-  stock?: number | null; // ← NEU
+  stock?: number | null;
+  image?: string | null; // ← NEU: Cover
 };
 
 export default function AdminProductsPage() {
   const [q, setQ] = useState("");
   const [cat, setCat] = useState("");
-  const [soldOutOnly, setSoldOutOnly] = useState(false); // ← NEU
+  const [soldOutOnly, setSoldOutOnly] = useState(false);
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -43,7 +44,7 @@ export default function AdminProductsPage() {
       const url = new URL("/api/admin/products", window.location.origin);
       if (q) url.searchParams.set("q", q);
       if (cat) url.searchParams.set("cat", cat);
-      if (soldOutOnly) url.searchParams.set("soldOut", "1"); // ← NEU
+      if (soldOutOnly) url.searchParams.set("soldOut", "1");
       if (adminKey) url.searchParams.set("key", adminKey);
 
       const r = await fetch(url.toString(), { cache: "no-store" });
@@ -65,11 +66,19 @@ export default function AdminProductsPage() {
 
   function fmtDate(iso: string) {
     try {
-      return new Date(iso).toLocaleString();
+      return new Date(iso).toLocaleString("de-AT");
     } catch {
       return iso;
     }
   }
+
+  function displayTitle(r: Row) {
+    if (r.productName && r.productName.trim()) return r.productName;
+    const a = (r.artist || "").trim();
+    const t = (r.trackTitle || "").trim();
+    const sep = a && t ? " – " : "";
+    return (a || t) ? `${a}${sep}${t}` : r.slug;
+    }
 
   async function toggleActive(id: string, current: boolean) {
     try {
@@ -89,7 +98,7 @@ export default function AdminProductsPage() {
   }
 
   async function remove(id: string, slug: string) {
-    if (!confirm(`Produkt „${slug}“ wirklich löschen?`)) return;
+    if (!confirm(`Produkt „${slug}” wirklich löschen?`)) return;
     try {
       const r = await fetch(`/api/admin/products/${id}`, {
         method: "DELETE",
@@ -184,53 +193,84 @@ export default function AdminProductsPage() {
       {err && <p className="text-red-500 mt-4">{err}</p>}
       {loading && <p className="mt-4 opacity-70">Lade …</p>}
 
+      {/* Tabelle – Spalten in gewünschter Reihenfolge */}
       <div className="mt-6 overflow-x-auto">
-        <table className="min-w-full text-sm">
+        <table className="min-w-full text-sm align-middle">
           <thead className="opacity-70 text-left">
             <tr>
-              <th className="py-2 pr-6">Datum</th>
-              <th className="py-2 pr-6">Slug</th>
-              <th className="py-2 pr-6">Artist / Titel</th>
-              <th className="py-2 pr-6">Kategorie</th>
-              <th className="py-2 pr-6">Preis</th>
-              <th className="py-2 pr-6">Stock</th> {/* ← NEU */}
-              <th className="py-2 pr-6">Status</th>
-              <th className="py-2 pr-6">Aktionen</th>
+              <th className="py-2 pr-4">Cover</th>
+              <th className="py-2 pr-4">Edit</th>
+              <th className="py-2 pr-4">Artist / Titel</th>
+              <th className="py-2 pr-4">Stock</th>
+              <th className="py-2 pr-4">Preis</th>
+              <th className="py-2 pr-4">Kategorie</th>
+              <th className="py-2 pr-4">Status</th>
+              <th className="py-2 pr-4">Löschen</th>
+              <th className="py-2 pr-4">Datum</th>
+              <th className="py-2 pr-4">Slug</th>
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={8} className="py-6 opacity-70">
+                <td colSpan={10} className="py-6 opacity-70">
                   Keine Produkte gefunden.
                 </td>
               </tr>
             ) : (
               rows.map((r) => {
                 const isOut = (r.stock ?? 0) <= 0;
+                const thumb = r.image || "/placeholder.png";
                 return (
                   <tr key={r.id} className="border-t border-white/10">
-                    <td className="py-2 pr-6">{fmtDate(r.createdAt)}</td>
-                    <td className="py-2 pr-6">{r.slug}</td>
-                    <td className="py-2 pr-6">
-                      {r.artist || "—"}
-                      {r.artist && r.trackTitle ? " – " : " "}
-                      {r.trackTitle || r.productName || "—"}
+                    {/* Cover */}
+                    <td className="py-2 pr-4">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={thumb}
+                        alt={displayTitle(r)}
+                        className="h-12 w-12 rounded object-cover bg-black/30"
+                        width={48}
+                        height={48}
+                        loading="lazy"
+                      />
                     </td>
-                    <td className="py-2 pr-6">{r.categoryCode}</td>
-                    <td className="py-2 pr-6">
-                      {r.priceEUR.toFixed(2)} {r.currency || "EUR"}
+
+                    {/* Edit */}
+                    <td className="py-2 pr-4">
+                      <Link
+                        href={`/admin/products/edit/${r.id}`}
+                        className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 inline-flex items-center justify-center"
+                        title="Bearbeiten"
+                      >
+                        ✏️
+                      </Link>
                     </td>
-                    <td className="py-2 pr-6">
+
+                    {/* Artist / Titel */}
+                    <td className="py-2 pr-4 max-w-[360px]">
+                      <div className="truncate">{displayTitle(r)}</div>
+                    </td>
+
+                    {/* Stock */}
+                    <td className="py-2 pr-4">
                       {typeof r.stock === "number" ? (
                         <span className={isOut ? "text-red-300 font-semibold" : ""}>
                           {r.stock}
                         </span>
-                      ) : (
-                        "—"
-                      )}
+                      ) : "—"}
                     </td>
-                    <td className="py-2 pr-6">
+
+                    {/* Preis */}
+                    <td className="py-2 pr-4">
+                      {r.priceEUR.toFixed(2)} {r.currency || "EUR"}
+                    </td>
+
+                    {/* Kategorie */}
+                    <td className="py-2 pr-4">{r.categoryCode}</td>
+
+                    {/* Status */}
+                    <td className="py-2 pr-4">
                       <button
                         onClick={() => toggleActive(r.id, r.active)}
                         className={`px-2 py-0.5 rounded text-xs ${
@@ -245,24 +285,23 @@ export default function AdminProductsPage() {
                         {isOut ? "ausverkauft" : r.active ? "aktiv" : "inaktiv"}
                       </button>
                     </td>
-                    <td className="py-2 pr-6">
-                      <div className="flex items-center gap-2">
-                        <Link
-                          href={`/admin/products/edit/${r.id}`}
-                          className="px-2 py-1 rounded bg-white/10 hover:bg-white/20"
-                          title="Bearbeiten"
-                        >
-                          ✏️
-                        </Link>
-                        <button
-                          onClick={() => remove(r.id, r.slug)}
-                          className="px-2 py-1 rounded bg-red-500/30 hover:bg-red-500/50"
-                          title="Löschen"
-                        >
-                          🗑️
-                        </button>
-                      </div>
+
+                    {/* Löschen */}
+                    <td className="py-2 pr-4">
+                      <button
+                        onClick={() => remove(r.id, r.slug)}
+                        className="px-2 py-1 rounded bg-red-500/30 hover:bg-red-500/50"
+                        title="Löschen"
+                      >
+                        🗑️
+                      </button>
                     </td>
+
+                    {/* Datum */}
+                    <td className="py-2 pr-4 whitespace-nowrap">{fmtDate(r.createdAt)}</td>
+
+                    {/* Slug */}
+                    <td className="py-2 pr-4">{r.slug}</td>
                   </tr>
                 );
               })

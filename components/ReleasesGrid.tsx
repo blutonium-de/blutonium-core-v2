@@ -2,6 +2,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import ReleaseLinks from "./ReleaseLinks";
 
 type Release = {
   id: string;
@@ -129,7 +130,7 @@ export default function ReleasesGrid() {
               return a.title.localeCompare(b.title);
             });
 
-          if (group.length === 0) return null;
+        if (group.length === 0) return null;
 
           return (
             <section key={y} id={`y${y}`} className="scroll-mt-24">
@@ -176,38 +177,16 @@ export default function ReleasesGrid() {
                         <div className="text-sm opacity-80">{r.artists}</div>
                       ) : null}
 
-                      {/* Links */}
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {r.spotifyUrl ? (
-                          <a
-                            href={r.spotifyUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="px-2 py-1 rounded bg-green-500/30 hover:bg-green-500/40 text-sm"
-                          >
-                            Spotify
-                          </a>
-                        ) : null}
-                        {r.appleUrl ? (
-                          <a
-                            href={r.appleUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="px-2 py-1 rounded bg-white/20 hover:bg-white/30 text-sm"
-                          >
-                            Apple Music
-                          </a>
-                        ) : null}
-                        {r.beatportUrl ? (
-                          <a
-                            href={r.beatportUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="px-2 py-1 rounded bg-cyan-500/30 hover:bg-cyan-500/40 text-sm"
-                          >
-                            Beatport
-                          </a>
-                        ) : null}
+                      {/* Links — jetzt über ReleaseLinks mit Fallback-Suche */}
+                      <div className="mt-2">
+                        <ReleaseLinks
+                          title={r.title}
+                          artists={r.artists}
+                          spotifyUrl={r.spotifyUrl}
+                          appleUrl={r.appleUrl}
+                          beatportUrl={r.beatportUrl}
+                          size="sm"
+                        />
                       </div>
                     </div>
                   </article>

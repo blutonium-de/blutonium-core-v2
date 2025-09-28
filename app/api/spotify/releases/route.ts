@@ -1,6 +1,6 @@
 // app/api/spotify/releases/route.ts
 import { NextResponse } from "next/server";
-import { ARTISTS, getSpotifyToken, invalidateSpotifyToken } from "../../../../lib/spotify";
+import { ARTISTS, getSpotifyToken } from "../../../../lib/spotify";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,6 +19,16 @@ type SpotifyAlbum = {
   artists?: SpotifyArtistRef[];
 };
 
+// *** HIER Labels/Queries pflegen – ergänzt Compilations (Various Artists etc.) ***
+const LABEL_QUERIES: string[] = [
+  'label:"Blutonium Records"',
+  'label:"Blutonium Traxx"',
+  // weitere Label-/Seriennamen möglich, z. B.:
+  // 'label:"DJ Session"', 'label:"Harddance"', ...
+];
+
+const MARKET = "DE"; // oder "AT" – Markt beeinflusst Verfügbarkeit/Sortierung
+
 function toYear(release_date: string): number | null {
   const y = Number((release_date || "").slice(0, 4));
   return Number.isFinite(y) ? y : null;
@@ -31,74 +41,81 @@ function pickSquare250(images: SpotifyImage[]): string | null {
   return (good || sorted[sorted.length - 1]).url || null;
 }
 
-// Einmaliger 401-Retry (Token refresh)
-async function fetchArtistAlbumsWithRetry(artistId: string): Promise<SpotifyAlbum[]> {
-  let token = await getSpotifyToken();
-  let url = `https://api.spotify.com/v1/artists/${artistId}/albums?include_groups=album,single,compilation&limit=50&market=DE`;
+async function fetchAllAlbumsForArtist(
+  token: string,
+  artistId: string
+): Promise<SpotifyAlbum[]> {
   const out: SpotifyAlbum[] = [];
-  let retried = false;
-
+  let url = `https://api.spotify.com/v1/artists/${artistId}/albums?include_groups=album,single,compilation&limit=50&market=${MARKET}`;
   while (url) {
     const res = await fetch(url, {
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store",
     });
     const j = await res.json();
-
-    if (res.status === 401 && !retried) {
-      // Token abgelaufen → neu holen und denselben Request einmal wiederholen
-      console.warn("[Spotify] 401 erhalten, refreshe Token & retry …", { artistId });
-      retried = true;
-      invalidateSpotifyToken();
-      token = await getSpotifyToken({ force: true });
-      // retry denselben URL
-      const res2 = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}` },
-        cache: "no-store",
-      });
-      const j2 = await res2.json();
-      if (!res2.ok) {
-        console.error("[Spotify] retry failed", { artistId, status: res2.status, body: j2 });
-        break;
-      }
-      const items: SpotifyAlbum[] = j2?.items || [];
-      out.push(...items);
-      url = j2?.next || "";
-      continue;
-    }
-
     if (!res.ok) {
-      console.error("[Spotify] Fehler beim Laden der Alben", { artistId, status: res.status, body: j });
+      console.error("[Spotify] Fehler beim Laden der Alben", {
+        artistId,
+        status: res.status,
+        body: j,
+      });
       break;
     }
-
     const items: SpotifyAlbum[] = j?.items || [];
     out.push(...items);
     url = j?.next || "";
   }
+  return out;
+}
 
+async function fetchAlbumsBySearch(token: string, query: string): Promise<SpotifyAlbum[]> {
+  const out: SpotifyAlbum[] = [];
+  let url = `https://api.spotify.com/v1/search?type=album&limit=50&market=${MARKET}&q=${encodeURIComponent(
+    query
+  )}`;
+  while (url) {
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+    const j = await res.json();
+    if (!res.ok) {
+      console.error("[Spotify] Fehler bei der Label-Suche", {
+        query,
+        status: res.status,
+        body: j,
+      });
+      break;
+    }
+    const items: SpotifyAlbum[] = j?.albums?.items || [];
+    out.push(...items);
+    url = j?.albums?.next || "";
+  }
   return out;
 }
 
 export async function GET() {
   try {
-    if (!process.env.SPOTIFY_CLIENT_ID || !process.env.SPOTIFY_CLIENT_SECRET) {
-      console.error("[Spotify] Environment Variablen fehlen!", {
-        hasID: !!process.env.SPOTIFY_CLIENT_ID,
-        hasSecret: !!process.env.SPOTIFY_CLIENT_SECRET,
-      });
-      return NextResponse.json({ items: [], error: "Spotify-Env fehlt" }, { status: 500 });
+    const token = await getSpotifyToken();
+
+    // Sammeln & deduplizieren
+    const map = new Map<string, SpotifyAlbum>();
+
+    // 1) Künstler-basierte Releases
+    for (const aid of ARTISTS) {
+      if (!aid || /PLEASE_PUT/i.test(aid)) continue;
+      const albums = await fetchAllAlbumsForArtist(token, aid);
+      for (const a of albums) {
+        const key = a.id || `${a.name || ""}::${a.release_date || ""}`;
+        if (!map.has(key)) map.set(key, a);
+      }
     }
 
-    const map = new Map<string, SpotifyAlbum>();
-    for (const aid of ARTISTS) {
-      if (!aid || /PLEASE_PUT/i.test(aid)) {
-        console.warn("[Spotify] Überspringe Platzhalter/ungültige Artist-ID:", aid);
-        continue;
-      }
-      const albums = await fetchArtistAlbumsWithRetry(aid);
+    // 2) Label-Suchen (holt Compilations/Various Artists)
+    for (const q of LABEL_QUERIES) {
+      const albums = await fetchAlbumsBySearch(token, q);
       for (const a of albums) {
-        const key = `${a.id}::${a.release_date || ""}::${a.name || ""}`;
+        const key = a.id || `${a.name || ""}::${a.release_date || ""}`;
         if (!map.has(key)) map.set(key, a);
       }
     }
@@ -137,7 +154,7 @@ export async function GET() {
       })
       .filter((r) => r.year);
 
-    // Global absteigend nach Datum
+    // Neueste zuerst (nach Datum, dann Titel)
     items.sort((a, b) => {
       const ad = a.releaseDate || "";
       const bd = b.releaseDate || "";
@@ -146,12 +163,11 @@ export async function GET() {
       return (a.title || "").localeCompare(b.title || "");
     });
 
-    console.log(`[Spotify] Insgesamt ${items.length} Releases gesammelt.`);
     return NextResponse.json({ items }, { status: 200 });
   } catch (e: any) {
-    console.error("/api/spotify/releases FATAL", e);
+    console.error("/api/spotify/releases error:", e);
     return NextResponse.json(
-      { items: [], error: e?.message || "server error" },
+      { error: e?.message || "server error" },
       { status: 500 }
     );
   }

@@ -52,8 +52,9 @@ export async function GET(req: NextRequest) {
         priceEUR: true,
         currency: true,
         active: true,
-        stock: true,            // <— NEU
+        stock: true,
         createdAt: true,
+        image: true,            // ← NEU: Bild für Cover in der Liste
       },
     });
 
@@ -94,7 +95,7 @@ export async function POST(req: NextRequest) {
         active: body.active ?? true,
         image: body.image,
         images: body.images || [],
-        stock: Number.isFinite(body.stock) ? Number(body.stock) : 1, // <— NEU: default 1
+        stock: Number.isFinite(body.stock) ? Number(body.stock) : 1, // default 1
       },
     });
 
