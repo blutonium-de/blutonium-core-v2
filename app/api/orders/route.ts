@@ -59,7 +59,7 @@ export async function GET(req: NextRequest) {
                 productName: true,
                 artist: true,
                 trackTitle: true,
-                priceEUR: true,
+                priceEUR: true, // EUR (float) – nur Fallback/Zusatzinfo
                 stock: true,
                 active: true,
               },
@@ -72,10 +72,16 @@ export async function GET(req: NextRequest) {
     // kleine Summen-Hilfen
     const mapped = orders.map((o) => {
       const itemCount = o.items.reduce((n, it) => n + (it.qty || 0), 0);
-      const subtotal = o.items.reduce((sum, it) => {
-        const unit = Number(it.priceEUR ?? it.product?.priceEUR ?? 0);
-        return sum + unit * (it.qty || 0);
+
+      // unitPrice = Cents. Fallback: Produktpreis(EUR) → Cents
+      const subtotalCents = o.items.reduce((sum, it) => {
+        const unitCents =
+          typeof it.unitPrice === "number"
+            ? it.unitPrice
+            : Math.round((it.product?.priceEUR || 0) * 100);
+        return sum + unitCents * (it.qty || 0);
       }, 0);
+
       return {
         id: o.id,
         stripeId: o.stripeId,
@@ -83,24 +89,33 @@ export async function GET(req: NextRequest) {
         createdAt: o.createdAt,
         // optionale Felder hier ergänzen, wenn du sie im Order-Modell hast:
         // email: o.email, name: o.name,
-        items: o.items.map((it) => ({
-          id: it.id,
-          productId: it.productId,
-          qty: it.qty,
-          priceEUR: it.priceEUR,
-          product: {
-            id: it.product?.id,
-            slug: it.product?.slug,
-            productName: it.product?.productName,
-            artist: it.product?.artist,
-            trackTitle: it.product?.trackTitle,
-            priceEUR: it.product?.priceEUR,
-            stock: it.product?.stock,
-            active: it.product?.active,
-          },
-        })),
+        items: o.items.map((it) => {
+          const unitCents =
+            typeof it.unitPrice === "number"
+              ? it.unitPrice
+              : Math.round((it.product?.priceEUR || 0) * 100);
+
+          return {
+            id: it.id,
+            productId: it.productId,
+            qty: it.qty,
+            unitPrice: unitCents,            // Cents (KANONISCH)
+            priceEUR: unitCents / 100,       // ← nur zur Bequemlichkeit/Abwärtskompatibilität
+            product: {
+              id: it.product?.id,
+              slug: it.product?.slug,
+              productName: it.product?.productName,
+              artist: it.product?.artist,
+              trackTitle: it.product?.trackTitle,
+              priceEUR: it.product?.priceEUR, // Info (EUR float)
+              stock: it.product?.stock,
+              active: it.product?.active,
+            },
+          };
+        }),
         itemCount,
-        subtotal,
+        subtotal: subtotalCents,        // Cents
+        subtotalEUR: subtotalCents / 100, // Bequemlichkeit
       };
     });
 
