@@ -23,6 +23,7 @@ export async function GET(req: NextRequest) {
 
     const q = (req.nextUrl.searchParams.get("q") || "").trim();
     const cat = (req.nextUrl.searchParams.get("cat") || "").trim();
+    const soldOut = req.nextUrl.searchParams.get("soldOut") === "1";
 
     const where: any = {};
     if (q) {
@@ -36,6 +37,7 @@ export async function GET(req: NextRequest) {
       ];
     }
     if (cat) where.categoryCode = cat;
+    if (soldOut) where.stock = { lte: 0 };
 
     const items = await prisma.product.findMany({
       where,
@@ -50,6 +52,7 @@ export async function GET(req: NextRequest) {
         priceEUR: true,
         currency: true,
         active: true,
+        stock: true,            // <— NEU
         createdAt: true,
       },
     });
@@ -61,7 +64,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// -------- POST: anlegen (deine bestehende Logik bleibt erhalten) --------
+// -------- POST: anlegen --------
 export async function POST(req: NextRequest) {
   try {
     if (!okKey(req)) {
@@ -89,8 +92,9 @@ export async function POST(req: NextRequest) {
         isDigital: !!body.isDigital,
         sku: body.sku ?? null,
         active: body.active ?? true,
-        image: body.image,                  // Hauptbild (Data-URL oder URL)
-        images: body.images || [],          // Array<string>
+        image: body.image,
+        images: body.images || [],
+        stock: Number.isFinite(body.stock) ? Number(body.stock) : 1, // <— NEU: default 1
       },
     });
 

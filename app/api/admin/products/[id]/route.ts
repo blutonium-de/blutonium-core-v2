@@ -15,18 +15,13 @@ export async function GET(
     if (!prod) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
-
-    // images ist Json in deinem Schema → immer als Array zurückgeben
     const images = Array.isArray((prod as any).images)
       ? (prod as any).images
       : [];
 
     return NextResponse.json({ ...prod, images });
   } catch (e: any) {
-    return NextResponse.json(
-      { error: e?.message || "Server error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: e?.message || "Server error" }, { status: 500 });
   }
 }
 
@@ -35,11 +30,9 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  // Admin prüfen
-  const denied = ensureAdmin(req);
-  if (denied) return denied;
-
   try {
+    await ensureAdmin(req);
+
     const body = await req.json();
 
     const updated = await prisma.product.update({
@@ -61,19 +54,17 @@ export async function PATCH(
         weightGrams: body.weightGrams ?? null,
         isDigital: !!body.isDigital,
         sku: body.sku ?? null,
-        // nur setzen, wenn übergeben (sonst unverändert lassen)
-        active: typeof body.active === "boolean" ? body.active : undefined,
+        active: body.active ?? undefined,
         image: body.image || "",
         images: Array.isArray(body.images) ? body.images : [],
+        stock: Number.isFinite(body.stock) ? Number(body.stock) : undefined, // <— NEU
       },
     });
 
     return NextResponse.json(updated);
   } catch (e: any) {
-    return NextResponse.json(
-      { error: e?.message || "Server error" },
-      { status: 500 }
-    );
+    const code = e?.message?.includes("Unauthorized") ? 401 : 500;
+    return NextResponse.json({ error: e?.message || "Server error" }, { status: code });
   }
 }
 
@@ -82,25 +73,19 @@ export async function DELETE(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  // Admin prüfen
-  const denied = ensureAdmin(req);
-  if (denied) return denied;
-
   try {
-    // optionale Aufräumarbeiten (Bestell-Relationen)
+    await ensureAdmin(req);
+
     await prisma.orderItem.deleteMany({
       where: { productId: params.id },
     });
-
     await prisma.product.delete({
       where: { id: params.id },
     });
 
     return NextResponse.json({ ok: true });
   } catch (e: any) {
-    return NextResponse.json(
-      { error: e?.message || "Server error" },
-      { status: 500 }
-    );
+    const code = e?.message?.includes("Unauthorized") ? 401 : 500;
+    return NextResponse.json({ error: e?.message || "Server error" }, { status: code });
   }
 }

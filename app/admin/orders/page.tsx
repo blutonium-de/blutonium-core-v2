@@ -1,6 +1,5 @@
 // app/admin/orders/page.tsx
 import { prisma } from "../../../lib/db";
-import { headers } from "next/headers";
 import Link from "next/link";
 import OrderStatusControl from "../../../components/OrderStatusControl";
 
@@ -25,14 +24,14 @@ export default async function OrdersPage({ searchParams }: Props) {
     return (
       <div className="max-w-6xl mx-auto px-4 py-10">
         <div className="mb-6 flex items-center justify-between gap-3">
-  <h1 className="text-3xl font-extrabold">Admin / Orders</h1>
-  <a
-    href={`/api/admin/orders/export?key=${encodeURIComponent(token ?? "")}`}
-    className="px-3 py-1.5 rounded bg-white/10 hover:bg-white/20"
-  >
-    CSV exportieren
-  </a>
-</div>
+          <h1 className="text-3xl font-extrabold">Admin / Orders</h1>
+          <a
+            href={`/api/admin/orders/export?key=${encodeURIComponent(token ?? "")}`}
+            className="px-3 py-1.5 rounded bg-white/10 hover:bg-white/20"
+          >
+            CSV exportieren
+          </a>
+        </div>
         <p className="text-white/70">
           Zugriff verweigert. Hänge dein Admin-Token als Query an:
         </p>
@@ -57,7 +56,23 @@ export default async function OrdersPage({ searchParams }: Props) {
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-10">
-      <h1 className="text-3xl font-extrabold mb-6">Admin / Orders</h1>
+      <div className="mb-6 flex items-center justify-between gap-3">
+        <h1 className="text-3xl font-extrabold">Admin / Orders</h1>
+        <div className="flex items-center gap-2">
+          <a
+            href={`/api/admin/orders/export?key=${encodeURIComponent(token ?? "")}`}
+            className="px-3 py-1.5 rounded bg-white/10 hover:bg-white/20"
+          >
+            CSV exportieren
+          </a>
+          <Link
+            href={`/admin/products?key=${encodeURIComponent(token ?? "")}`}
+            className="px-3 py-1.5 rounded bg-white/10 hover:bg-white/20"
+          >
+            Produkte
+          </Link>
+        </div>
+      </div>
 
       {orders.length === 0 && (
         <div className="text-white/70">Noch keine Bestellungen.</div>
@@ -65,7 +80,12 @@ export default async function OrdersPage({ searchParams }: Props) {
 
       <div className="space-y-6">
         {orders.map((o) => {
-          const itemsTotal = o.items.reduce((sum, it) => sum + it.qty * it.unitPrice, 0);
+          const itemsTotal = o.items.reduce(
+            (sum, it) => sum + it.qty * it.unitPrice,
+            0
+          );
+          const sessionId = o.stripeId || ""; // wird für /api/checkout/confirm genutzt
+
           return (
             <article
               key={o.id}
@@ -73,15 +93,57 @@ export default async function OrdersPage({ searchParams }: Props) {
             >
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="font-semibold flex items-center gap-3">
-                 <span className="opacity-60">#{o.id.slice(-6)}</span>
-                 <OrderStatusControl orderId={o.id} current={o.status} adminKey={token} />
-              </div>
+                  <span className="opacity-60">#{o.id.slice(-6)}</span>
+                  <OrderStatusControl
+                    orderId={o.id}
+                    current={o.status}
+                    adminKey={token}
+                  />
+                </div>
                 <div className="text-sm opacity-70">
                   {new Date(o.createdAt).toLocaleString("de-AT")}
                 </div>
               </div>
 
-              <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+              {/* Stripe/Session ID + Aktion */}
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm">
+                <div className="min-w-0">
+                  <div className="opacity-60">Stripe Session</div>
+                  <div className="font-mono text-xs break-all">
+                    {sessionId || "—"}
+                  </div>
+                </div>
+                <div className="shrink-0">
+                  {sessionId ? (
+                    <form
+                      action={`/api/checkout/confirm?session_id=${encodeURIComponent(
+                        sessionId
+                      )}`}
+                      method="post"
+                      target="_blank"
+                      title="Lagerbestände anhand dieser Bestellung anwenden (öffnet JSON-Antwort in neuem Tab)"
+                    >
+                      <button
+                        type="submit"
+                        className="px-3 py-1.5 rounded bg-cyan-500 hover:bg-cyan-400 text-black font-semibold"
+                      >
+                        Bestand anwenden
+                      </button>
+                    </form>
+                  ) : (
+                    <button
+                      type="button"
+                      className="px-3 py-1.5 rounded bg-white/10 text-white/50 cursor-not-allowed"
+                      title="Keine Stripe-Session vorhanden"
+                      disabled
+                    >
+                      Bestand anwenden
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
                 <div>
                   <div className="opacity-60">E-Mail</div>
                   <div>{o.email ?? "—"}</div>
@@ -103,7 +165,11 @@ export default async function OrdersPage({ searchParams }: Props) {
                     const title =
                       it.product?.productName ||
                       (it.product
-                        ? `${it.product.artist ?? ""}${it.product.artist && it.product.trackTitle ? " – " : ""}${it.product.trackTitle ?? ""}`
+                        ? `${it.product.artist ?? ""}${
+                            it.product.artist && it.product.trackTitle
+                              ? " – "
+                              : ""
+                          }${it.product.trackTitle ?? ""}`
                         : "Versand / Service");
                     return (
                       <li
@@ -113,7 +179,9 @@ export default async function OrdersPage({ searchParams }: Props) {
                         <div className="min-w-0">
                           <div className="truncate">{title}</div>
                           <div className="text-xs opacity-60">
-                            {it.productId ? `Product #${it.productId}` : "ohne Produkt (Versand/Service)"}
+                            {it.productId
+                              ? `Product #${it.productId}`
+                              : "ohne Produkt (Versand/Service)"}
                           </div>
                         </div>
                         <div className="shrink-0 text-right">
@@ -129,7 +197,9 @@ export default async function OrdersPage({ searchParams }: Props) {
 
               <div className="mt-4 text-right">
                 <Link
-                  href={`/admin/orders/${o.id}?key=${encodeURIComponent(token ?? "")}`}
+                  href={`/admin/orders/${o.id}?key=${encodeURIComponent(
+                    token ?? ""
+                  )}`}
                   className="inline-block px-3 py-1.5 rounded bg-white/10 hover:bg-white/20"
                 >
                   Details

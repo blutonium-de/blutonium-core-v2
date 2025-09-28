@@ -1,12 +1,20 @@
-export default function Page(){
+// app/de/samples/page.tsx
+export const dynamic = "force-dynamic"
+
+export default function SamplesPage() {
   return (
-    <section>
-      <h1 className="text-3xl font-bold mb-6">Hardstyle Samples</h1>
-      <div className="card p-6">
-        <h3 className="font-semibold">Vol. 1–2 Bundle (Demo Download)</h3>
-        <p className="opacity-80 mt-2">Platzhalter — später ersetzen wir die ZIPs durch deine echten Packs + Lizenz.</p>
-        <a className="btn mt-4" href="/downloads/blutonium_demo_samples.zip">Demo-ZIP herunterladen</a>
+    <div className="mx-auto max-w-4xl px-4 py-16 text-center">
+      <h1 className="text-4xl sm:text-5xl font-extrabold">Hardstyle Samples</h1>
+      <p className="mt-4 text-lg opacity-80">
+        Coming soon: Blutonium pres. Hardstyle Samples Vol. 1 & 2 🎧
+      </p>
+
+      <div className="mt-10">
+        <p className="opacity-70">
+          Wir bereiten derzeit unsere Sample-Packs vor. Bald kannst du hier die
+          offiziellen Blutonium Hardstyle Samples herunterladen.
+        </p>
       </div>
-    </section>
+    </div>
   )
 }

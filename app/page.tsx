@@ -41,9 +41,7 @@ export default function Home() {
           </p>
         </div>
 
-        <div className="absolute inset-x-0 bottom-4 flex justify-center opacity-70">
-          
-        </div>
+        <div className="absolute inset-x-0 bottom-4 flex justify-center opacity-70"></div>
       </section>
 
       {/* 4 KARTEN */}
@@ -78,7 +76,7 @@ export default function Home() {
           <p className="mt-2 text-white/70">
             CDs, Shirts, Caps & Autogramme.
           </p>
-          <a href="/de/merch" className="btn mt-4 inline-flex">
+          <a href="/de/shop" className="btn mt-4 inline-flex">
             Zum Shop →
           </a>
         </article>

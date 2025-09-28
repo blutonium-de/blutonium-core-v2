@@ -17,11 +17,13 @@ type Row = {
   currency: string | null;
   active: boolean;
   createdAt: string;
+  stock?: number | null; // ← NEU
 };
 
 export default function AdminProductsPage() {
   const [q, setQ] = useState("");
   const [cat, setCat] = useState("");
+  const [soldOutOnly, setSoldOutOnly] = useState(false); // ← NEU
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -41,6 +43,7 @@ export default function AdminProductsPage() {
       const url = new URL("/api/admin/products", window.location.origin);
       if (q) url.searchParams.set("q", q);
       if (cat) url.searchParams.set("cat", cat);
+      if (soldOutOnly) url.searchParams.set("soldOut", "1"); // ← NEU
       if (adminKey) url.searchParams.set("key", adminKey);
 
       const r = await fetch(url.toString(), { cache: "no-store" });
@@ -120,6 +123,7 @@ export default function AdminProductsPage() {
         </div>
       </div>
 
+      {/* Filterzeile */}
       <div className="mt-6 grid grid-cols-1 sm:grid-cols-[1fr_auto_auto] gap-3">
         <input
           className="input"
@@ -149,6 +153,34 @@ export default function AdminProductsPage() {
         </button>
       </div>
 
+      {/* Zusatz-Filterchips */}
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => { setSoldOutOnly(false); load(); }}
+          className={`px-3 py-1 rounded-lg border ${
+            !soldOutOnly
+              ? "bg-cyan-500 text-black border-cyan-500"
+              : "bg-white/5 border-white/10 hover:bg-white/10"
+          }`}
+          title="Alle zeigen"
+        >
+          Alle
+        </button>
+        <button
+          type="button"
+          onClick={() => { setSoldOutOnly(true); load(); }}
+          className={`px-3 py-1 rounded-lg border ${
+            soldOutOnly
+              ? "bg-cyan-500 text-black border-cyan-500"
+              : "bg-white/5 border-white/10 hover:bg-white/10"
+          }`}
+          title="Nur ausverkauft anzeigen"
+        >
+          Nur ausverkauft
+        </button>
+      </div>
+
       {err && <p className="text-red-500 mt-4">{err}</p>}
       {loading && <p className="mt-4 opacity-70">Lade …</p>}
 
@@ -161,6 +193,7 @@ export default function AdminProductsPage() {
               <th className="py-2 pr-6">Artist / Titel</th>
               <th className="py-2 pr-6">Kategorie</th>
               <th className="py-2 pr-6">Preis</th>
+              <th className="py-2 pr-6">Stock</th> {/* ← NEU */}
               <th className="py-2 pr-6">Status</th>
               <th className="py-2 pr-6">Aktionen</th>
             </tr>
@@ -168,55 +201,71 @@ export default function AdminProductsPage() {
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={7} className="py-6 opacity-70">
+                <td colSpan={8} className="py-6 opacity-70">
                   Keine Produkte gefunden.
                 </td>
               </tr>
             ) : (
-              rows.map((r) => (
-                <tr key={r.id} className="border-t border-white/10">
-                  <td className="py-2 pr-6">{fmtDate(r.createdAt)}</td>
-                  <td className="py-2 pr-6">{r.slug}</td>
-                  <td className="py-2 pr-6">
-                    {r.artist || "—"}
-                    {r.artist && r.trackTitle ? " – " : " "}
-                    {r.trackTitle || r.productName || "—"}
-                  </td>
-                  <td className="py-2 pr-6">{r.categoryCode}</td>
-                  <td className="py-2 pr-6">
-                    {r.priceEUR.toFixed(2)} {r.currency || "EUR"}
-                  </td>
-                  <td className="py-2 pr-6">
-                    <button
-                      onClick={() => toggleActive(r.id, r.active)}
-                      className={`px-2 py-0.5 rounded text-xs ${
-                        r.active ? "bg-green-500/30" : "bg-orange-500/30"
-                      }`}
-                      title="Aktiv/Inaktiv umschalten"
-                    >
-                      {r.active ? "aktiv" : "inaktiv"}
-                    </button>
-                  </td>
-                  <td className="py-2 pr-6">
-                    <div className="flex items-center gap-2">
-                      <Link
-                        href={`/admin/products/edit/${r.id}`}
-                        className="px-2 py-1 rounded bg-white/10 hover:bg-white/20"
-                        title="Bearbeiten"
-                      >
-                        ✏️
-                      </Link>
+              rows.map((r) => {
+                const isOut = (r.stock ?? 0) <= 0;
+                return (
+                  <tr key={r.id} className="border-t border-white/10">
+                    <td className="py-2 pr-6">{fmtDate(r.createdAt)}</td>
+                    <td className="py-2 pr-6">{r.slug}</td>
+                    <td className="py-2 pr-6">
+                      {r.artist || "—"}
+                      {r.artist && r.trackTitle ? " – " : " "}
+                      {r.trackTitle || r.productName || "—"}
+                    </td>
+                    <td className="py-2 pr-6">{r.categoryCode}</td>
+                    <td className="py-2 pr-6">
+                      {r.priceEUR.toFixed(2)} {r.currency || "EUR"}
+                    </td>
+                    <td className="py-2 pr-6">
+                      {typeof r.stock === "number" ? (
+                        <span className={isOut ? "text-red-300 font-semibold" : ""}>
+                          {r.stock}
+                        </span>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td className="py-2 pr-6">
                       <button
-                        onClick={() => remove(r.id, r.slug)}
-                        className="px-2 py-1 rounded bg-red-500/30 hover:bg-red-500/50"
-                        title="Löschen"
+                        onClick={() => toggleActive(r.id, r.active)}
+                        className={`px-2 py-0.5 rounded text-xs ${
+                          isOut
+                            ? "bg-red-500/30"
+                            : r.active
+                            ? "bg-green-500/30"
+                            : "bg-orange-500/30"
+                        }`}
+                        title="Aktiv/Inaktiv umschalten"
                       >
-                        🗑️
+                        {isOut ? "ausverkauft" : r.active ? "aktiv" : "inaktiv"}
                       </button>
-                    </div>
-                  </td>
-                </tr>
-              ))
+                    </td>
+                    <td className="py-2 pr-6">
+                      <div className="flex items-center gap-2">
+                        <Link
+                          href={`/admin/products/edit/${r.id}`}
+                          className="px-2 py-1 rounded bg-white/10 hover:bg-white/20"
+                          title="Bearbeiten"
+                        >
+                          ✏️
+                        </Link>
+                        <button
+                          onClick={() => remove(r.id, r.slug)}
+                          className="px-2 py-1 rounded bg-red-500/30 hover:bg-red-500/50"
+                          title="Löschen"
+                        >
+                          🗑️
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>

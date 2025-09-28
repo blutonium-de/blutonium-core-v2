@@ -23,6 +23,7 @@ type ProductPayload = {
   weightGrams?: number;
   isDigital?: boolean;
   sku?: string;
+  stock?: number;        // << NEU
   active?: boolean;
   image: string;
   images: string[];
@@ -44,16 +45,15 @@ export default function AdminProductForm() {
   const [format, setFormat] = useState("");
   const [weight, setWeight] = useState<string>("");
   const [condition, setCondition] = useState<string>("");
+  const [stock, setStock] = useState<string>("1"); // << NEU, default 1
   const [slugTouched, setSlugTouched] = useState(false);
 
   const formRef = useRef<HTMLFormElement | null>(null);
   const upcRef = useRef<HTMLInputElement | null>(null);
   const priceRef = useRef<HTMLInputElement | null>(null);
 
-  // Scanner-Overlay
   const [scannerOpen, setScannerOpen] = useState(false);
 
-  // Helpers
   function strOrNull(v: FormDataEntryValue | null): string | undefined {
     const s = (v == null ? "" : String(v)).trim();
     return s ? s : undefined;
@@ -73,7 +73,6 @@ export default function AdminProductForm() {
       .slice(0, 80);
   }
 
-  // Auto Artist/Title aus Produktname (nur wenn beide leer)
   useEffect(() => {
     if (!productName || artist || trackTitle) return;
     const parts = productName.split(/\s[-–—]\s|[-–—]/);
@@ -87,13 +86,11 @@ export default function AdminProductForm() {
     }
   }, [productName, artist, trackTitle]);
 
-  // Vinyl default weight
   useEffect(() => {
     const isVinyl = category === "bv" || category === "sv" || /vinyl|lp/i.test(format);
     if (isVinyl && !weight) setWeight("150");
   }, [category, format, weight]);
 
-  // Auto-Slug, solange User Feld nicht anfasst
   useEffect(() => {
     const slugInput = document.querySelector<HTMLInputElement>('input[name="slug"]');
     if (!slugInput || slugTouched) return;
@@ -108,7 +105,6 @@ export default function AdminProductForm() {
     }
   }, [artist, trackTitle, productName, slugTouched]);
 
-  // *** Auto-Preis 9,90 bei gebrauchtem Vinyl ***
   useEffect(() => {
     const isVinyl = category === "bv" || category === "sv" || /vinyl|lp/i.test(format);
     const usedConditions = ["ok", "gebraucht", "stark"];
@@ -119,7 +115,6 @@ export default function AdminProductForm() {
     }
   }, [condition, category, format]);
 
-  // Discogs Lookup (über UPC/EAN)
   async function lookupDiscogs(code: string) {
     if (!code) return;
     setMsg(null);
@@ -164,7 +159,6 @@ export default function AdminProductForm() {
     }
   }
 
-  // Scanner -> EAN füllen -> Lookup
   function handleBarcodeDetected(code: string) {
     if (upcRef.current) upcRef.current.value = code;
     setScannerOpen(false);
@@ -195,6 +189,7 @@ export default function AdminProductForm() {
       weightGrams: weight ? Number(weight) : undefined,
       isDigital: fd.get("isDigital") === "on",
       sku: strOrNull(fd.get("sku")),
+      stock: Math.max(0, Number(stock) || 1), // << NEU
       active: fd.get("active") === "on",
       image: images[0] || String(fd.get("image") || ""),
       images: images.length ? images : safeJsonArray(String(fd.get("imagesJson") || "[]")),
@@ -220,17 +215,15 @@ export default function AdminProductForm() {
       let j: any; try { j = JSON.parse(text); } catch { j = { error: text || "Unknown server error" }; }
       if (!res.ok) throw new Error(j?.error || "Fehler beim Speichern");
 
-      // ✔ Reset + Weiterleitung
       try { formRef.current?.reset(); } catch {}
-      setImages([]);
-      setFilenames([]);
+      setImages([]); setFilenames([]);
       setProductName(""); setArtist(""); setTrackTitle("");
       setCategory("ss"); setFormat(""); setWeight("");
-      setCondition(""); setSlugTouched(false);
+      setCondition(""); setSlugTouched(false); setStock("1");
       if (priceRef.current) priceRef.current.value = "";
 
       setMsg("Gespeichert ✔");
-      router.push("/admin/products"); // Redirect zur Liste
+      router.push("/admin/products");
     } catch (err: any) {
       setMsg(err?.message || "Fehler");
     } finally {
@@ -240,7 +233,6 @@ export default function AdminProductForm() {
 
   return (
     <form ref={formRef} onSubmit={onSubmit} className="space-y-6">
-      {/* Bilder */}
       <ImageDrop
         max={5}
         onChange={(arr, names) => {
@@ -265,7 +257,6 @@ export default function AdminProductForm() {
         }}
       />
 
-      {/* Felder */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <L label="Slug* (auto — du kannst überschreiben)">
           <input
@@ -314,7 +305,6 @@ export default function AdminProductForm() {
           <input name="year" type="number" className="input" />
         </L>
 
-        {/* UPC/EAN + Scanner */}
         <L label="UPC/EAN">
           <div className="flex gap-2">
             <input ref={upcRef} name="upcEan" className="input flex-1" />
@@ -355,6 +345,18 @@ export default function AdminProductForm() {
         <L label="SKU">
           <input name="sku" className="input" />
         </L>
+        <L label="Bestand (Stück)*">
+          <input
+            name="stock"
+            type="number"
+            min={0}
+            className="input"
+            value={stock}
+            onChange={(e) => setStock(e.target.value)}
+            placeholder="1"
+            required
+          />
+        </L>
         <L label="Aktiv">
           <input name="active" type="checkbox" defaultChecked />
         </L>
@@ -373,7 +375,6 @@ export default function AdminProductForm() {
         {busy ? "Speichere …" : "Speichern"}
       </button>
 
-      {/* Scanner Overlay */}
       {scannerOpen && (
         <BarcodeScanner
           onDetected={(code) => handleBarcodeDetected(code)}

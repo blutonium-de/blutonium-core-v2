@@ -1,146 +1,236 @@
 // components/BarcodeScanner.tsx
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  BrowserMultiFormatReader,
+  BarcodeFormat,
+  DecodeHintType,
+} from "@zxing/browser";
 
 type Props = {
-  onDetected: (code: string) => void;
+  open: boolean;
   onClose: () => void;
-  formats?: string[]; // z.B. ["ean_13","ean_8","upc_a","upc_e","code_128"]
+  onDetected: (code: string) => void;
+  /** z.B. ["ean_13","ean_8","upc_a","upc_e","code_128"] */
+  formats?: string[];
 };
 
-type BarcodeDetectorType = {
-  new (opts?: { formats?: string[] }): {
-    detect: (img: CanvasImageSource) => Promise<Array<{ rawValue: string }>>;
-  };
-};
+function isInAppWebView(ua: string) {
+  ua = ua.toLowerCase();
+  return (
+    ua.includes("fbav") || ua.includes("fban") || // Facebook
+    ua.includes("instagram") ||                   // Instagram
+    ua.includes("line") ||                        // LINE
+    ua.includes("wv") ||                          // Generic WebView (Android)
+    ua.includes("twitter") ||                     // X/Twitter
+    ua.includes("whatsapp")                       // WhatsApp
+  );
+}
 
-export default function BarcodeScanner({ onDetected, onClose, formats }: Props) {
+function mapFormats(list?: string[]) {
+  // Default: die gängigen Handelscodes
+  const wanted = (list && list.length ? list : ["ean_13", "ean_8", "upc_a", "upc_e", "code_128"])
+    .map((s) => s.toLowerCase());
+
+  const set = new Set<BarcodeFormat>();
+  if (wanted.includes("ean_13")) set.add(BarcodeFormat.EAN_13);
+  if (wanted.includes("ean_8")) set.add(BarcodeFormat.EAN_8);
+  if (wanted.includes("upc_a")) set.add(BarcodeFormat.UPC_A);
+  if (wanted.includes("upc_e")) set.add(BarcodeFormat.UPC_E);
+  if (wanted.includes("code_128")) set.add(BarcodeFormat.CODE_128);
+  if (wanted.includes("code_39")) set.add(BarcodeFormat.CODE_39);
+  if (wanted.includes("itf")) set.add(BarcodeFormat.ITF);
+  return set;
+}
+
+export default function BarcodeScanner({
+  open,
+  onClose,
+  onDetected,
+  formats,
+}: Props) {
   const [error, setError] = useState<string | null>(null);
+  const [ready, setReady] = useState(false); // Kamera initialisiert
+  const [starting, setStarting] = useState(false);
+
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const rafRef = useRef<number | null>(null);
+  const readerRef = useRef<BrowserMultiFormatReader | null>(null);
+
+  const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
+  const inApp = useMemo(() => isInAppWebView(ua), [ua]);
+
+  const hints = useMemo(() => {
+    const h = new Map();
+    h.set(DecodeHintType.POSSIBLE_FORMATS, Array.from(mapFormats(formats)));
+    return h;
+  }, [formats]);
+
+  // Aufräumen (Tracks stoppen)
+  function stopAll() {
+    try {
+      readerRef.current?.stopContinuousDecode();
+    } catch {}
+    readerRef.current = null;
+
+    const s = streamRef.current;
+    if (s) {
+      s.getTracks().forEach((t) => {
+        try { t.stop(); } catch {}
+      });
+    }
+    streamRef.current = null;
+    setReady(false);
+  }
 
   useEffect(() => {
-    let cancelled = false;
+    if (!open) {
+      // Modal ist zu → sicherheitshalber stoppen
+      stopAll();
+      setError(null);
+      setStarting(false);
+    } else {
+      // Beim Öffnen noch keinen Autostart → iOS will User-Geste
+      setError(null);
+      setStarting(false);
+      setReady(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
-    async function start() {
-      // Check Browser support
-      const BD = (window as any).BarcodeDetector as BarcodeDetectorType | undefined;
-      if (!BD) {
-        setError(
-          "Dein Browser unterstützt den Kamera-Barcode-Scanner nicht. Bitte nutze Chrome/Edge/Safari – oder tippe den Code ein."
-        );
-        return;
-      }
+  async function startCamera() {
+    setError(null);
 
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: { ideal: "environment" },
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-          },
-          audio: false,
-        });
-        if (cancelled) return;
-        streamRef.current = stream;
+    // Grundchecks
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setError("Kamera-API nicht verfügbar.");
+      return;
+    }
+    if (location.protocol !== "https:" && location.hostname !== "localhost") {
+      setError("Kamera erfordert HTTPS. Bitte über https aufrufen.");
+      return;
+    }
+    if (inApp) {
+      setError("Dieser In-App-Browser blockiert den Kamera-Zugriff. Bitte in Safari oder Chrome öffnen.");
+      return;
+    }
 
-        const v = videoRef.current!;
-        (v as any).srcObject = stream;
-        await v.play();
+    try {
+      setStarting(true);
 
-        const detector = new BD({
-          formats:
-            formats ||
-            [
-              "ean_13",
-              "ean_8",
-              "upc_a",
-              "upc_e",
-              "code_128",
-              "code_39",
-              "itf",
-              "qr_code",
-            ],
-        });
+      // Rückkamera bevorzugen
+      const constraints: MediaStreamConstraints = {
+        video: {
+          facingMode: { ideal: "environment" },
+          // etwas konservativ für iPhone-Performance
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+        audio: false,
+      };
 
-        const canvas = document.createElement("canvas");
-        const ctx = canvas.getContext("2d")!;
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      streamRef.current = stream;
 
-        const tick = async () => {
-          if (!videoRef.current) return;
-          const vw = videoRef.current.videoWidth || 0;
-          const vh = videoRef.current.videoHeight || 0;
-          if (vw && vh) {
-            canvas.width = vw;
-            canvas.height = vh;
-            ctx.drawImage(videoRef.current, 0, 0, vw, vh);
-            try {
-              const results = await detector.detect(canvas as unknown as CanvasImageSource);
-              if (results && results.length) {
-                const value = results[0].rawValue?.trim();
-                if (value) {
-                  stop();
-                  onDetected(value);
-                  return;
-                }
-              }
-            } catch {
-              // ignore and keep scanning
-            }
+      const video = videoRef.current!;
+      video.srcObject = stream;
+      // iOS braucht playsInline, muted, kein Autoplay-Block
+      video.setAttribute("playsinline", "true");
+      (video as any).muted = true;
+
+      await video.play();
+
+      // ZXing-Reader
+      const reader = new BrowserMultiFormatReader(hints, 300);
+      readerRef.current = reader;
+
+      await reader.decodeFromVideoDevice(
+        undefined,
+        video,
+        (result, err, controls) => {
+          // Bei jedem Frame Callback: result = Barcode, err = DecodingError/NotFound
+          if (result) {
+            // Code gefunden → sofort stoppen
+            try { controls.stop(); } catch {}
+            stopAll();
+            onDetected(result.getText());
           }
-          rafRef.current = requestAnimationFrame(tick);
-        };
+        }
+      );
 
-        rafRef.current = requestAnimationFrame(tick);
-      } catch (e: any) {
-        setError(e?.message || "Kamera konnte nicht gestartet werden.");
-      }
+      setReady(true);
+    } catch (e: any) {
+      console.error("Scanner start error:", e);
+      setError(e?.message || "Kamera-Zugriff verweigert oder fehlgeschlagen.");
+    } finally {
+      setStarting(false);
     }
+  }
 
-    start();
-
-    function stop() {
-      rafRef.current && cancelAnimationFrame(rafRef.current);
-      rafRef.current = null;
-      streamRef.current?.getTracks().forEach((t) => t.stop());
-      streamRef.current = null;
-    }
-
-    return () => {
-      cancelled = true;
-      stop();
-    };
-  }, [formats, onDetected]);
-
-  return (
-    <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4">
-      <div className="w-full max-w-md bg-black rounded-lg border border-white/20 p-3">
-        <div className="flex items-center justify-between mb-2">
-          <h2 className="font-semibold">Barcode scannen</h2>
+  return !open ? null : (
+    <div
+      className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+    >
+      <div className="w-full max-w-lg rounded-xl border border-white/15 bg-zinc-900 shadow-xl overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+          <h2 className="text-lg font-semibold">Barcode scannen</h2>
           <button
-            type="button"
-            onClick={onClose}
-            className="px-2 py-1 rounded bg-white/10 hover:bg-white/20"
+            onClick={() => { stopAll(); onClose(); }}
+            className="px-3 py-1.5 rounded bg-white/10 hover:bg-white/20"
           >
             Schließen
           </button>
         </div>
 
-        <video ref={videoRef} playsInline autoPlay muted className="w-full rounded bg-black" />
+        <div className="p-4 space-y-4">
+          {/* Video-Viewport */}
+          <div className="aspect-video w-full bg-black/60 rounded-lg grid place-items-center overflow-hidden">
+            <video
+              ref={videoRef}
+              className="w-full h-full object-contain"
+              playsInline
+            />
+            {!ready && (
+              <div className="absolute text-sm opacity-80 px-3 py-1 rounded bg-white/10">
+                {starting ? "Kamera wird gestartet …" : "Bereit"}
+              </div>
+            )}
+          </div>
 
-        {error && (
-          <p className="text-red-500 text-sm mt-3">
-            {error}
-          </p>
-        )}
+          {error ? (
+            <div className="rounded border border-red-500/30 bg-red-500/10 text-red-200 p-3 text-sm">
+              {error}
+              {inApp && (
+                <div className="mt-2 opacity-80">
+                  Öffne die Seite bitte direkt in <b>Safari</b> oder <b>Chrome</b> (nicht aus WhatsApp/Instagram).
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <button
+                onClick={startCamera}
+                disabled={starting}
+                className="px-4 py-2 rounded bg-cyan-500 hover:bg-cyan-400 text-black font-semibold disabled:opacity-60"
+              >
+                {starting ? "Starte Kamera …" : "Kamera starten"}
+              </button>
+              <button
+                onClick={stopAll}
+                className="px-4 py-2 rounded bg-white/10 hover:bg-white/20"
+              >
+                Kamera stoppen
+              </button>
+            </div>
+          )}
 
-        {!error && (
-          <p className="opacity-70 text-sm mt-3">
-            Richte die Kamera auf den EAN/UPC-Barcode. Der Scan passiert automatisch.
-          </p>
-        )}
+          <div className="text-xs opacity-70">
+            Tipp: Halte den Code ruhig ins Bild. Unterstützt werden EAN-13/8, UPC-A/E, CODE-128 (konfigurierbar).
+          </div>
+        </div>
       </div>
     </div>
   );

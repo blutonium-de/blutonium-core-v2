@@ -23,9 +23,10 @@ type Product = {
   weightGrams?: number | null;
   isDigital: boolean;
   sku?: string | null;
+  stock: number;           // << NEU
   active: boolean;
-  image: string;        // Hauptbild (500x500)
-  images: string[];     // weitere Bilder
+  image: string;
+  images: string[];
 };
 
 export default function AdminEditProductPage({ params }: { params: { id: string } }) {
@@ -38,13 +39,11 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
   const [p, setP] = useState<Product | null>(null);
   const [images, setImages] = useState<string[]>([]);
   const [active, setActive] = useState<boolean>(false);
+  const [stock, setStock]   = useState<number>(1); // << NEU
 
-  // Delete-Dialog
   const [confirmOpen, setConfirmOpen] = useState(false);
-
   const formRef = useRef<HTMLFormElement | null>(null);
 
-  // Produkt laden
   useEffect(() => {
     (async () => {
       setLoading(true);
@@ -58,6 +57,7 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
         const prod: Product = j;
         setP(prod);
         setActive(prod.active);
+        setStock(prod.stock ?? 1); // << NEU
         setImages(prod.images?.length ? prod.images : (prod.image ? [prod.image] : []));
       } catch (e: any) {
         setMsg(e?.message || "Fehler beim Laden");
@@ -67,7 +67,6 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
     })();
   }, [id]);
 
-  // Speichern
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!p) return;
@@ -81,6 +80,8 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
         (typeof window !== "undefined" && localStorage.getItem("admin_key")) ||
         process.env.NEXT_PUBLIC_ADMIN_TOKEN ||
         "";
+
+      const nextStock = Math.max(0, Number(fd.get("stock") || stock || 1));
 
       const body = {
         slug: String(fd.get("slug") || "").trim(),
@@ -99,7 +100,8 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
         weightGrams: numOrNull(fd.get("weightGrams")),
         isDigital: fd.get("isDigital") === "on",
         sku: strOrNull(fd.get("sku")),
-        active,                       // aus State (ggf. via Toggle geändert)
+        stock: nextStock,               // << NEU
+        active,                         // aus State
         image: images[0] || "",
         images,
       };
@@ -115,8 +117,6 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
       if (!r.ok) throw new Error(j?.error || "Speichern fehlgeschlagen");
 
       setMsg("Gespeichert ✔");
-      // Optional direkt zurück:
-      // window.location.href = "/admin/products?updated=1";
     } catch (e: any) {
       setMsg(e?.message || "Fehler");
     } finally {
@@ -124,7 +124,6 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
     }
   }
 
-  // Aktiv/Inactive Toggle (sofort speichern – leichtgewichtig)
   async function toggleActive() {
     if (!p) return;
     const next = !active;
@@ -148,17 +147,13 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
       }
       setMsg(`Status: ${next ? "aktiv" : "inaktiv"}`);
     } catch (e:any) {
-      setActive((v) => !v); // rollback
+      setActive((v) => !v);
       setMsg(e?.message || "Fehler beim Statuswechsel");
     }
   }
 
-  // Hard-Delete starten → Dialog öffnen
-  function requestDelete() {
-    setConfirmOpen(true);
-  }
+  function requestDelete() { setConfirmOpen(true); }
 
-  // Hard-Delete bestätigen
   async function confirmDelete() {
     if (!p) return;
     setConfirmOpen(false);
@@ -178,16 +173,10 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
         let j: any; try { j = JSON.parse(t); } catch { j = { error: t || "Serverfehler" }; }
         throw new Error(j?.error || "Löschen fehlgeschlagen");
       }
-      // zurück zur Liste
       window.location.href = "/admin/products?deleted=1";
     } catch (e:any) {
       setMsg(e?.message || "Fehler beim Löschen");
     }
-  }
-
-  // ▶︎ NEU: Oben-Speichern
-  function saveFromHeader() {
-    formRef.current?.requestSubmit();
   }
 
   if (loading) return <div className="max-w-6xl mx-auto px-4 py-10">Lade …</div>;
@@ -199,18 +188,6 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
         <h1 className="text-3xl sm:text-4xl font-extrabold">Produkt bearbeiten</h1>
         <div className="flex items-center gap-2">
           <a href="/admin/products" className="px-3 py-2 rounded bg-white/10 hover:bg-white/20">Zur Liste</a>
-
-          {/* NEU: Speichern oben */}
-          <button
-            type="button"
-            onClick={saveFromHeader}
-            disabled={saving}
-            className="px-3 py-2 rounded bg-cyan-500 text-black font-semibold hover:bg-cyan-400 disabled:opacity-60"
-            title="Änderungen speichern"
-          >
-            Speichern
-          </button>
-
           <button
             type="button"
             onClick={toggleActive}
@@ -236,14 +213,8 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
 
       <div className="mt-8">
         <form ref={formRef} onSubmit={onSubmit} className="space-y-6">
-          {/* Bilder */}
-          <ImageDrop
-            max={5}
-            initial={images}
-            onChange={(arr) => setImages(arr)}
-          />
+          <ImageDrop max={5} initial={images} onChange={(arr) => setImages(arr)} />
 
-          {/* Felder */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <L label="Slug*">
               <input name="slug" defaultValue={p.slug} className="input" required />
@@ -300,6 +271,9 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
             <L label="SKU">
               <input name="sku" defaultValue={p.sku || ""} className="input" />
             </L>
+            <L label="Bestand (Stück)*">
+              <input name="stock" type="number" min={0} value={stock} onChange={(e)=>setStock(Math.max(0, Number(e.target.value)||0))} className="input" />
+            </L>
             <L label="Digital?">
               <input name="isDigital" type="checkbox" defaultChecked={p.isDigital} />
             </L>
@@ -327,17 +301,15 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
         </form>
       </div>
 
-      {/* Lösch-Bestätigung */}
       <ConfirmDialog
-  open={confirmOpen}
-  title="Produkt löschen?"
-  message="Dieser Vorgang kann nicht rückgängig gemacht werden. Bilder und Datensätze werden endgültig entfernt."
-  confirmLabel="Ja, löschen"
-  cancelLabel="Abbrechen"
-  tone="danger"
-  onConfirm={confirmDelete}
-  onClose={() => setConfirmOpen(false)}
-/>
+        open={confirmOpen}
+        title="Produkt löschen?"
+        message="Dieser Vorgang kann nicht rückgängig gemacht werden. Bilder und Datensätze werden endgültig entfernt."
+        confirmLabel="Ja, löschen"
+        cancelLabel="Abbrechen"
+        onConfirm={confirmDelete}
+        onClose={() => setConfirmOpen(false)}
+      />
     </div>
   );
 }

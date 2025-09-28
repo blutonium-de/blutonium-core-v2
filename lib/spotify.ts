@@ -1,25 +1,34 @@
 // lib/spotify.ts
-// Server-only Spotify Helper (Client-Credentials-Flow). Nicht in Client Components importieren!
+// Server-seitiger Spotify Helper: holt ein App-Token (Client Credentials) und cached es.
+// Zusätzlich: force-Refresh & Invalidate für 401-Retrys.
 
 const SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token";
 
-// IDs der Artists, die auf /artists erscheinen sollen
+// 👉 IDs der Artists, die wir auf der /artists-/releases-Seite zeigen wollen
 export const ARTISTS = [
   "2qNYTspRpXKdl4MJ6TGC5T", // Blutonium Boy
   "19QmW7ALL7ZhCKkDPRuOjn", // Kris Grey
   "5SjvqHuCejtD6q6gGa3q29", // DJ Session One
-  "4DUS9SX3NDld2Um49K0Cas", // DJ Neo
-  // "5uEQHmSsE1t0rrHRBRQiPv", // Silverblue (aus)
-  // "5XuEu3HhkQqETUbam43a8p", // Pila & Blutonium Boy (aus)
-  // "PLEASE_PUT_THOMAS_TROUBLE_SPOTIFY_ID_HERE",
+  "4DUS9SX3NDld2Um49K0Cas", // DJ Neo (Harddance)
+  // ggf. weitere …
 ];
 
 type Cached = { value: string; exp: number };
 let cachedToken: Cached = { value: "", exp: 0 };
 
-export async function getSpotifyToken(): Promise<string> {
+/** Hilfsfunktion: Token-Cache verwerfen (z.B. nach 401) */
+export function invalidateSpotifyToken() {
+  cachedToken = { value: "", exp: 0 };
+}
+
+/** App-Token holen; mit optionalem force-Refresh */
+export async function getSpotifyToken(opts?: { force?: boolean }): Promise<string> {
+  const force = !!opts?.force;
   const now = Date.now();
-  if (cachedToken.value && now < cachedToken.exp) return cachedToken.value;
+
+  if (!force && cachedToken.value && now < cachedToken.exp) {
+    return cachedToken.value;
+  }
 
   const clientId = process.env.SPOTIFY_CLIENT_ID;
   const clientSecret = process.env.SPOTIFY_CLIENT_SECRET;
@@ -35,6 +44,7 @@ export async function getSpotifyToken(): Promise<string> {
       "Content-Type": "application/x-www-form-urlencoded",
     },
     body,
+    cache: "no-store",
   });
 
   const data = await res.json();
@@ -44,6 +54,11 @@ export async function getSpotifyToken(): Promise<string> {
   }
 
   const expiresIn = Number(data.expires_in ?? 3600);
-  cachedToken = { value: data.access_token, exp: now + (expiresIn - 30) * 1000 };
+  cachedToken = {
+    value: data.access_token,
+    // 30s Puffer vor Ablauf
+    exp: now + (expiresIn - 30) * 1000,
+  };
+
   return cachedToken.value;
 }

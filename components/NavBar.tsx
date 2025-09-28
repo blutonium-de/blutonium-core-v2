@@ -5,18 +5,17 @@ import Link from "next/link"
 import Image from "next/image"
 import { usePathname } from "next/navigation"
 import { useState, useEffect, type ReactNode } from "react"
+import LangSwitch from "./LangSwitch"   // <— NEU
 
 type NavLink = { href: string; label: string }
-type Props = { children?: ReactNode } // ← NEU: Slot für z. B. CartButton
+type Props = { children?: ReactNode } // Slot für CartButton o.ä.
 
 export default function NavBar({ children }: Props) {
   const pathname = usePathname()
   const [open, setOpen] = useState(false)
 
-  // Mobile-Menu schließen, wenn Route wechselt
   useEffect(() => { setOpen(false) }, [pathname])
 
-  // Menüstruktur
   const links: NavLink[] = [
     { href: "/de/releases", label: "Releases" },
     { href: "/de/artists",  label: "Artists & Booking" },
@@ -51,6 +50,7 @@ export default function NavBar({ children }: Props) {
               {l.label}
             </Link>
           ))}
+          <LangSwitch /> {/* <— Sprachumschalter */}
           {children ? <div className="ml-2">{children}</div> : null}
         </div>
 
@@ -101,6 +101,9 @@ export default function NavBar({ children }: Props) {
               {l.label}
             </Link>
           ))}
+          <div className="mt-3">
+            <LangSwitch /> {/* Sprachumschalter */}
+          </div>
           {children ? <div className="mt-3">{children}</div> : null}
         </div>
       </div>
