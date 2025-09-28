@@ -2,7 +2,8 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { BrowserMultiFormatReader, Result } from "@zxing/browser";
+import { BrowserMultiFormatReader } from "@zxing/browser";
+import type { Result } from "@zxing/library";
 
 type Props = {
   onClose: () => void;
@@ -30,7 +31,6 @@ export default function BarcodeScanner({ onClose, onDetected }: Props) {
         });
       }
     } catch {}
-    // Video abkoppeln
     if (videoRef.current) {
       try { (videoRef.current as any).srcObject = null; } catch {}
       try { videoRef.current.pause(); } catch {}
@@ -38,13 +38,12 @@ export default function BarcodeScanner({ onClose, onDetected }: Props) {
     streamRef.current = null;
   };
 
-  // Beim Unmount immer aufräumen
+  // Beim Unmount aufräumen
   useEffect(() => {
     return () => {
       stopRequestedRef.current = true;
       stopStream();
-      // KEIN reader.reset() – ist in manchen Versionen nicht typisiert/verfügbar
-      readerRef.current = null;
+      readerRef.current = null; // kein reset() nötig/typisiert
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -56,18 +55,14 @@ export default function BarcodeScanner({ onClose, onDetected }: Props) {
     async function start() {
       stopRequestedRef.current = false;
 
-      // Kamera holen
       const constraints: MediaStreamConstraints = {
-        video: {
-          facingMode: { ideal: "environment" }, // iPhone: Rückkamera bevorzugen
-        },
+        video: { facingMode: { ideal: "environment" } },
         audio: false,
       };
 
       try {
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
         if (cancelled) {
-          // Falls während der Permission schon geschlossen wurde
           stream.getTracks().forEach((t) => t.stop());
           return;
         }
@@ -78,37 +73,25 @@ export default function BarcodeScanner({ onClose, onDetected }: Props) {
           await videoRef.current.play().catch(() => {});
         }
 
-        // ZXing initialisieren
         const reader = new BrowserMultiFormatReader();
         readerRef.current = reader;
 
-        // Kontinuierliches Decoding
-        // decodeFromVideoDevice(undefined, videoEl, callback) ruft callback bei jedem Scanversuch
         await reader.decodeFromVideoDevice(
           undefined,
           videoRef.current!,
-          (result: Result | undefined, err) => {
-            if (stopRequestedRef.current) return; // wurde bereits geschlossen
-
+          (result: Result | undefined /* , err */) => {
+            if (stopRequestedRef.current) return;
             if (result) {
               const text = result.getText?.() ?? String(result);
-              // Stream sofort stoppen, bevor wir den Callback feuern
               stopRequestedRef.current = true;
               stopStream();
-              try {
-                onDetected(text);
-              } catch {}
-              // Dialog im aufrufenden Code schließen lassen
-              try {
-                onClose();
-              } catch {}
+              try { onDetected(text); } catch {}
+              try { onClose(); } catch {}
             }
-            // Fehler im Scanloop ignorieren (Unschärfe etc.)
           }
         );
       } catch (e) {
         console.error("BarcodeScanner start error:", e);
-        // Fallback: Dialog schließen
         try { onClose(); } catch {}
       }
     }
@@ -153,7 +136,6 @@ export default function BarcodeScanner({ onClose, onDetected }: Props) {
             muted
             autoPlay
           />
-          {/* einfache Zielhilfe */}
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
             <div className="w-48 h-48 border-2 border-cyan-400/70 rounded" />
           </div>
