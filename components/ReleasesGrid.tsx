@@ -1,4 +1,4 @@
-// components/ReleasesGrid.tsx
+/// components/ReleasesGrid.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
