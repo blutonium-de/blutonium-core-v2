@@ -1,18 +1,19 @@
 // lib/stripe.ts
 import Stripe from "stripe";
 
-export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: "2024-06-20",
+// TS zufriedenstellen: benutze die von den Typen erwartete neueste Literal-Version
+const apiVersion: Stripe.LatestApiVersion = "2025-08-27.basil";
+
+export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "", {
+  apiVersion,
 });
 
+// Kleiner Helfer, um die Origin korrekt zu bestimmen (lokal/Vercel)
 export function appOriginFromHeaders(req: Request) {
-  // 1) explizit via ENV (empfohlen auf Vercel)
-  const env = process.env.NEXT_PUBLIC_APP_ORIGIN?.trim();
-  if (env) return env.replace(/\/+$/, "");
-
-  // 2) sonst aus Request-Headern ermitteln
-  const proto = (req.headers.get("x-forwarded-proto") || "http").split(",")[0].trim();
-  const host = (req.headers.get("x-forwarded-host") || req.headers.get("host") || "localhost:3000")
-    .split(",")[0].trim();
+  const proto = req.headers.get("x-forwarded-proto") ?? "https";
+  const host =
+    req.headers.get("x-forwarded-host") ??
+    req.headers.get("host") ??
+    "localhost:3000";
   return `${proto}://${host}`;
 }
