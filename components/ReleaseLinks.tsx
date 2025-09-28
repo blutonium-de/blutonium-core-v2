@@ -1,87 +1,89 @@
 // components/ReleaseLinks.tsx
 "use client";
 
+import type { ReactNode } from "react";
+
 type Props = {
-  title?: string | null;
-  artists?: string | null;
   spotifyUrl?: string | null;
   appleUrl?: string | null;
   beatportUrl?: string | null;
-  size?: "sm" | "md";
+  compact?: boolean; // kleinere Buttons z. B. in Karten
 };
 
-function buildAppleSearch(artists?: string | null, title?: string | null) {
-  const q = [artists || "", title || ""].join(" ").trim();
-  return `https://music.apple.com/de/search?term=${encodeURIComponent(q)}`;
-}
-function buildBeatportSearch(artists?: string | null, title?: string | null) {
-  const q = [artists || "", title || ""].join(" ").trim();
-  return `https://www.beatport.com/search?q=${encodeURIComponent(q)}`;
-}
-
 export default function ReleaseLinks({
-  title,
-  artists,
   spotifyUrl,
   appleUrl,
   beatportUrl,
-  size = "sm",
+  compact = false,
 }: Props) {
-  const cls =
-    size === "md"
-      ? "inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-sm font-semibold"
-      : "inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-semibold";
+  const base =
+    compact
+      ? "inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-semibold"
+      : "inline-flex items-center gap-1 rounded px-2.5 py-1.5 text-sm font-semibold";
 
-  const btn = (href: string, label: string, icon: JSX.Element) => (
+  const btn = (href: string, label: string, icon: ReactNode) => (
     <a
       key={label}
       href={href}
       target="_blank"
-      rel="noopener noreferrer"
-      className={`${cls} bg-white/10 hover:bg-white/20`}
+      rel="noreferrer"
+      className={`${base} bg-white/10 hover:bg-white/20`}
       title={label}
     >
       {icon}
-      <span className="hidden sm:inline">{label}</span>
+      <span className={compact ? "hidden sm:inline" : ""}>{label}</span>
     </a>
   );
 
-  const appleHref = appleUrl || buildAppleSearch(artists, title);
-  const beatHref = beatportUrl || buildBeatportSearch(artists, title);
+  const items: ReactNode[] = [];
 
-  return (
-    <div className="flex flex-wrap gap-2">
-      {spotifyUrl &&
-        btn(
-          spotifyUrl,
-          "Spotify",
-          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden>
-            <path
-              fill="currentColor"
-              d="M12 1.5A10.5 10.5 0 1 0 22.5 12 10.512 10.512 0 0 0 12 1.5Zm4.79 15.2a.75.75 0 0 1-1.03.24 12.94 12.94 0 0 0-7.52-1.16.75.75 0 1 1-.25-1.48 14.45 14.45 0 0 1 8.4 1.3.75.75 0 0 1 .4 1.1Zm1.4-3.08a.94.94 0 0 1-1.29.3 15.92 15.92 0 0 0-9.28-1.6.93.93 0 1 1-.29-1.84 17.78 17.78 0 0 1 10.35 1.8.94.94 0 0 1 .51 1.34Zm.12-3.22a1.13 1.13 0 0 1-1.56.36 18.76 18.76 0 0 0-10.9-1.89 1.13 1.13 0 1 1-.35-2.23 21 21 0 0 1 12.2 2.12 1.13 1.13 0 0 1 .61 1.64Z"
-            />
-          </svg>
-        )}
-      {btn(
-        appleHref,
-        "Apple",
-        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden>
+  if (spotifyUrl) {
+    items.push(
+      btn(
+        spotifyUrl,
+        "Spotify",
+        // einfache Spotify-Note
+        <svg viewBox="0 0 24 24" width={14} height={14} aria-hidden="true">
           <path
             fill="currentColor"
-            d="M16.36 1.64a4.1 4.1 0 0 1-1.2 3.12 3.5 3.5 0 0 1-2.62 1.18 3.9 3.9 0 0 1 1.16-3 3.7 3.7 0 0 1 2.66-1.3ZM20.5 17.7c-.42.98-.92 1.79-1.5 2.42-.79.86-1.68 1.3-2.66 1.3-.65 0-1.44-.19-2.36-.57-.92-.38-1.77-.57-2.54-.57-.8 0-1.66.19-2.58.57-.92.38-1.68.57-2.28.57-1.04 0-1.98-.47-2.8-1.42-.6-.67-1.13-1.52-1.6-2.56C1.63 15.8 1.34 14.27 1.34 13c0-1.39.3-2.68.89-3.86a6.8 6.8 0 0 1 2.44-2.86A6 6 0 0 1 7.9 5.3c.63 0 1.47.2 2.52.6 1.05.4 1.77.6 2.16.6.29 0 1-.24 2.13-.73 1.14-.49 2.1-.69 2.9-.6a6 6 0 0 1 4.11 2.13 6.3 6.3 0 0 0-3.1 5.34c0 1.26.34 2.35 1.02 3.28Z"
+            d="M12 1.5A10.5 10.5 0 1 0 22.5 12 10.51 10.51 0 0 0 12 1.5Zm4.58 14.77a.89.89 0 0 1-1.23.3 11.69 11.69 0 0 0-6.5-1.14 13.63 13.63 0 0 0-3.62.64.89.89 0 1 1-.56-1.68 15.51 15.51 0 0 1 4.13-.73 13.52 13.52 0 0 1 7.51 1.31.89.89 0 0 1 .27 1.3Zm1.65-3.12a1.11 1.11 0 0 1-1.53.37 14.86 14.86 0 0 0-7.69-1.35 17.71 17.71 0 0 0-4.69.83 1.11 1.11 0 1 1-.69-2.11 19.59 19.59 0 0 1 5.2-.93 16.94 16.94 0 0 1 8.72 1.54 1.11 1.11 0 0 1 .68 1.65Zm.22-3.34a1.33 1.33 0 0 1-1.84.45 17.76 17.76 0 0 0-9.19-1.58 21.78 21.78 0 0 0-5.2 1 1.33 1.33 0 1 1-.84-2.52 24 24 0 0 1 5.77-1.12 20.38 20.38 0 0 1 10.48 1.8 1.33 1.33 0 0 1 .82 1.97Z"
           />
         </svg>
-      )}
-      {btn(
-        beatHref,
+      )
+    );
+  }
+
+  if (appleUrl) {
+    items.push(
+      btn(
+        appleUrl,
+        "Apple Music",
+        <svg viewBox="0 0 24 24" width={14} height={14} aria-hidden="true">
+          <path
+            fill="currentColor"
+            d="M16.36 2.01a4.77 4.77 0 0 1-1.2 3.54 4.29 4.29 0 0 1-3.25 1.58 4.83 4.83 0 0 1 1.2-3.6A4.64 4.64 0 0 1 16.36 2ZM20.7 17.1a6.41 6.41 0 0 1-1.2 2.29 5.9 5.9 0 0 1-1.18 1.19 5.1 5.1 0 0 1-1.3.74 4.48 4.48 0 0 1-1.57.31 4.65 4.65 0 0 1-1.77-.37 4.52 4.52 0 0 1-1.32-.81 4.86 4.86 0 0 1-.95-1.17 4.75 4.75 0 0 1-.49-1.28 5.38 5.38 0 0 1-.11-1.14 5.14 5.14 0 0 1 .54-2.2 4.75 4.75 0 0 1 1.18-1.57 3.6 3.6 0 0 1 1.26-.77 3.87 3.87 0 0 1 1.4-.24 4.38 4.38 0 0 1 1.8.44 3.62 3.62 0 0 0 1.42.37 3.33 3.33 0 0 0 1.33-.41 3 3 0 0 0 .51-.36l.26-.22a5.66 5.66 0 0 1-1.02 2.78Z"
+          />
+        </svg>
+      )
+    );
+  }
+
+  if (beatportUrl) {
+    items.push(
+      btn(
+        beatportUrl,
         "Beatport",
-        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden>
+        <svg viewBox="0 0 24 24" width={14} height={14} aria-hidden="true">
           <path
             fill="currentColor"
-            d="M3 12a9 9 0 1 1 9 9H9v-3h3a6 6 0 1 0-6-6H3Z"
+            d="M12 2a10 10 0 1 0 10 10A10.011 10.011 0 0 0 12 2Zm0 17.5A7.5 7.5 0 1 1 19.5 12 7.508 7.508 0 0 1 12 19.5Zm-.75-3.5a1.75 1.75 0 1 0 0-3.5H9v-5h2.25A3.75 3.75 0 0 1 15 11.25 3.75 3.75 0 0 1 11.25 15H9v1h2.25Z"
           />
         </svg>
-      )}
-    </div>
-  );
+      )
+    );
+  }
+
+  if (items.length === 0) return null;
+
+  return <div className="flex flex-wrap gap-2">{items}</div>;
 }
