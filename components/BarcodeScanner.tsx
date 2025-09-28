@@ -1,153 +1,166 @@
 // components/BarcodeScanner.tsx
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import {
-  BrowserMultiFormatReader,
-} from "@zxing/browser";
-import {
-  BarcodeFormat,
-  DecodeHintType,
-  Result,
-} from "@zxing/library";
+import { useEffect, useRef } from "react";
+import { BrowserMultiFormatReader, Result } from "@zxing/browser";
 
 type Props = {
-  /** Wird vom Parent als Overlay gerendert (optional). */
   onClose: () => void;
-  /** Callback bei erkannter EAN/UPC/etc. */
   onDetected: (code: string) => void;
-  /** Optional: gewünschte Formate, z.B. ["ean_13","ean_8","upc_a","upc_e","code_128"] */
+  /**
+   * Optional: Liste erlaubter Formate (z.B. ["ean_13","ean_8","upc_a","upc_e","code_128"])
+   * Wird aktuell nur dokumentarisch verwendet; Filterung kann bei Bedarf ergänzt werden.
+   */
   formats?: string[];
 };
 
-const FORMAT_MAP: Record<string, BarcodeFormat> = {
-  ean_13: BarcodeFormat.EAN_13,
-  ean_8: BarcodeFormat.EAN_8,
-  upc_a: BarcodeFormat.UPC_A,
-  upc_e: BarcodeFormat.UPC_E,
-  code_128: BarcodeFormat.CODE_128,
-  code_39: BarcodeFormat.CODE_39,
-  qr: BarcodeFormat.QR_CODE,
-};
-
-export default function BarcodeScanner({ onClose, onDetected, formats }: Props) {
+export default function BarcodeScanner({ onClose, onDetected }: Props) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const readerRef = useRef<BrowserMultiFormatReader | null>(null);
-  const [err, setErr] = useState<string | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const stopRequestedRef = useRef(false);
 
+  // Kamera-Stream stoppen
+  const stopStream = () => {
+    try {
+      const stream = streamRef.current;
+      if (stream) {
+        stream.getTracks().forEach((t) => {
+          try { t.stop(); } catch {}
+        });
+      }
+    } catch {}
+    // Video abkoppeln
+    if (videoRef.current) {
+      try { (videoRef.current as any).srcObject = null; } catch {}
+      try { videoRef.current.pause(); } catch {}
+    }
+    streamRef.current = null;
+  };
+
+  // Beim Unmount immer aufräumen
   useEffect(() => {
-    let isCancelled = false;
+    return () => {
+      stopRequestedRef.current = true;
+      stopStream();
+      // KEIN reader.reset() – ist in manchen Versionen nicht typisiert/verfügbar
+      readerRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Starten
+  useEffect(() => {
+    let cancelled = false;
 
     async function start() {
-      setErr(null);
+      stopRequestedRef.current = false;
 
-      // Hints optional setzen
-      let hints: Map<DecodeHintType, any> | undefined = undefined;
-      if (formats && formats.length) {
-        const fmts = formats
-          .map((f) => FORMAT_MAP[f.toLowerCase()])
-          .filter(Boolean);
-        if (fmts.length) {
-          hints = new Map();
-          hints.set(DecodeHintType.POSSIBLE_FORMATS, fmts);
-        }
-      }
-
-      // Reader anlegen (mit Hints, wenn vorhanden)
-      const reader = new BrowserMultiFormatReader(hints);
-      readerRef.current = reader;
+      // Kamera holen
+      const constraints: MediaStreamConstraints = {
+        video: {
+          facingMode: { ideal: "environment" }, // iPhone: Rückkamera bevorzugen
+        },
+        audio: false,
+      };
 
       try {
-        // iOS: rear camera + playsInline
-        const deviceId = undefined; // auto-pick
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        if (cancelled) {
+          // Falls während der Permission schon geschlossen wurde
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        streamRef.current = stream;
+
+        if (videoRef.current) {
+          (videoRef.current as any).srcObject = stream;
+          await videoRef.current.play().catch(() => {});
+        }
+
+        // ZXing initialisieren
+        const reader = new BrowserMultiFormatReader();
+        readerRef.current = reader;
+
+        // Kontinuierliches Decoding
+        // decodeFromVideoDevice(undefined, videoEl, callback) ruft callback bei jedem Scanversuch
         await reader.decodeFromVideoDevice(
-          deviceId,
+          undefined,
           videoRef.current!,
           (result: Result | undefined, err) => {
-            if (isCancelled) return;
+            if (stopRequestedRef.current) return; // wurde bereits geschlossen
+
             if (result) {
+              const text = result.getText?.() ?? String(result);
+              // Stream sofort stoppen, bevor wir den Callback feuern
+              stopRequestedRef.current = true;
+              stopStream();
               try {
-                onDetected(result.getText());
-              } finally {
-                // nach erstem Treffer wieder schließen
+                onDetected(text);
+              } catch {}
+              // Dialog im aufrufenden Code schließen lassen
+              try {
                 onClose();
-              }
+              } catch {}
             }
-            // Fehler im Frame ignorieren (kontinuierlicher Scan)
+            // Fehler im Scanloop ignorieren (Unschärfe etc.)
           }
         );
-      } catch (e: any) {
-        console.error("ZXing start error:", e);
-        // Häufig: Permission / HTTPS / Kamera blockiert
-        setErr(
-          e?.message ||
-            "Kamera konnte nicht gestartet werden. Bitte Berechtigung erteilen und HTTPS/Live-Domain verwenden."
-        );
+      } catch (e) {
+        console.error("BarcodeScanner start error:", e);
+        // Fallback: Dialog schließen
+        try { onClose(); } catch {}
       }
     }
 
     start();
 
     return () => {
-      isCancelled = true;
-      try {
-        readerRef.current?.reset();
-      } catch {}
+      cancelled = true;
+      stopRequestedRef.current = true;
+      stopStream();
       readerRef.current = null;
-      // Kamera-Stream sauber beenden
-      const v = videoRef.current;
-      const stream = v?.srcObject as MediaStream | null;
-      stream?.getTracks()?.forEach((t) => t.stop());
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex flex-col items-center justify-center p-4"
+      className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
       role="dialog"
       aria-modal="true"
     >
-      <div className="w-full max-w-md rounded-xl border border-white/15 bg-black/40 p-3">
-        <div className="flex items-center justify-between mb-2">
-          <h2 className="text-lg font-semibold">Barcode scannen</h2>
+      <div className="w-full max-w-md rounded-xl overflow-hidden border border-white/10 bg-black">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+          <div className="font-semibold">Barcode scannen</div>
           <button
-            type="button"
-            onClick={onClose}
-            className="px-3 py-1 rounded bg-white/10 hover:bg-white/20"
+            onClick={() => {
+              stopRequestedRef.current = true;
+              stopStream();
+              onClose();
+            }}
+            className="rounded bg-white/10 hover:bg-white/20 px-3 py-1"
           >
             Schließen
           </button>
         </div>
 
-        <div className="relative rounded-lg overflow-hidden bg-black/50">
+        <div className="relative">
           <video
             ref={videoRef}
-            className="w-full h-[320px] object-cover"
+            className="block w-full h-[360px] object-cover bg-black"
+            playsInline
             muted
             autoPlay
-            playsInline
           />
           {/* einfache Zielhilfe */}
-          <div className="pointer-events-none absolute inset-0 grid place-items-center">
-            <div className="w-3/4 max-w-xs h-28 border-2 border-cyan-400/70 rounded" />
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <div className="w-48 h-48 border-2 border-cyan-400/70 rounded" />
           </div>
         </div>
 
-        {err && (
-          <p className="mt-3 text-sm text-amber-300">
-            {err}
-            <br />
-            <span className="opacity-80">
-              Tipp: iOS Safari/Chrome nur über HTTPS, Kamera in
-              Website-Einstellungen erlauben. In-App-Browser vermeiden.
-            </span>
-          </p>
-        )}
-
-        <div className="mt-3 text-xs opacity-75">
-          Hält den Code in das Rechteck. Unterstützte Formate:{" "}
-          {formats?.length ? formats.join(", ") : "automatische Erkennung"}.
+        <div className="px-4 py-3 text-sm opacity-70">
+          Tippe zum Fokussieren; halte den Code ruhig innerhalb des Rahmens.
         </div>
       </div>
     </div>
