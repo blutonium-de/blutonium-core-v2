@@ -5,24 +5,27 @@ import Link from "next/link"
 import Image from "next/image"
 import { usePathname } from "next/navigation"
 import { useState, useEffect, type ReactNode } from "react"
-import LangSwitch from "./LangSwitch"   // <— NEU
+import LangSwitch from "./LangSwitch"
 
 type NavLink = { href: string; label: string }
-type Props = { children?: ReactNode } // Slot für CartButton o.ä.
+type Props = { children?: ReactNode }
 
 export default function NavBar({ children }: Props) {
-  const pathname = usePathname()
+  const pathname = usePathname() || "/"
   const [open, setOpen] = useState(false)
-
   useEffect(() => { setOpen(false) }, [pathname])
 
+  // Aktueller Sprach-Basis-Pfad
+  const base = pathname.startsWith("/en") ? "/en" : "/de"
+
   const links: NavLink[] = [
-    { href: "/de/releases", label: "Releases" },
-    { href: "/de/artists",  label: "Artists & Booking" },
-    { href: "/de/shop",     label: "Shop" },
-    { href: "/de/videos",   label: "Videos" },
+    { href: `${base}/releases`, label: base === "/en" ? "Releases" : "Releases" },
+    { href: `${base}/artists`,  label: base === "/en" ? "Artists & Booking" : "Artists & Booking" },
+    { href: `${base}/shop`,     label: base === "/en" ? "Shop" : "Shop" },
+    { href: `${base}/videos`,   label: base === "/en" ? "Videos" : "Videos" },
   ]
 
+  const homeHref = base // Home je Sprache
   const isActive = (href: string) => {
     if (pathname === href) return true
     if (href !== "/" && pathname.startsWith(href + "/")) return true
@@ -32,7 +35,7 @@ export default function NavBar({ children }: Props) {
   return (
     <nav className="fixed top-0 left-0 w-full z-50 bg-black/70 backdrop-blur-md border-b border-white/10">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
-        <Link href="/" className="flex items-center gap-2">
+        <Link href={homeHref} className="flex items-center gap-2">
           <Image src="/logo.png" alt="Blutonium" width={32} height={32} className="rounded" priority />
           <span className="hidden sm:inline text-sm font-bold tracking-wide">Blutonium Records</span>
         </Link>
@@ -50,7 +53,7 @@ export default function NavBar({ children }: Props) {
               {l.label}
             </Link>
           ))}
-          <LangSwitch /> {/* <— Sprachumschalter */}
+          <LangSwitch />
           {children ? <div className="ml-2">{children}</div> : null}
         </div>
 
@@ -102,7 +105,7 @@ export default function NavBar({ children }: Props) {
             </Link>
           ))}
           <div className="mt-3">
-            <LangSwitch /> {/* Sprachumschalter */}
+            <LangSwitch />
           </div>
           {children ? <div className="mt-3">{children}</div> : null}
         </div>

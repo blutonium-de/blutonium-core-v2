@@ -23,7 +23,7 @@ type Product = {
   weightGrams?: number | null;
   isDigital: boolean;
   sku?: string | null;
-  stock: number;           // << NEU
+  stock: number;
   active: boolean;
   image: string;
   images: string[];
@@ -39,7 +39,7 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
   const [p, setP] = useState<Product | null>(null);
   const [images, setImages] = useState<string[]>([]);
   const [active, setActive] = useState<boolean>(false);
-  const [stock, setStock]   = useState<number>(1); // << NEU
+  const [stock, setStock]   = useState<number>(1);
 
   const [confirmOpen, setConfirmOpen] = useState(false);
   const formRef = useRef<HTMLFormElement | null>(null);
@@ -57,7 +57,7 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
         const prod: Product = j;
         setP(prod);
         setActive(prod.active);
-        setStock(prod.stock ?? 1); // << NEU
+        setStock(prod.stock ?? 1);
         setImages(prod.images?.length ? prod.images : (prod.image ? [prod.image] : []));
       } catch (e: any) {
         setMsg(e?.message || "Fehler beim Laden");
@@ -100,8 +100,8 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
         weightGrams: numOrNull(fd.get("weightGrams")),
         isDigital: fd.get("isDigital") === "on",
         sku: strOrNull(fd.get("sku")),
-        stock: nextStock,               // << NEU
-        active,                         // aus State
+        stock: nextStock,
+        active,
         image: images[0] || "",
         images,
       };
@@ -208,7 +208,7 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
       </div>
 
       <p className="text-white/70 mt-2">
-        Bilder kannst du unten sehen/ändern. Einzelne Bilder lassen sich in der Bildleiste mit ✕ entfernen (in <code>ImageDrop</code>).
+        Bilder kannst du unten sehen/ändern. **Ziehen & Ablegen** sortiert die Reihenfolge (erstes Bild = Hauptbild). ✕ entfernt ein Bild.
       </p>
 
       <div className="mt-8">
@@ -281,13 +281,22 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
 
           {msg && <div className="text-sm">{msg}</div>}
 
-          <button
-            type="submit"
-            disabled={saving}
-            className="px-4 py-2 rounded bg-cyan-500 hover:bg-cyan-400 text-black font-semibold disabled:opacity-60"
-          >
-            {saving ? "Speichere …" : "Speichern"}
-          </button>
+          {/* Buttons unten */}
+          <div className="flex items-center gap-3 pt-2">
+            <button
+              type="submit"
+              disabled={saving}
+              className="px-4 py-2 rounded bg-cyan-500 hover:bg-cyan-400 text-black font-semibold disabled:opacity-60"
+            >
+              {saving ? "Speichere …" : "Speichern"}
+            </button>
+            <a
+              href="/admin/products"
+              className="px-4 py-2 rounded bg-white/10 hover:bg-white/20"
+            >
+              Zur Liste
+            </a>
+          </div>
 
           <style jsx>{`
             .input {

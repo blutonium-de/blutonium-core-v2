@@ -5,7 +5,7 @@ import React, { useEffect, useRef, useState } from "react";
 
 type Props = {
   max?: number;
-  initial?: string[];                           // ← NEU: Start-Bilder (z. B. aus DB)
+  initial?: string[];                           // ← Start-Bilder (z. B. aus DB)
   onChange?: (images: string[], filenames?: string[]) => void;
 };
 
@@ -16,6 +16,10 @@ export default function ImageDrop({ max = 5, initial = [], onChange }: Props) {
   const [images, setImages] = useState<string[]>([]);
   const [filenames, setFilenames] = useState<string[]>([]);
 
+  // DnD-Reordering
+  const dragIndexRef = useRef<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
   // Kamera
   const [camOpen, setCamOpen] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -24,7 +28,8 @@ export default function ImageDrop({ max = 5, initial = [], onChange }: Props) {
   // Initialwerte aus DB reinziehen
   useEffect(() => {
     if (initial && initial.length) {
-      setImages(initial.slice(0, max));
+      const initImgs = initial.slice(0, max);
+      setImages(initImgs);
       setFilenames(initial.map((_, i) => `image-${i + 1}.jpg`).slice(0, max));
     }
   }, [initial, max]);
@@ -151,6 +156,49 @@ export default function ImageDrop({ max = 5, initial = [], onChange }: Props) {
     onChange?.(a, b);
   }
 
+  // --- Drag & Drop: Reorder ---
+  function onDragStart(e: React.DragEvent<HTMLDivElement>, index: number) {
+    dragIndexRef.current = index;
+    e.dataTransfer.effectAllowed = "move";
+    // Needed for Firefox to start a drag
+    e.dataTransfer.setData("text/plain", String(index));
+  }
+
+  function onDragOver(e: React.DragEvent<HTMLDivElement>, index: number) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDragOverIndex(index);
+  }
+
+  function onDragLeave() {
+    setDragOverIndex((cur) => cur);
+  }
+
+  function onDrop(e: React.DragEvent<HTMLDivElement>, dropIndex: number) {
+    e.preventDefault();
+    const from = dragIndexRef.current;
+    setDragOverIndex(null);
+    dragIndexRef.current = null;
+    if (from == null || from === dropIndex) return;
+
+    const newImgs = images.slice();
+    const newNames = filenames.slice();
+
+    const [img] = newImgs.splice(from, 1);
+    const [name] = newNames.splice(from, 1);
+    newImgs.splice(dropIndex, 0, img);
+    newNames.splice(dropIndex, 0, name);
+
+    setImages(newImgs);
+    setFilenames(newNames);
+    onChange?.(newImgs, newNames);
+  }
+
+  function onDragEnd() {
+    setDragOverIndex(null);
+    dragIndexRef.current = null;
+  }
+
   return (
     <div className="border-2 border-dashed border-white/20 rounded-lg p-4 text-center">
       <input
@@ -176,20 +224,50 @@ export default function ImageDrop({ max = 5, initial = [], onChange }: Props) {
 
       {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
 
+      {/* Thumbs (reorderable) */}
       <div className="mt-3 grid grid-cols-3 gap-2">
-        {images.map((src, i) => (
-          <div key={i} className="relative">
-            <img src={src} alt={`upload-${i}`} className="w-full h-auto rounded" />
-            <button
-              type="button"
-              onClick={() => removeAt(i)}
-              className="absolute -top-2 -right-2 w-7 h-7 rounded-full bg-black/80 border border-white/30 flex items-center justify-center hover:bg-black"
-              title="Bild entfernen"
+        {images.map((src, i) => {
+          const isDragOver = dragOverIndex === i;
+          return (
+            <div
+              key={i}
+              className={`relative rounded select-none border transition
+                ${isDragOver ? "border-cyan-400 ring-1 ring-cyan-400/50" : "border-white/20"}
+              `}
+              draggable
+              onDragStart={(e) => onDragStart(e, i)}
+              onDragOver={(e) => onDragOver(e, i)}
+              onDragLeave={onDragLeave}
+              onDrop={(e) => onDrop(e, i)}
+              onDragEnd={onDragEnd}
+              title="Ziehen, um die Reihenfolge zu ändern"
             >
-              ✕
-            </button>
-          </div>
-        ))}
+              {/* feste Kachelgröße für ruhiges Layout */}
+              <div className="w-full aspect-square overflow-hidden rounded cursor-grab active:cursor-grabbing bg-black/30">
+                <img
+                  src={src}
+                  alt={`upload-${i}`}
+                  className="h-full w-full object-cover"
+                />
+              </div>
+
+              {/* Drag-Handle + Index */}
+              <div className="absolute left-1 top-1 text-[11px] px-1.5 py-0.5 rounded bg-black/60">
+                #{i + 1}
+              </div>
+
+              {/* Entfernen */}
+              <button
+                type="button"
+                onClick={() => removeAt(i)}
+                className="absolute -top-2 -right-2 w-7 h-7 rounded-full bg-black/80 border border-white/30 flex items-center justify-center hover:bg-black"
+                title="Bild entfernen"
+              >
+                ✕
+              </button>
+            </div>
+          );
+        })}
       </div>
 
       {/* Kamera-Modal */}

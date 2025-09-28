@@ -1,3 +1,4 @@
+// app/de/shop/page.tsx
 import ProductCard from "../../components/ProductCard";
 import { prisma } from "../../lib/db";
 
@@ -19,7 +20,7 @@ export default async function ShopPage({
   const cat = (searchParams?.cat || "").toLowerCase();
 
   const products = await prisma.product.findMany({
-    where: { active: true, ...(cat ? { categoryCode: cat } : {}) },
+    where: { active: true, stock: { gt: 0 }, ...(cat ? { categoryCode: cat } : {}) },
     orderBy: { createdAt: "desc" },
     select: {
       id: true,
@@ -32,6 +33,8 @@ export default async function ShopPage({
       year: true,
       priceEUR: true,
       image: true,
+      images: true,   // ← NEU: für Modal-Galerie
+      stock: true,    // ← NEU: für „Ausverkauft“/Bestand
     },
   });
 

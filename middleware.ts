@@ -24,12 +24,18 @@ export function middleware(req: NextRequest) {
     return NextResponse.redirect(url);
   }
 
+  // ✅ Login-Seite und Logout NICHT schützen
+  if (pathname.startsWith("/admin/login") || pathname.startsWith("/admin/logout")) {
+    return NextResponse.next();
+  }
+
   // Admin-Bereich schützen
   if (pathname.startsWith("/admin")) {
     const token = req.cookies.get("admin_auth")?.value;
-    if (token !== process.env.ADMIN_TOKEN) {
+    if (token !== process.env.ADMIN_TOKEN && token !== process.env.NEXT_PUBLIC_ADMIN_TOKEN) {
       const loginUrl = req.nextUrl.clone();
       loginUrl.pathname = "/admin/login";
+      loginUrl.searchParams.set("next", pathname); // optional: nach Login zurück
       return NextResponse.redirect(loginUrl);
     }
   }
