@@ -1,116 +1,87 @@
 // app/api/checkout/confirm/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "../../../../lib/db";
+import { stripe } from "../../../../lib/stripe";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/**
- * POST /api/checkout/confirm?session_id=cs_test_...
- *
- * Erwartet:
- *   - session_id: Stripe-Session-ID (wir nutzen sie als prisma.Order.stripeId)
- *
- * Wirkung:
- *   - Sucht Order per stripeId
- *   - Wenn bereits angewendet (status = 'stock_applied'), antwortet ok:true (idempotent)
- *   - Sonst: reduziert für jedes OrderItem den Product.stock um qty (nicht < 0),
- *            setzt Product.active=false wenn stock danach 0 ist,
- *            und markiert die Order mit status='stock_applied'
- */
+// POST /api/checkout/confirm?session_id=cs_xxx
 export async function POST(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const sessionId = (searchParams.get("session_id") || "").trim();
+  if (!sessionId) {
+    return NextResponse.json({ error: "missing session_id" }, { status: 400 });
+  }
+
   try {
-    const url = new URL(req.url);
-    const sessionId = (url.searchParams.get("session_id") || "").trim();
-    if (!sessionId) {
-      return NextResponse.json(
-        { error: "session_id fehlt" },
-        { status: 400 }
-      );
+    // doppelte Verarbeitung vermeiden
+    const existing = await prisma.order.findFirst({ where: { stripeId: sessionId } });
+    if (existing) {
+      return NextResponse.json({ ok: true, already: true }, { status: 200 });
     }
 
-    // Bestellung holen
-    const order = await prisma.order.findUnique({
-      where: { stripeId: sessionId },
-      include: {
-        items: true,
-      },
-    });
-
-    if (!order) {
-      return NextResponse.json(
-        { error: "Bestellung nicht gefunden" },
-        { status: 404 }
-      );
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    if (!session) {
+      return NextResponse.json({ error: "session not found" }, { status: 404 });
     }
 
-    // Idempotenz: wenn bereits angewendet, nichts mehr tun
-    if (order.status === "stock_applied") {
-      return NextResponse.json({ ok: true, alreadyApplied: true });
+    // Payload (id/qty/unit in Cent) aus metadata
+    let payload: Array<{ id: string; qty: number; unit: number }> = [];
+    try {
+      const raw = (session.metadata?.payload as string) || "[]";
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) {
+        payload = arr
+          .map((x) => ({ id: String(x.id), qty: Number(x.qty), unit: Number(x.unit) }))
+          .filter((x) => x.id && Number.isFinite(x.qty) && x.qty > 0 && Number.isFinite(x.unit));
+      }
+    } catch {}
+
+    if (payload.length === 0) {
+      return NextResponse.json({ error: "no payload" }, { status: 400 });
     }
 
-    // Option: Nur bei "paid"/"succeeded" anwenden (falls du Stripe-Status setzt)
-    // Wenn du das erzwingen willst, entkommentieren:
-    // if (order.status !== "paid" && order.status !== "succeeded") {
-    //   return NextResponse.json(
-    //     { error: "Order noch nicht bezahlt/bestätigt." },
-    //     { status: 400 }
-    //   );
-    // }
+    // Bestellung + Bestandsreduktion in einer Transaktion
+    const result = await prisma.$transaction(async (tx) => {
+      const order = await tx.order.create({
+        data: {
+          stripeId: session.id,
+          status: "paid",
+          amountTotal: session.amount_total ?? payload.reduce((s, it) => s + it.unit * it.qty, 0),
+          email: (session.customer_details?.email as string) || null,
+        },
+      });
 
-    // Reduktion in einer Transaktion durchführen
-    const updates = await prisma.$transaction(async (tx) => {
-      const results: Array<{ productId: string; from: number; to: number }> = [];
+      for (const it of payload) {
+        const p = await tx.product.findUnique({ where: { id: it.id } });
+        if (!p) continue;
 
-      for (const it of order.items) {
-        if (!it.productId || it.qty <= 0) continue;
-
-        // aktuellen Bestand holen
-        const prod = await tx.product.findUnique({
-          where: { id: it.productId },
-          select: { id: true, stock: true, active: true },
-        });
-        if (!prod) continue;
-
-        const current = Math.max(0, prod.stock ?? 0);
-        const next = Math.max(0, current - it.qty);
-
-        if (next === current) {
-          // nichts zu tun (z. B. schon 0)
-          continue;
-        }
-
-        // Update: stock setzen, active bei 0 deaktivieren
+        const newStock = Math.max(0, (p.stock ?? 0) - it.qty);
         await tx.product.update({
-          where: { id: prod.id },
+          where: { id: p.id },
           data: {
-            stock: next,
-            active: next > 0 ? prod.active : false,
+            stock: newStock,
+            active: newStock > 0 ? p.active : false,
           },
         });
 
-        results.push({ productId: prod.id, from: current, to: next });
+        await tx.orderItem.create({
+          data: {
+            orderId: order.id,
+            productId: p.id,
+            qty: it.qty,
+            unitPrice: it.unit, // in CENT (passt zu deiner Orders-UI)
+          },
+        });
       }
 
-      // Bestellung als angewendet markieren (idempotenz)
-      await tx.order.update({
-        where: { id: order.id },
-        data: { status: "stock_applied" },
-      });
-
-      return results;
+      return order.id;
     });
 
-    return NextResponse.json({
-      ok: true,
-      updated: updates.length,
-      items: updates,
-    });
+    return NextResponse.json({ ok: true, orderId: result }, { status: 200 });
   } catch (e: any) {
-    console.error("[/api/checkout/confirm] error:", e);
-    return NextResponse.json(
-      { error: e?.message || "server error" },
-      { status: 500 }
-    );
+    console.error("[checkout confirm]", e);
+    return NextResponse.json({ error: e?.message || "server error" }, { status: 500 });
   }
 }

@@ -1,131 +1,120 @@
 // app/api/checkout/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "../../../lib/db";
-import { stripe } from "../../../lib/stripe";
-import type Stripe from "stripe";
-import { chooseBestShipping, type RegionCode } from "../../../lib/shipping";
+import { stripe, appOriginFromHeaders } from "../../../lib/stripe";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type Cart = Record<string, { id: string; qty: number }>;
-
+/**
+ * POST /api/checkout
+ * body: { items: Array<{ id: string; qty: number }> }
+ */
 export async function POST(req: Request) {
   try {
-    const origin = process.env.SITE_URL || req.headers.get("origin") || "http://localhost:3000";
+    const { items } = await req.json();
+    const list: Array<{ id: string; qty: number }> = Array.isArray(items) ? items : [];
 
-    let body: unknown;
-    try { body = await req.json(); } catch { return NextResponse.json({ error: "Body muss JSON sein" }, { status: 415 }); }
-
-    const { items, region } = (body as { items?: Cart; region?: RegionCode }) || {};
-    if (!items || typeof items !== "object") {
-      return NextResponse.json({ error: "Ungültiger Warenkorb" }, { status: 400 });
+    if (list.length === 0) {
+      return NextResponse.json({ error: "Cart empty" }, { status: 400 });
     }
 
-    const regionCode: RegionCode = (region as RegionCode) || "AT";
-
-    const ids = Object.keys(items);
-    if (ids.length === 0) {
-      return NextResponse.json({ error: "Warenkorb ist leer" }, { status: 400 });
-    }
-
-    const products = await prisma.product.findMany({ where: { id: { in: ids }, active: true } });
-    if (products.length === 0) {
-      return NextResponse.json({ error: "Keine Produkte gefunden" }, { status: 400 });
-    }
-
-    // Summen bilden
-    let subtotalEUR = 0;
-    let totalWeightGrams = 0;
-
-    for (const p of products) {
-      const qty = items[p.id]?.qty || 0;
-      if (qty <= 0) continue;
-      const price = typeof p.priceEUR === "number" ? p.priceEUR : 0;
-      const w = typeof p.weightGrams === "number" ? p.weightGrams : 0;
-      subtotalEUR += price * qty;
-      totalWeightGrams += Math.max(0, w) * qty;
-    }
-
-    // Versand berechnen (cheapest/Best)
-    const ship = chooseBestShipping({
-      region: regionCode,
-      totalWeightGrams,
-      subtotalEUR,
+    // Produkte aus DB holen
+    const ids = list.map((i) => i.id);
+    const products = await prisma.product.findMany({
+      where: { id: { in: ids } },
+      select: {
+        id: true,
+        slug: true,
+        productName: true,
+        artist: true,
+        trackTitle: true,
+        priceEUR: true,
+        image: true,
+        stock: true,
+        active: true,
+        isDigital: true,
+      },
     });
 
-    const line_items: Stripe.Checkout.SessionCreateParams.LineItem[] = [];
+    // Map für schnellen Zugriff
+    const byId = new Map(products.map((p) => [p.id, p]));
 
-    // Produktzeilen
-    for (const p of products) {
-      const qty = items[p.id]?.qty || 0;
-      if (qty <= 0) continue;
+    // Warenkorb validieren + auf Lagerbestand clampen
+    const safeItems = list
+      .map((row) => {
+        const p = byId.get(row.id);
+        if (!p || !p.active) return null;
 
-      const unitAmount = typeof p.priceEUR === "number" ? Math.round(p.priceEUR * 100) : 0;
-      if (unitAmount <= 0) continue;
+        const max = Math.max(0, Number(p.stock ?? 0));
+        const qty = Math.min(Math.max(1, Number(row.qty || 1)), max);
+        if (qty <= 0) return null;
 
-      const artistTitle = (p.artist ?? "") + ((p.artist && p.trackTitle) ? " – " : "") + (p.trackTitle ?? "");
-      const title = (p.productName ?? artistTitle) || p.slug || "Artikel";
+        const title =
+          (p.productName && p.productName.trim().length > 0)
+            ? p.productName
+            : `${p.artist ?? ""}${p.artist && p.trackTitle ? " – " : ""}${p.trackTitle ?? p.slug}`;
 
-      let images: string[] | undefined = undefined;
-      if (p.image && /^https?:\/\//i.test(p.image) && p.image.length < 2000) {
-        images = [p.image];
-      } else if (p.image) {
-        const abs = p.image.startsWith("http") ? p.image : `${origin}${p.image.startsWith("/") ? "" : "/"}${p.image}`;
-        if (abs.length < 2000) images = [abs];
-      }
+        return {
+          id: p.id,
+          title,
+          unitAmount: Math.round(Number(p.priceEUR) * 100), // in Cent
+          image: p.image || undefined,
+          qty,
+          isDigital: !!p.isDigital,
+        };
+      })
+      .filter(Boolean) as Array<{
+        id: string; title: string; unitAmount: number; image?: string; qty: number; isDigital: boolean;
+      }>;
 
-      line_items.push({
-        quantity: qty,
-        price_data: {
-          currency: "eur",
-          unit_amount: unitAmount,
-          product_data: {
-            name: title,
-            images,
-            metadata: { id: p.id, slug: p.slug || "", category: p.categoryCode || "" },
-          },
+    if (safeItems.length === 0) {
+      return NextResponse.json({ error: "No purchasable items" }, { status: 400 });
+    }
+
+    const origin = appOriginFromHeaders(req);
+    const successUrl = `${origin}/de/checkout/success?session_id={CHECKOUT_SESSION_ID}`;
+    const cancelUrl  = `${origin}/de/cart`;
+
+    // Für Bestandsreduzierung nachher: Payload in metadata (id/qty/unit)
+    const payload = safeItems.map((it) => ({
+      id: it.id,
+      qty: it.qty,
+      unit: it.unitAmount,
+    }));
+
+    const line_items = safeItems.map((it) => ({
+      quantity: it.qty,
+      price_data: {
+        currency: "eur",
+        unit_amount: it.unitAmount,
+        product_data: {
+          name: it.title,
+          images: it.image ? [it.image] : undefined,
+          metadata: { productId: it.id }, // optional, aber nett
         },
-      });
-    }
+      },
+    }));
 
-    // Versand hinzufügen (0, wenn Freigrenze erreicht)
-    if (ship) {
-      line_items.push({
-        quantity: 1,
-        price_data: {
-          currency: "eur",
-          unit_amount: Math.round(ship.amountEUR * 100),
-          product_data: {
-            name: ship.freeByThreshold
-              ? `Versand (${ship.name}) – frei`
-              : `Versand (${ship.name})`,
-            metadata: {
-              type: "shipping",
-              region: ship.region,
-              carrier: ship.carrier,
-              weightGrams: String(ship.weightGrams ?? ""),
-            },
-          },
-        },
-      });
-    }
-
-    if (line_items.length === 0) {
-      return NextResponse.json({ error: "Keine gültigen Positionen" }, { status: 400 });
-    }
+    const hasPhysical = safeItems.some((i) => !i.isDigital);
 
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
+      success_url: successUrl,
+      cancel_url: cancelUrl,
       line_items,
-      success_url: `${origin}/de/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${origin}/de/merch`,
+      metadata: {
+        payload: JSON.stringify(payload),
+      },
+      ...(hasPhysical
+        ? { shipping_address_collection: { allowed_countries: ["DE", "AT", "CH", "NL", "BE", "FR", "IT", "ES", "GB"] } }
+        : {}),
     });
 
-    return NextResponse.json({ url: session.url });
-  } catch (err: any) {
-    const msg = err?.message || "Checkout-Fehler";
-    console.error("POST /api/checkout error:", err);
-    return NextResponse.json({ error: msg }, { status: 500 });
+    // Du kannst auch einfach session.url zurückgeben und clientseitig location.href = url setzen.
+    return NextResponse.json({ ok: true, id: session.id, url: session.url }, { status: 200 });
+  } catch (e: any) {
+    console.error("[checkout POST] error:", e);
+    return NextResponse.json({ error: e?.message || "server error" }, { status: 500 });
   }
 }
