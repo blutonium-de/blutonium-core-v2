@@ -54,13 +54,13 @@ export default async function ShopPage({
       year: true,
       priceEUR: true,
       image: true,
+      images: true,          // ⬅️ gallery
       stock: true,
     },
   });
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8">
-      {/* Header with inverted logos */}
       <header className="mb-8 text-center">
         <div className="flex items-center justify-center gap-4 sm:gap-6">
           <Image
@@ -70,7 +70,7 @@ export default async function ShopPage({
             height={150}
             className="invert w-[100px] sm:w-[130px] md:w-[150px] h-auto"
           />
-        <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight">
+          <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight">
             Blutonium Records Shop
           </h1>
           <Image
@@ -83,12 +83,12 @@ export default async function ShopPage({
         </div>
 
         <h2 className="mt-4 text-xl md:text-2xl font-bold">
-          Welcome to our Online Shop!
+          Welcome to our online shop!
         </h2>
         <p className="mt-3 text-[13px] md:text-[15px] text-white/80 max-w-3xl mx-auto">
-          Find true rarities from the Blutonium Records Vinyl &amp; CD catalog,
-          plus very rare 12&quot; maxi vinyls from the legendary DJ era — used,
-          but absolutely playable, at a fair price.
+          Discover rare items from the Blutonium Records vinyl and CD compilation
+          catalog, as well as hard-to-find 12&quot; maxi singles from the legendary
+          DJ era — pre-owned but still perfectly playable, at a fair price.
         </p>
       </header>
 
@@ -98,7 +98,7 @@ export default async function ShopPage({
         <input
           name="q"
           defaultValue={q}
-          placeholder="Search artist, title, EAN, catalog number …"
+          placeholder="Search artist, title, EAN, catalog no. …"
           className="flex-1 rounded-lg px-3 py-2 bg-white/5 border border-white/10 text-sm"
         />
         <button
@@ -109,17 +109,13 @@ export default async function ShopPage({
         </button>
       </form>
 
-      {/* Category chips */}
+      {/* Category chips (orange) */}
       <div className="flex flex-wrap gap-2 justify-center">
         {CATS.map((c) => {
           const params = new URLSearchParams();
           if (c.code) params.set("cat", c.code);
           if (q) params.set("q", q);
-          const href = c.code
-            ? `?${params.toString()}`
-            : q
-            ? `?q=${encodeURIComponent(q)}`
-            : ".";
+          const href = c.code ? `?${params.toString()}` : q ? `?q=${encodeURIComponent(q)}` : ".";
           const active = c.code === (cat || "");
           return (
             <a

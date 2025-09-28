@@ -54,6 +54,7 @@ export default async function ShopPage({
       year: true,
       priceEUR: true,
       image: true,
+      images: true,          // ⬅️ wichtig für Galerie
       stock: true,
     },
   });
@@ -116,11 +117,7 @@ export default async function ShopPage({
           const params = new URLSearchParams();
           if (c.code) params.set("cat", c.code);
           if (q) params.set("q", q);
-          const href = c.code
-            ? `?${params.toString()}`
-            : q
-            ? `?q=${encodeURIComponent(q)}`
-            : ".";
+          const href = c.code ? `?${params.toString()}` : q ? `?q=${encodeURIComponent(q)}` : ".";
           const active = c.code === (cat || "");
           return (
             <a
