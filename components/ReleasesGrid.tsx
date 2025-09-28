@@ -61,8 +61,7 @@ export default function ReleasesGrid() {
   const years = useMemo(() => {
     return Array.from(
       new Set(items.map((r) => r.year || 0).filter(Boolean))
-    )
-      .sort((a, b) => b - a);
+    ).sort((a, b) => b - a);
   }, [items]);
 
   // gefilterte Releases nach Kind
@@ -90,9 +89,7 @@ export default function ReleasesGrid() {
             type="button"
             onClick={() => setKind(k)}
             className={`px-4 py-1.5 rounded-full text-sm transition ${
-              kind === k
-                ? "bg-white text-black"
-                : "bg-white/10 hover:bg-white/20"
+              kind === k ? "bg-white text-black" : "bg-white/10 hover:bg-white/20"
             }`}
           >
             {label}
@@ -130,7 +127,7 @@ export default function ReleasesGrid() {
               return a.title.localeCompare(b.title);
             });
 
-        if (group.length === 0) return null;
+          if (group.length === 0) return null;
 
           return (
             <section key={y} id={`y${y}`} className="scroll-mt-24">
@@ -161,31 +158,23 @@ export default function ReleasesGrid() {
                         <span className="px-2 py-0.5 rounded bg-white/10">
                           {(r.type || "ALBUM").toString()}
                         </span>
-                        {r.label ? (
-                          <span className="ml-2">Label: {r.label}</span>
-                        ) : null}
-                        {r.catalog ? (
-                          <span className="ml-2">Cat#: {r.catalog}</span>
-                        ) : null}
+                        {r.label ? <span className="ml-2">Label: {r.label}</span> : null}
+                        {r.catalog ? <span className="ml-2">Cat#: {r.catalog}</span> : null}
                       </div>
 
                       {/* Titel + Artists */}
-                      <div className="font-semibold leading-snug">
-                        {r.title}
-                      </div>
+                      <div className="font-semibold leading-snug">{r.title}</div>
                       {r.artists ? (
                         <div className="text-sm opacity-80">{r.artists}</div>
                       ) : null}
 
-                      {/* Links — jetzt über ReleaseLinks mit Fallback-Suche */}
+                      {/* Links */}
                       <div className="mt-2">
                         <ReleaseLinks
-                          title={r.title}
-                          artists={r.artists}
-                          spotifyUrl={r.spotifyUrl}
-                          appleUrl={r.appleUrl}
-                          beatportUrl={r.beatportUrl}
-                          size="sm"
+                          spotifyUrl={r.spotifyUrl || undefined}
+                          appleUrl={r.appleUrl || undefined}
+                          beatportUrl={r.beatportUrl || undefined}
+                          compact
                         />
                       </div>
                     </div>
