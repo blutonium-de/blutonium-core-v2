@@ -1,50 +1,101 @@
 // app/admin/login/page.tsx
 "use client";
 
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
 
-export default function AdminLogin() {
-  const [pw, setPw] = useState("");
-  const [err, setErr] = useState<string | null>(null);
+export default function AdminLoginPage() {
+  return (
+    <Suspense fallback={<div className="max-w-md mx-auto px-4 py-10">Lade …</div>}>
+      <AdminLoginInner />
+    </Suspense>
+  );
+}
+
+function AdminLoginInner() {
   const router = useRouter();
-  const sp = useSearchParams();
-  const next = sp.get("next") || "/admin/products";
+  const search = useSearchParams();
+
+  const [key, setKey] = useState("");
+  const [remember, setRemember] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const next = search.get("next") || "/admin";
+
+  useEffect(() => {
+    // evtl. vorhandenes Token aus LocalStorage vorfüllen (komfort)
+    try {
+      const k = localStorage.getItem("admin_key") || "";
+      if (k) setKey(k);
+    } catch {}
+  }, []);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
-    const r = await fetch("/api/admin/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password: pw }),
-    });
-    if (!r.ok) {
+    setBusy(true);
+    try {
+      // optional im LocalStorage merken (nur Komfort, Sicherheit macht Cookie+Middleware)
+      try {
+        if (remember) localStorage.setItem("admin_key", key);
+        else localStorage.removeItem("admin_key");
+      } catch {}
+
+      // Cookie via API setzen (httpOnly)
+      const r = await fetch("/api/admin/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key, remember }),
+      });
       const j = await r.json().catch(() => ({}));
-      setErr(j?.error || "Login fehlgeschlagen");
-      return;
+      if (!r.ok || !j?.ok) throw new Error(j?.error || "Login fehlgeschlagen");
+
+      router.push(next);
+      router.refresh();
+    } catch (e: any) {
+      setErr(e?.message || "Fehler beim Login");
+    } finally {
+      setBusy(false);
     }
-    router.replace(next);
   }
 
   return (
-    <div className="mx-auto max-w-sm px-4 py-16">
-      <h1 className="text-2xl font-extrabold mb-4">Admin Login</h1>
-      <form onSubmit={onSubmit} className="space-y-3">
-        <input
-          type="password"
-          className="w-full rounded bg-white/5 border border-white/10 px-3 py-2"
-          placeholder="Admin-Passwort"
-          value={pw}
-          onChange={(e) => setPw(e.target.value)}
-          autoFocus
-        />
-        {err && <div className="text-red-400 text-sm">{err}</div>}
+    <div className="max-w-md mx-auto px-4 py-10">
+      <h1 className="text-3xl font-extrabold">Admin Login</h1>
+      <p className="mt-2 text-white/70 text-sm">
+        Bitte Admin-Token eingeben, um fortzufahren.
+      </p>
+
+      <form onSubmit={onSubmit} className="mt-6 space-y-4">
+        <label className="block">
+          <div className="text-sm mb-1 opacity-80">Admin-Token</div>
+          <input
+            type="password"
+            className="w-full rounded-lg bg-white/5 border border-white/15 px-3 py-2"
+            value={key}
+            onChange={(e) => setKey(e.target.value)}
+            required
+          />
+        </label>
+
+        <label className="inline-flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={remember}
+            onChange={(e) => setRemember(e.target.checked)}
+          />
+          <span className="text-sm opacity-80">Auf diesem Gerät merken</span>
+        </label>
+
+        {err && <div className="text-sm text-red-400">{err}</div>}
+
         <button
           type="submit"
-          className="w-full px-4 py-2 rounded bg-cyan-500 hover:bg-cyan-400 text-black font-semibold"
+          disabled={busy}
+          className="px-4 py-2 rounded bg-cyan-500 hover:bg-cyan-400 text-black font-semibold disabled:opacity-60"
         >
-          Einloggen
+          {busy ? "Prüfe …" : "Einloggen"}
         </button>
       </form>
     </div>
