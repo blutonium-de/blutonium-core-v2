@@ -1,235 +1,153 @@
 // components/BarcodeScanner.tsx
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   BrowserMultiFormatReader,
+} from "@zxing/browser";
+import {
   BarcodeFormat,
   DecodeHintType,
-} from "@zxing/browser";
+  Result,
+} from "@zxing/library";
 
 type Props = {
-  open: boolean;
+  /** Wird vom Parent als Overlay gerendert (optional). */
   onClose: () => void;
+  /** Callback bei erkannter EAN/UPC/etc. */
   onDetected: (code: string) => void;
-  /** z.B. ["ean_13","ean_8","upc_a","upc_e","code_128"] */
+  /** Optional: gewünschte Formate, z.B. ["ean_13","ean_8","upc_a","upc_e","code_128"] */
   formats?: string[];
 };
 
-function isInAppWebView(ua: string) {
-  ua = ua.toLowerCase();
-  return (
-    ua.includes("fbav") || ua.includes("fban") || // Facebook
-    ua.includes("instagram") ||                   // Instagram
-    ua.includes("line") ||                        // LINE
-    ua.includes("wv") ||                          // Generic WebView (Android)
-    ua.includes("twitter") ||                     // X/Twitter
-    ua.includes("whatsapp")                       // WhatsApp
-  );
-}
+const FORMAT_MAP: Record<string, BarcodeFormat> = {
+  ean_13: BarcodeFormat.EAN_13,
+  ean_8: BarcodeFormat.EAN_8,
+  upc_a: BarcodeFormat.UPC_A,
+  upc_e: BarcodeFormat.UPC_E,
+  code_128: BarcodeFormat.CODE_128,
+  code_39: BarcodeFormat.CODE_39,
+  qr: BarcodeFormat.QR_CODE,
+};
 
-function mapFormats(list?: string[]) {
-  // Default: die gängigen Handelscodes
-  const wanted = (list && list.length ? list : ["ean_13", "ean_8", "upc_a", "upc_e", "code_128"])
-    .map((s) => s.toLowerCase());
-
-  const set = new Set<BarcodeFormat>();
-  if (wanted.includes("ean_13")) set.add(BarcodeFormat.EAN_13);
-  if (wanted.includes("ean_8")) set.add(BarcodeFormat.EAN_8);
-  if (wanted.includes("upc_a")) set.add(BarcodeFormat.UPC_A);
-  if (wanted.includes("upc_e")) set.add(BarcodeFormat.UPC_E);
-  if (wanted.includes("code_128")) set.add(BarcodeFormat.CODE_128);
-  if (wanted.includes("code_39")) set.add(BarcodeFormat.CODE_39);
-  if (wanted.includes("itf")) set.add(BarcodeFormat.ITF);
-  return set;
-}
-
-export default function BarcodeScanner({
-  open,
-  onClose,
-  onDetected,
-  formats,
-}: Props) {
-  const [error, setError] = useState<string | null>(null);
-  const [ready, setReady] = useState(false); // Kamera initialisiert
-  const [starting, setStarting] = useState(false);
-
+export default function BarcodeScanner({ onClose, onDetected, formats }: Props) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
   const readerRef = useRef<BrowserMultiFormatReader | null>(null);
-
-  const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
-  const inApp = useMemo(() => isInAppWebView(ua), [ua]);
-
-  const hints = useMemo(() => {
-    const h = new Map();
-    h.set(DecodeHintType.POSSIBLE_FORMATS, Array.from(mapFormats(formats)));
-    return h;
-  }, [formats]);
-
-  // Aufräumen (Tracks stoppen)
-  function stopAll() {
-    try {
-      readerRef.current?.stopContinuousDecode();
-    } catch {}
-    readerRef.current = null;
-
-    const s = streamRef.current;
-    if (s) {
-      s.getTracks().forEach((t) => {
-        try { t.stop(); } catch {}
-      });
-    }
-    streamRef.current = null;
-    setReady(false);
-  }
+  const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!open) {
-      // Modal ist zu → sicherheitshalber stoppen
-      stopAll();
-      setError(null);
-      setStarting(false);
-    } else {
-      // Beim Öffnen noch keinen Autostart → iOS will User-Geste
-      setError(null);
-      setStarting(false);
-      setReady(false);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+    let isCancelled = false;
 
-  async function startCamera() {
-    setError(null);
+    async function start() {
+      setErr(null);
 
-    // Grundchecks
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setError("Kamera-API nicht verfügbar.");
-      return;
-    }
-    if (location.protocol !== "https:" && location.hostname !== "localhost") {
-      setError("Kamera erfordert HTTPS. Bitte über https aufrufen.");
-      return;
-    }
-    if (inApp) {
-      setError("Dieser In-App-Browser blockiert den Kamera-Zugriff. Bitte in Safari oder Chrome öffnen.");
-      return;
-    }
+      // Hints optional setzen
+      let hints: Map<DecodeHintType, any> | undefined = undefined;
+      if (formats && formats.length) {
+        const fmts = formats
+          .map((f) => FORMAT_MAP[f.toLowerCase()])
+          .filter(Boolean);
+        if (fmts.length) {
+          hints = new Map();
+          hints.set(DecodeHintType.POSSIBLE_FORMATS, fmts);
+        }
+      }
 
-    try {
-      setStarting(true);
-
-      // Rückkamera bevorzugen
-      const constraints: MediaStreamConstraints = {
-        video: {
-          facingMode: { ideal: "environment" },
-          // etwas konservativ für iPhone-Performance
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-        },
-        audio: false,
-      };
-
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      streamRef.current = stream;
-
-      const video = videoRef.current!;
-      video.srcObject = stream;
-      // iOS braucht playsInline, muted, kein Autoplay-Block
-      video.setAttribute("playsinline", "true");
-      (video as any).muted = true;
-
-      await video.play();
-
-      // ZXing-Reader
-      const reader = new BrowserMultiFormatReader(hints, 300);
+      // Reader anlegen (mit Hints, wenn vorhanden)
+      const reader = new BrowserMultiFormatReader(hints);
       readerRef.current = reader;
 
-      await reader.decodeFromVideoDevice(
-        undefined,
-        video,
-        (result, err, controls) => {
-          // Bei jedem Frame Callback: result = Barcode, err = DecodingError/NotFound
-          if (result) {
-            // Code gefunden → sofort stoppen
-            try { controls.stop(); } catch {}
-            stopAll();
-            onDetected(result.getText());
+      try {
+        // iOS: rear camera + playsInline
+        const deviceId = undefined; // auto-pick
+        await reader.decodeFromVideoDevice(
+          deviceId,
+          videoRef.current!,
+          (result: Result | undefined, err) => {
+            if (isCancelled) return;
+            if (result) {
+              try {
+                onDetected(result.getText());
+              } finally {
+                // nach erstem Treffer wieder schließen
+                onClose();
+              }
+            }
+            // Fehler im Frame ignorieren (kontinuierlicher Scan)
           }
-        }
-      );
-
-      setReady(true);
-    } catch (e: any) {
-      console.error("Scanner start error:", e);
-      setError(e?.message || "Kamera-Zugriff verweigert oder fehlgeschlagen.");
-    } finally {
-      setStarting(false);
+        );
+      } catch (e: any) {
+        console.error("ZXing start error:", e);
+        // Häufig: Permission / HTTPS / Kamera blockiert
+        setErr(
+          e?.message ||
+            "Kamera konnte nicht gestartet werden. Bitte Berechtigung erteilen und HTTPS/Live-Domain verwenden."
+        );
+      }
     }
-  }
 
-  return !open ? null : (
+    start();
+
+    return () => {
+      isCancelled = true;
+      try {
+        readerRef.current?.reset();
+      } catch {}
+      readerRef.current = null;
+      // Kamera-Stream sauber beenden
+      const v = videoRef.current;
+      const stream = v?.srcObject as MediaStream | null;
+      stream?.getTracks()?.forEach((t) => t.stop());
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
     <div
-      className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex flex-col items-center justify-center p-4"
       role="dialog"
       aria-modal="true"
     >
-      <div className="w-full max-w-lg rounded-xl border border-white/15 bg-zinc-900 shadow-xl overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+      <div className="w-full max-w-md rounded-xl border border-white/15 bg-black/40 p-3">
+        <div className="flex items-center justify-between mb-2">
           <h2 className="text-lg font-semibold">Barcode scannen</h2>
           <button
-            onClick={() => { stopAll(); onClose(); }}
-            className="px-3 py-1.5 rounded bg-white/10 hover:bg-white/20"
+            type="button"
+            onClick={onClose}
+            className="px-3 py-1 rounded bg-white/10 hover:bg-white/20"
           >
             Schließen
           </button>
         </div>
 
-        <div className="p-4 space-y-4">
-          {/* Video-Viewport */}
-          <div className="aspect-video w-full bg-black/60 rounded-lg grid place-items-center overflow-hidden">
-            <video
-              ref={videoRef}
-              className="w-full h-full object-contain"
-              playsInline
-            />
-            {!ready && (
-              <div className="absolute text-sm opacity-80 px-3 py-1 rounded bg-white/10">
-                {starting ? "Kamera wird gestartet …" : "Bereit"}
-              </div>
-            )}
+        <div className="relative rounded-lg overflow-hidden bg-black/50">
+          <video
+            ref={videoRef}
+            className="w-full h-[320px] object-cover"
+            muted
+            autoPlay
+            playsInline
+          />
+          {/* einfache Zielhilfe */}
+          <div className="pointer-events-none absolute inset-0 grid place-items-center">
+            <div className="w-3/4 max-w-xs h-28 border-2 border-cyan-400/70 rounded" />
           </div>
+        </div>
 
-          {error ? (
-            <div className="rounded border border-red-500/30 bg-red-500/10 text-red-200 p-3 text-sm">
-              {error}
-              {inApp && (
-                <div className="mt-2 opacity-80">
-                  Öffne die Seite bitte direkt in <b>Safari</b> oder <b>Chrome</b> (nicht aus WhatsApp/Instagram).
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="flex gap-2">
-              <button
-                onClick={startCamera}
-                disabled={starting}
-                className="px-4 py-2 rounded bg-cyan-500 hover:bg-cyan-400 text-black font-semibold disabled:opacity-60"
-              >
-                {starting ? "Starte Kamera …" : "Kamera starten"}
-              </button>
-              <button
-                onClick={stopAll}
-                className="px-4 py-2 rounded bg-white/10 hover:bg-white/20"
-              >
-                Kamera stoppen
-              </button>
-            </div>
-          )}
+        {err && (
+          <p className="mt-3 text-sm text-amber-300">
+            {err}
+            <br />
+            <span className="opacity-80">
+              Tipp: iOS Safari/Chrome nur über HTTPS, Kamera in
+              Website-Einstellungen erlauben. In-App-Browser vermeiden.
+            </span>
+          </p>
+        )}
 
-          <div className="text-xs opacity-70">
-            Tipp: Halte den Code ruhig ins Bild. Unterstützt werden EAN-13/8, UPC-A/E, CODE-128 (konfigurierbar).
-          </div>
+        <div className="mt-3 text-xs opacity-75">
+          Hält den Code in das Rechteck. Unterstützte Formate:{" "}
+          {formats?.length ? formats.join(", ") : "automatische Erkennung"}.
         </div>
       </div>
     </div>
