@@ -48,8 +48,12 @@ export async function POST(req: Request) {
         data: {
           stripeId: session.id,
           status: "paid",
-          amountTotal: session.amount_total ?? payload.reduce((s, it) => s + it.unit * it.qty, 0),
+          amountTotal:
+            session.amount_total ??
+            payload.reduce((s, it) => s + it.unit * it.qty, 0),
           email: (session.customer_details?.email as string) || null,
+          currency:
+            (session.currency || "eur").toUpperCase(), // ← NEU: Pflichtfeld im Schema
         },
       });
 
@@ -71,7 +75,7 @@ export async function POST(req: Request) {
             orderId: order.id,
             productId: p.id,
             qty: it.qty,
-            unitPrice: it.unit, // in CENT (passt zu deiner Orders-UI)
+            unitPrice: it.unit, // Cent
           },
         });
       }
