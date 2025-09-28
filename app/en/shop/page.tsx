@@ -1,17 +1,17 @@
-// app/de/shop/page.tsx
-import ProductCard from "../../../components/ProductCard";
-import { prisma } from "../../../lib/db";
+// app/en/shop/page.tsx
+import ProductCard from "../../components/ProductCard";
+import { prisma } from "../../lib/db";
 
 export const dynamic = "force-dynamic";
 
 const CATS = [
-  { code: "",    label: "Alle" },
+  { code: "",    label: "All" },
   { code: "bv",  label: "Blutonium Vinyls" },
-  { code: "sv",  label: "Sonstige Vinyls" },
+  { code: "sv",  label: "Other Vinyls" },
   { code: "bcd", label: "Blutonium CDs" },
-  { code: "scd", label: "Sonstige CDs" },
+  { code: "scd", label: "Other CDs" },
   { code: "bhs", label: "Blutonium Hardstyle Samples" },
-  { code: "ss",  label: "Sonstiges & Specials" },
+  { code: "ss",  label: "Misc & Specials" },
 ];
 
 export default async function ShopPage({
@@ -20,7 +20,7 @@ export default async function ShopPage({
   const cat = (searchParams?.cat || "").toLowerCase();
 
   const products = await prisma.product.findMany({
-    where: { active: true, ...(cat ? { categoryCode: cat } : {}) },
+    where: { active: true, stock: { gt: 0 }, ...(cat ? { categoryCode: cat } : {}) },
     orderBy: { createdAt: "desc" },
     select: {
       id: true,
@@ -33,6 +33,7 @@ export default async function ShopPage({
       year: true,
       priceEUR: true,
       image: true,
+      stock: true, // stock needed by ProductCard for "sold out" state
     },
   });
 
@@ -44,17 +45,16 @@ export default async function ShopPage({
           Blutonium Records Shop
         </h1>
         <h2 className="mt-4 text-xl md:text-2xl font-bold">
-          Herzlich Willkommen in unserem Online Shop!
+          Welcome to our online shop!
         </h2>
         <p className="mt-4 text-base md:text-lg text-white/80 max-w-3xl mx-auto">
-          Hier findest Du absolute Raritäten, sei es aus dem Blutonium Records
-          Vinyl &amp; CD Compilation Sortiment, sowie auch ganz seltene Maxi 12"
-          Vinyls aus der legendären DJ Zeit – gebraucht, aber noch absolut
-          einsetzbar, und das zu einem fairen Preis.
+          Discover rare gems from the Blutonium Records Vinyl &amp; CD compilation catalog,
+          plus very rare 12&quot; DJ-era maxi vinyls — pre-owned but absolutely usable
+          and offered at a fair price.
         </p>
       </header>
 
-      {/* Kategorie-Chips */}
+      {/* Category chips */}
       <div className="flex flex-wrap gap-2">
         {CATS.map((c) => {
           const href = c.code ? `?cat=${c.code}` : ".";
