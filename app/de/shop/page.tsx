@@ -57,7 +57,6 @@ export default async function ShopPage({
       image: true,
       images: true,        // ⬅️ für die Galerie im Modal
       stock: true,
-      condition: true,      // ⬅️ NEU: Zustand für das B
     },
   });
 
