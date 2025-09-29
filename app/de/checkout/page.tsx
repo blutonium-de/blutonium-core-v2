@@ -1,4 +1,3 @@
-// app/de/checkout/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -78,13 +77,24 @@ export default function CheckoutPage() {
     setCreating(true);
     try {
       const payload = { items: lines.map((l) => ({ id: l.product.id, qty: l.qty })) };
-      const r = await fetch("/api/checkout/session", {   // ✅ geändert
+
+      const r = await fetch("/api/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const j = await r.json();
-      if (!r.ok || !j?.url) throw new Error(j?.error || "Konnte Checkout nicht starten.");
+
+      // robustes Parsing, damit wir echte Fehler sehen
+      const text = await r.text();
+      let j: any;
+      try { j = JSON.parse(text); } catch {
+        throw new Error(text || `HTTP ${r.status}`);
+      }
+
+      if (!r.ok || !j?.url) {
+        throw new Error(j?.error || `HTTP ${r.status}`);
+      }
+
       window.location.href = j.url as string; // weiter zu Stripe
     } catch (e: any) {
       setErr(e?.message || "Fehler beim Start des Checkouts");
