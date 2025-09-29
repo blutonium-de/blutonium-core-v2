@@ -24,11 +24,15 @@ type Product = {
   stock: number | null;
   isDigital: boolean | null;
   active: boolean;
-  weightGrams: number | null; // ⬅️ wichtig für Versand
+  weightGrams: number | null;
 };
 
 function readCart(): CartMap {
-  try { return JSON.parse(localStorage.getItem("cart") || "{}"); } catch { return {}; }
+  try {
+    return JSON.parse(localStorage.getItem("cart") || "{}");
+  } catch {
+    return {};
+  }
 }
 function readRegion(): RegionCode {
   try {
@@ -45,22 +49,18 @@ export default function CheckoutPage() {
   const [creating, setCreating] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // Nur AT/EU (WORLD ausgeblendet)
+  // Nur AT/EU
   const [region, setRegion] = useState<RegionCode>("AT");
-  const [shipIdx, setShipIdx] = useState(0); // gewählte Option
+  const [shipIdx, setShipIdx] = useState(0);
 
   useEffect(() => { setRegion(readRegion()); }, []);
-  useEffect(() => {
-    try { localStorage.setItem("ship_region", region); } catch {}
-  }, [region]);
+  useEffect(() => { try { localStorage.setItem("ship_region", region); } catch {} }, [region]);
 
   useEffect(() => {
     const c = readCart();
     setCart(c);
     const ids = Object.keys(c);
-    if (ids.length === 0) {
-      setItems([]); setLoading(false); return;
-    }
+    if (ids.length === 0) { setItems([]); setLoading(false); return; }
     const url = `/api/public/products?ids=${encodeURIComponent(ids.join(","))}`;
     fetch(url, { cache: "no-store" })
       .then((r) => r.json())
@@ -70,20 +70,22 @@ export default function CheckoutPage() {
   }, []);
 
   const lines = useMemo(() => {
-    return items.map((p) => {
-      const qty = Math.max(0, Number(cart[p.id]?.qty || 0));
-      const unitPrice = Number.isFinite(cart[p.id]?.price!)
-        ? Number(cart[p.id]?.price)
-        : p.priceEUR;
-      const max = Math.max(0, Number(p.stock ?? 0));
-      const clampedQty = Math.min(qty, max);
-      const lineTotal = clampedQty * unitPrice;
-      const title =
-        (p.productName && p.productName.trim().length > 0)
-          ? p.productName
-          : `${p.artist ?? ""}${p.artist && p.trackTitle ? " – " : ""}${p.trackTitle ?? p.slug}`;
-      return { product: p, qty: clampedQty, unitPrice, lineTotal, title };
-    }).filter(l => l.qty > 0 && l.product.active);
+    return items
+      .map((p) => {
+        const qty = Math.max(0, Number(cart[p.id]?.qty || 0));
+        const unitPrice = Number.isFinite(cart[p.id]?.price!)
+          ? Number(cart[p.id]?.price)
+          : p.priceEUR;
+        const max = Math.max(0, Number(p.stock ?? 0));
+        const clampedQty = Math.min(qty, max);
+        const lineTotal = clampedQty * unitPrice;
+        const title =
+          (p.productName && p.productName.trim().length > 0)
+            ? p.productName
+            : `${p.artist ?? ""}${p.artist && p.trackTitle ? " – " : ""}${p.trackTitle ?? p.slug}`;
+        return { product: p, qty: clampedQty, unitPrice, lineTotal, title };
+      })
+      .filter((l) => l.qty > 0 && l.product.active);
   }, [items, cart]);
 
   const subtotal = useMemo(
@@ -91,8 +93,8 @@ export default function CheckoutPage() {
     [lines]
   );
 
-  const totalWeight = useMemo(() =>
-    sumWeight(lines.map(l => ({ weightGrams: l.product.weightGrams ?? 0, qty: l.qty }))),
+  const totalWeight = useMemo(
+    () => sumWeight(lines.map(l => ({ weightGrams: l.product.weightGrams ?? 0, qty: l.qty }))),
     [lines]
   );
 
@@ -113,13 +115,8 @@ export default function CheckoutPage() {
     try {
       const payload = {
         region,
-        // Versand als extra Line-Item abrechnen:
         shipping: chosen
-          ? {
-              name: chosen.name,
-              amountEUR: chosen.amountEUR,
-              carrier: chosen.carrier,
-            }
+          ? { name: chosen.name, amountEUR: chosen.amountEUR, carrier: chosen.carrier }
           : null,
         items: lines.map((l) => ({ id: l.product.id, qty: l.qty })),
       };
@@ -161,9 +158,12 @@ export default function CheckoutPage() {
 
   const shippingEUR = chosen ? chosen.amountEUR : 0;
   const grandTotal = subtotal + shippingEUR;
-  const grandTotalStr = grandTotal.toFixed(2); // PayPal benötigt String
 
+  // --- PayPal Konfiguration ---
   const paypalClientId = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID || "";
+  const currency = (process.env.NEXT_PUBLIC_PAYPAL_CURRENCY ||
+                    process.env.PAYPAL_CURRENCY ||
+                    "EUR");
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-10">
@@ -203,7 +203,6 @@ export default function CheckoutPage() {
           <div className="opacity-70 text-sm">Zwischensumme</div>
           <div className="text-xl font-bold">{subtotal.toFixed(2)} €</div>
 
-          {/* Versand-Optionen */}
           {shippingOptions.length > 0 && (
             <div className="mt-3 text-left">
               <div className="opacity-70 text-sm mb-1">Versandoption:</div>
@@ -230,7 +229,7 @@ export default function CheckoutPage() {
 
           {err && <div className="mt-2 text-red-400 text-sm">{err}</div>}
 
-          {/* --- Stripe Button --- */}
+          {/* Stripe */}
           <button
             onClick={goToStripe}
             disabled={creating}
@@ -246,49 +245,41 @@ export default function CheckoutPage() {
             <div className="h-px flex-1 bg-white/15" />
           </div>
 
-          {/* --- PayPal --- */}
+          {/* PayPal */}
           <div className="text-left">
             <PayPalScriptProvider
               options={{
                 clientId: paypalClientId || "test",
-                currency: "EUR",
+                currency,
                 intent: "CAPTURE",
               }}
             >
               <PayPalButtons
-                style={{ layout: "horizontal" }}
-                forceReRender={[grandTotalStr, region, shipIdx]}
+                style={{ layout: "vertical", color: "gold", shape: "rect", label: "paypal" }}
                 createOrder={(_, actions) => {
-                  // Minimal-Setup: 1 Purchase Unit mit Gesamtbetrag
                   return actions.order.create({
+                    intent: "CAPTURE",
                     purchase_units: [
                       {
                         amount: {
-                          currency_code: "EUR",
-                          value: grandTotalStr,
+                          currency_code: currency,
+                          value: grandTotal.toFixed(2),
                           breakdown: {
-                            item_total: { currency_code: "EUR", value: subtotal.toFixed(2) },
-                            shipping:   { currency_code: "EUR", value: (shippingEUR).toFixed(2) },
+                            item_total: { currency_code: currency, value: subtotal.toFixed(2) },
+                            shipping:    { currency_code: currency, value: shippingEUR.toFixed(2) },
                           },
                         },
                       },
                     ],
                   });
                 }}
-                onApprove={async (_, actions) => {
-                  try {
-                    const details = await actions.order!.capture();
-                    // Warenkorb leeren (lokal)
-                    try { localStorage.removeItem("cart"); } catch {}
-                    // Weiter zur Success-Seite (PayPal)
-                    const id = details.id || "";
-                    window.location.href = `/de/checkout/success?paypal=1&order_id=${encodeURIComponent(id)}`;
-                  } catch (e: any) {
-                    alert(e?.message || "PayPal-Abschluss fehlgeschlagen.");
-                  }
+                onApprove={async (_data, actions) => {
+                  await actions?.order?.capture();
+                  try { localStorage.removeItem("cart"); } catch {}
+                  window.location.href = "/de/checkout/success?paypal=1";
                 }}
-                onError={(err) => {
-                  console.error("PayPal Error:", err);
+                onError={(e) => {
+                  console.error("PayPal Error:", e);
                   alert("PayPal Fehler. Bitte versuche es erneut oder wähle Karte/Stripe.");
                 }}
                 disabled={grandTotal <= 0}
