@@ -3,6 +3,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import {
+  getShippingOptions,
+  sumWeight,
+  type RegionCode,
+} from "../../../lib/shipping";
 
 type CartEntry = { qty: number; price?: number };
 type CartMap = Record<string, CartEntry>;
@@ -18,10 +23,18 @@ type Product = {
   stock: number | null;
   isDigital: boolean | null;
   active: boolean;
+  weightGrams: number | null; // ⬅️ wichtig für Versand
 };
 
 function readCart(): CartMap {
   try { return JSON.parse(localStorage.getItem("cart") || "{}"); } catch { return {}; }
+}
+function readRegion(): RegionCode {
+  try {
+    const r = localStorage.getItem("ship_region") as RegionCode | null;
+    if (r === "AT" || r === "EU") return r;
+  } catch {}
+  return "AT";
 }
 
 export default function CheckoutPage() {
@@ -31,18 +44,11 @@ export default function CheckoutPage() {
   const [creating, setCreating] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // 👇 NEU: Standard-Versandregion AT (Österreich)
-  const [region, setRegion] = useState<"AT" | "EU" | "WORLD">("AT");
+  // Nur AT/EU (WORLD ausgeblendet)
+  const [region, setRegion] = useState<RegionCode>("AT");
+  const [shipIdx, setShipIdx] = useState(0); // gewählte Option
 
-  // Region aus localStorage vorfüllen
-  useEffect(() => {
-    try {
-      const r = localStorage.getItem("ship_region") as "AT" | "EU" | "WORLD" | null;
-      if (r === "AT" || r === "EU" || r === "WORLD") setRegion(r);
-    } catch {}
-  }, []);
-
-  // Änderungen direkt speichern (damit Warenkorb & Checkout konsistent sind)
+  useEffect(() => { setRegion(readRegion()); }, []);
   useEffect(() => {
     try { localStorage.setItem("ship_region", region); } catch {}
   }, [region]);
@@ -50,14 +56,10 @@ export default function CheckoutPage() {
   useEffect(() => {
     const c = readCart();
     setCart(c);
-
     const ids = Object.keys(c);
     if (ids.length === 0) {
-      setItems([]);
-      setLoading(false);
-      return;
+      setItems([]); setLoading(false); return;
     }
-
     const url = `/api/public/products?ids=${encodeURIComponent(ids.join(","))}`;
     fetch(url, { cache: "no-store" })
       .then((r) => r.json())
@@ -79,7 +81,6 @@ export default function CheckoutPage() {
         (p.productName && p.productName.trim().length > 0)
           ? p.productName
           : `${p.artist ?? ""}${p.artist && p.trackTitle ? " – " : ""}${p.trackTitle ?? p.slug}`;
-
       return { product: p, qty: clampedQty, unitPrice, lineTotal, title };
     }).filter(l => l.qty > 0 && l.product.active);
   }, [items, cart]);
@@ -89,13 +90,36 @@ export default function CheckoutPage() {
     [lines]
   );
 
+  const totalWeight = useMemo(() =>
+    sumWeight(lines.map(l => ({ weightGrams: l.product.weightGrams ?? 0, qty: l.qty }))),
+    [lines]
+  );
+
+  const shippingOptions = useMemo(() => {
+    if (lines.length === 0) return [];
+    return getShippingOptions({
+      region,
+      totalWeightGrams: totalWeight,
+      subtotalEUR: subtotal,
+    });
+  }, [region, totalWeight, subtotal, lines.length]);
+
+  const chosen = shippingOptions[shipIdx] || shippingOptions[0];
+
   async function goToStripe() {
     setErr(null);
     setCreating(true);
     try {
-      // 👇 NEU: Region mitsenden (und Session-Route verwenden)
       const payload = {
         region,
+        // Versand als extra Line-Item abrechnen:
+        shipping: chosen
+          ? {
+              name: chosen.name,
+              amountEUR: chosen.amountEUR,
+              carrier: chosen.carrier,
+            }
+          : null,
         items: lines.map((l) => ({ id: l.product.id, qty: l.qty })),
       };
       const r = await fetch("/api/checkout/session", {
@@ -120,7 +144,6 @@ export default function CheckoutPage() {
       </div>
     );
   }
-
   if (lines.length === 0) {
     return (
       <div className="max-w-6xl mx-auto px-4 py-10">
@@ -135,24 +158,27 @@ export default function CheckoutPage() {
     );
   }
 
+  const shippingEUR = chosen ? chosen.amountEUR : 0;
+  const grandTotal = subtotal + shippingEUR;
+
   return (
     <div className="max-w-6xl mx-auto px-4 py-10">
       <h1 className="text-3xl font-bold mb-6">Zur Kasse</h1>
 
-      {/* 👇 NEU: Versandregion wählen */}
+      {/* Region */}
       <div className="mb-4 flex items-center gap-2">
         <div className="text-sm opacity-80">Versandregion:</div>
         <select
           value={region}
-          onChange={(e) => setRegion(e.target.value as any)}
+          onChange={(e) => { setRegion(e.target.value as RegionCode); setShipIdx(0); }}
           className="rounded bg-white/5 border border-white/15 px-2 py-1 text-sm"
         >
           <option value="AT">Österreich (AT)</option>
           <option value="EU">EU</option>
-          <option value="WORLD">Weltweit</option>
         </select>
       </div>
 
+      {/* Positionen */}
       <div className="space-y-3">
         {lines.map((l) => (
           <div key={l.product.id} className="flex items-center justify-between gap-3 rounded-xl bg-white/5 border border-white/10 px-3 py-2">
@@ -165,12 +191,39 @@ export default function CheckoutPage() {
         ))}
       </div>
 
-      <div className="mt-6 flex items-center justify-between">
+      {/* Versandauswahl & Summen */}
+      <div className="mt-6 flex items-start justify-between gap-6 flex-wrap">
         <Link href="/de/cart" className="px-4 py-2 rounded bg-white/10 hover:bg-white/20">Zurück zum Warenkorb</Link>
-        <div className="text-right">
+
+        <div className="ml-auto w-full sm:w-auto text-right">
           <div className="opacity-70 text-sm">Zwischensumme</div>
-          <div className="text-2xl font-extrabold">{subtotal.toFixed(2)} €</div>
-          <div className="opacity-60 text-xs">Versand wird im Stripe-Checkout berechnet.</div>
+          <div className="text-xl font-bold">{subtotal.toFixed(2)} €</div>
+
+          {/* Versand-Optionen */}
+          {shippingOptions.length > 0 && (
+            <div className="mt-3 text-left">
+              <div className="opacity-70 text-sm mb-1">Versandoption:</div>
+              <select
+                className="w-full sm:w-[360px] rounded bg-white/5 border border-white/15 px-2 py-2 text-sm"
+                value={shipIdx}
+                onChange={(e) => setShipIdx(Number(e.target.value))}
+              >
+                {shippingOptions.map((q, idx) => (
+                  <option key={`${q.carrier}-${idx}`} value={idx}>
+                    {q.name} — {q.amountEUR === 0 ? "Kostenlos" : `${q.amountEUR.toFixed(2)} €`}
+                  </option>
+                ))}
+              </select>
+
+              <div className="mt-2 text-sm opacity-80">
+                Versand: {shippingEUR === 0 ? "Kostenlos" : `${shippingEUR.toFixed(2)} €`}
+              </div>
+            </div>
+          )}
+
+          <div className="mt-3 opacity-70 text-sm">Gesamtsumme</div>
+          <div className="text-2xl font-extrabold">{grandTotal.toFixed(2)} €</div>
+
           {err && <div className="mt-2 text-red-400 text-sm">{err}</div>}
           <button
             onClick={goToStripe}

@@ -1,7 +1,7 @@
 // lib/shipping.ts
 /**
  * Versandlogik (einfach & robust):
- * - Regionen: "AT" | "EU" | "WORLD"
+ * - Regionen: "AT" | "EU"   (kein WORLD mehr)
  * - Carrier: "POST" | "DPD" | "GLS"
  * - Preise sind Beispiel-/Startwerte, leicht anpassbar
  *
@@ -9,7 +9,7 @@
  * Preiseinheit: EUR
  */
 
-export type RegionCode = "AT" | "EU" | "WORLD";
+export type RegionCode = "AT" | "EU";
 export type CarrierCode = "POST" | "DPD" | "GLS";
 
 export type ShippingOption = {
@@ -58,12 +58,6 @@ const TABLE: Record<RegionCode, ShippingOption[]> = {
     { carrier: "GLS",  name: "GLS (EU)",                   region: "EU", maxWeightGrams: 2000, amountEUR: 13.9 },
     { carrier: "GLS",  name: "GLS (EU)",                   region: "EU", maxWeightGrams: 5000, amountEUR: 18.9 },
     { carrier: "GLS",  name: "GLS (EU)",                   region: "EU", maxWeightGrams: 10000, amountEUR: 26.9 },
-  ],
-  WORLD: [
-    { carrier: "POST", name: "Österreichische Post (WORLD)", region: "WORLD", maxWeightGrams: 500,  amountEUR: 14.9 },
-    { carrier: "POST", name: "Österreichische Post (WORLD)", region: "WORLD", maxWeightGrams: 2000, amountEUR: 24.9 },
-    { carrier: "POST", name: "Österreichische Post (WORLD)", region: "WORLD", maxWeightGrams: 5000, amountEUR: 39.9 },
-    { carrier: "POST", name: "Österreichische Post (WORLD)", region: "WORLD", maxWeightGrams: 10000, amountEUR: 59.9 },
   ],
 };
 
@@ -140,12 +134,15 @@ const EU_ISO = new Set([
   "LV","LT","LU","MT","NL","PL","PT","RO","SK","SI","ES","SE"
 ]);
 
-/** Land → RegionCode (AT/EU/WORLD) */
+/** Land → RegionCode (AT/EU)
+ *  Hinweis: Da nur EU versendet wird, mappen wir Nicht-EU automatisch auf "EU".
+ *  (Im UI lässt du ohnehin nur AT/EU auswählen.)
+ */
 export function resolveZone(countryIso2?: string | null): RegionCode {
   const c = (countryIso2 || "").toUpperCase();
   if (c === "AT") return "AT";
   if (EU_ISO.has(c)) return "EU";
-  return "WORLD";
+  return "EU";
 }
 
 /** Generische Brackets nur zur Anzeige/Beschriftung */

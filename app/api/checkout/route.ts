@@ -2,29 +2,24 @@
 import { NextResponse } from "next/server";
 import { prisma } from "../../../lib/db";
 import { stripe, appOriginFromHeaders } from "../../../lib/stripe";
-import {
-  getShippingOptions,
-  resolveZone, // falls du später Land->Region machen willst
-  sumWeight,
-  type RegionCode,
-} from "../../../lib/shipping";
-import type Stripe from "stripe"; // ✅ Typen für allowed_countries
+import { chooseBestShipping, type RegionCode } from "../../../lib/shipping";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type Body = {
-  region?: RegionCode;                 // "AT" | "EU" | "WORLD" (vom Client)
+  region?: RegionCode; // "AT" | "EU"
   items: Array<{ id: string; qty: number }>;
 };
 
 export async function POST(req: Request) {
   try {
     const { region: regionRaw, items }: Body = await req.json();
-    const region: RegionCode = (regionRaw || "AT") as RegionCode;
+    const region: RegionCode = (regionRaw === "EU" ? "EU" : "AT");
 
-    if (!Array.isArray(items) || items.length === 0)
+    if (!Array.isArray(items) || items.length === 0) {
       return NextResponse.json({ error: "Cart empty" }, { status: 400 });
+    }
 
     // Produkte laden
     const ids = items.map((i) => i.id);
@@ -47,7 +42,7 @@ export async function POST(req: Request) {
 
     const byId = new Map(products.map((p) => [p.id, p]));
 
-    // Warenkorb validieren + bereinigen
+    // Warenkorb validieren & auf Lager clampen
     const safe = items
       .map((row) => {
         const p = byId.get(row.id);
@@ -57,7 +52,7 @@ export async function POST(req: Request) {
         if (qty <= 0) return null;
 
         const title =
-          p.productName && p.productName.trim().length > 0
+          p.productName?.trim()
             ? p.productName
             : `${p.artist ?? ""}${p.artist && p.trackTitle ? " – " : ""}${p.trackTitle ?? p.slug}`;
 
@@ -65,10 +60,10 @@ export async function POST(req: Request) {
           id: p.id,
           title,
           unitAmount: Math.round(Number(p.priceEUR) * 100), // Cent
-          image: /^https?:\/\//i.test(p.image) ? p.image : undefined, // nur http(s) für Stripe
+          image: /^https?:\/\//i.test(p.image) ? p.image : undefined,
           qty,
           isDigital: !!p.isDigital,
-          weightGrams: Math.max(0, Number(p.weightGrams ?? 150)) * qty, // Default 150g/Vinyl
+          weightGrams: Math.max(0, Number(p.weightGrams ?? 150)) * qty, // Default 150g/Stück
         };
       })
       .filter(Boolean) as Array<{
@@ -81,21 +76,21 @@ export async function POST(req: Request) {
         weightGrams: number;
       }>;
 
-    if (safe.length === 0)
+    if (safe.length === 0) {
       return NextResponse.json({ error: "No purchasable items" }, { status: 400 });
+    }
 
     // Summen
     const subtotalEUR = safe.reduce((s, it) => s + (it.unitAmount / 100) * it.qty, 0);
-    const totalWeightGrams = safe.reduce((s, it) => s + it.weightGrams, 0);
+    const totalWeightGrams = safe.reduce((s, it) => s + (it.isDigital ? 0 : it.weightGrams), 0);
+    const hasPhysical = safe.some((i) => !i.isDigital);
 
-    // Versandoptionen anhand Region/Gewicht/Zwischensumme
-    const quotes = getShippingOptions({
-      region,
-      totalWeightGrams,
-      subtotalEUR,
-    });
+    // Versand berechnen (nur bei physischen Artikeln)
+    const shippingQuote = hasPhysical
+      ? chooseBestShipping({ region, totalWeightGrams, subtotalEUR })
+      : null;
 
-    // Stripe Line Items
+    // Stripe line_items
     const line_items = safe.map((it) => ({
       quantity: it.qty,
       price_data: {
@@ -109,51 +104,25 @@ export async function POST(req: Request) {
       },
     }));
 
+    // Versand als zusätzliche Position
+    if (shippingQuote && shippingQuote.amountEUR > 0) {
+      line_items.push({
+        quantity: 1,
+        price_data: {
+          currency: "eur",
+          unit_amount: Math.round(shippingQuote.amountEUR * 100),
+          product_data: {
+            name: `Versand (${shippingQuote.name})`,
+          },
+        },
+      });
+    }
+
     const origin = appOriginFromHeaders(req);
     const successUrl = `${origin}/de/checkout/success?session_id={CHECKOUT_SESSION_ID}`;
-    const cancelUrl = `${origin}/de/cart`;
+    const cancelUrl  = `${origin}/de/cart`;
 
-    const hasPhysical = safe.some((i) => !i.isDigital);
-
-    // Stripe shipping_options aus deinen Quotes
-    const shipping_options =
-      hasPhysical
-        ? quotes.map((q) => ({
-            shipping_rate_data: {
-              display_name: q.name,
-              type: "fixed_amount",
-              fixed_amount: { currency: "eur", amount: Math.round(q.amountEUR * 100) },
-              metadata: {
-                region: q.region,
-                carrier: q.carrier,
-                weightGrams: String(q.weightGrams),
-                freeByThreshold: String(q.freeByThreshold),
-              },
-            },
-          }))
-        : undefined;
-
-    // ✅ Allowed countries *typisiert* (Stripe union type), abhängig von Region
-    const EU_COUNTRIES: Stripe.Checkout.SessionCreateParams.ShippingAddressCollection.AllowedCountry[] = [
-      "AT","BE","BG","HR","CY","CZ","DK","EE","FI","FR","DE","GR","HU","IE","IT",
-      "LV","LT","LU","MT","NL","PL","PT","RO","SK","SI","ES","SE"
-    ];
-
-    const WORLD_PICK: Stripe.Checkout.SessionCreateParams.ShippingAddressCollection.AllowedCountry[] = [
-      "US","CA","AU","NZ","JP","GB","NO","CH","BR","MX","SG","HK","AE","ZA","IL","TR",
-      "TH","PH","MY","ID","IN","KR","TW","AR","CL","PE","IS"
-    ];
-
-    const allowedCountries: Stripe.Checkout.SessionCreateParams.ShippingAddressCollection.AllowedCountry[] | undefined =
-      hasPhysical
-        ? region === "AT"
-          ? ["AT"]
-          : region === "EU"
-          ? EU_COUNTRIES
-          : WORLD_PICK
-        : undefined;
-
-    // Payload für spätere Bestandsreduktion
+    // Payload für /confirm
     const payload = safe.map((it) => ({ id: it.id, qty: it.qty, unit: it.unitAmount }));
 
     const session = await stripe.checkout.sessions.create({
@@ -166,13 +135,9 @@ export async function POST(req: Request) {
         region,
         subtotalEUR: String(subtotalEUR),
         totalWeightGrams: String(totalWeightGrams),
+        shippingEUR: String(shippingQuote ? shippingQuote.amountEUR : 0),
+        shippingName: shippingQuote?.name || "",
       },
-      ...(hasPhysical
-        ? {
-            shipping_address_collection: { allowed_countries: allowedCountries! },
-            shipping_options,
-          }
-        : {}),
     });
 
     return NextResponse.json({ ok: true, id: session.id, url: session.url }, { status: 200 });
