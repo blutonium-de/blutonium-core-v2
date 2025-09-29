@@ -1,135 +1,67 @@
 // app/api/checkout/session/route.ts
 import { NextResponse } from "next/server";
-import Stripe from "stripe";
-import { prisma } from "../../../../lib/db";
+import { stripe, appOriginFromHeaders } from "@/lib/stripe";
+import { prisma } from "@/lib/db";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
+type BodyItem = { id: string; qty: number };
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "", {
-  // Wichtig: auf installierte Stripe-Version abstimmen
-  apiVersion: "2025-08-27.basil",
-});
-
-/**
- * POST /api/checkout/session
- * Body: { items: Array<{ productId: string; qty: number }> }
- *  - Baut eine Stripe Checkout Session
- *  - Legt die Zeilenpreise in Cent fest
- *  - Schreibt die (ProduktId, Menge, Preis) in metadata.payload für /confirm
- */
 export async function POST(req: Request) {
   try {
-    if (!process.env.STRIPE_SECRET_KEY) {
-      return NextResponse.json(
-        { error: "Missing STRIPE_SECRET_KEY" },
-        { status: 500 }
-      );
+    const { items } = (await req.json()) as { items: BodyItem[] };
+    if (!Array.isArray(items) || items.length === 0) {
+      return NextResponse.json({ error: "Cart leer" }, { status: 400 });
     }
 
-    const body = await req.json().catch(() => ({}));
-    const items: Array<{ productId: string; qty: number }> = Array.isArray(body?.items)
-      ? body.items
-      : [];
-
-    if (items.length === 0) {
-      return NextResponse.json({ error: "No items" }, { status: 400 });
-    }
-
-    // Produkte aus DB laden
-    const ids = items.map((i) => i.productId);
-    const dbProducts = await prisma.product.findMany({
-      where: { id: { in: ids } },
-      select: {
-        id: true,
-        productName: true,
-        artist: true,
-        trackTitle: true,
-        priceEUR: true,
-        stock: true,
-        active: true,
-        isDigital: true,
-      },
+    // Produkte holen & mappen
+    const ids = items.map(i => i.id);
+    const dbItems = await prisma.product.findMany({
+      where: { id: { in: ids }, active: true },
+      select: { id: true, productName: true, artist: true, trackTitle: true, slug: true, priceEUR: true, stock: true, image: true },
     });
 
-    const byId = new Map(dbProducts.map((p) => [p.id, p]));
-    const safeItems = items
-      .map((it) => {
-        const p = byId.get(it.productId);
-        if (!p || !p.active) return null;
-        const max = Math.max(0, p.stock ?? 0);
-        const qty = Math.min(Math.max(1, Number(it.qty) || 1), Math.max(1, max));
-        const title =
-          p.productName && p.productName.trim().length > 0
-            ? p.productName
-            : `${p.artist ?? ""}${p.artist && p.trackTitle ? " – " : ""}${p.trackTitle ?? ""}`.trim() || "Artikel";
-        const unitCents = Math.round(Number(p.priceEUR || 0) * 100);
+    const byId = new Map(dbItems.map(d => [d.id, d]));
+    const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [];
 
-        if (!Number.isFinite(unitCents) || unitCents <= 0) return null;
+    for (const { id, qty } of items) {
+      const p = byId.get(id);
+      if (!p) continue;
+      const max = Math.max(0, p.stock ?? 0);
+      const useQty = Math.min(qty, max);
+      if (useQty <= 0) continue;
 
-        return {
-          id: p.id,
-          title,
-          qty,
-          unitCents,
-        };
-      })
-      .filter(Boolean) as Array<{ id: string; title: string; qty: number; unitCents: number }>;
+      const title = p.productName?.trim().length
+        ? p.productName
+        : [p.artist, p.trackTitle].filter(Boolean).join(" – ") || p.slug;
 
-    if (safeItems.length === 0) {
-      return NextResponse.json({ error: "No purchasable items" }, { status: 400 });
+      lineItems.push({
+        quantity: useQty,
+        price_data: {
+          currency: "eur",
+          unit_amount: Math.round(p.priceEUR * 100), // cents
+          product_data: {
+            name: title,
+            images: p.image ? [p.image] : undefined,
+          },
+        },
+      });
     }
 
-    // Stripe Line Items
-    const line_items: Stripe.Checkout.SessionCreateParams.LineItem[] = safeItems.map((it) => ({
-      quantity: it.qty,
-      price_data: {
-        currency: "eur",
-        unit_amount: it.unitCents,
-        product_data: {
-          name: it.title,
-        },
-      },
-      adjustable_quantity: {
-        enabled: false,
-      },
-    }));
+    if (lineItems.length === 0) {
+      return NextResponse.json({ error: "Keine gültigen Items" }, { status: 400 });
+    }
 
-    // Für /confirm stock-Reduktion: kompaktes Payload in metadata
-    const payloadForConfirm = safeItems.map((it) => ({
-      id: it.id,
-      qty: it.qty,
-      unit: it.unitCents,
-    }));
-
-    // URLs
-    const origin =
-      process.env.PUBLIC_BASE_URL ||
-      (typeof process !== "undefined" && process.env.VERCEL_URL
-        ? `https://${process.env.VERCEL_URL}`
-        : "http://localhost:3000");
-
-    const success_url = `${origin}/de/checkout/success?session_id={CHECKOUT_SESSION_ID}`;
-    const cancel_url = `${origin}/de/cart`;
-
+    const origin = appOriginFromHeaders(req);
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
-      line_items,
-      success_url,
-      cancel_url,
-      currency: "eur",
-      metadata: {
-        payload: JSON.stringify(payloadForConfirm),
-      },
-      // Optional: Rechnungs-/Lieferadresse erzwingen
-      // billing_address_collection: "required",
-      // shipping_address_collection: { allowed_countries: ["AT", "DE", "CH", "NL", "BE", "FR", "IT", "ES"] },
+      line_items: lineItems,
+      success_url: `${origin}/de/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${origin}/de/cart`,
+      invoice_creation: { enabled: false },
       allow_promotion_codes: true,
     });
 
-    return NextResponse.json({ id: session.id, url: session.url }, { status: 200 });
+    return NextResponse.json({ url: session.url });
   } catch (e: any) {
-    console.error("[checkout session]", e);
-    return NextResponse.json({ error: e?.message || "server error" }, { status: 500 });
+    return NextResponse.json({ error: e?.message || "Stripe Fehler" }, { status: 500 });
   }
 }

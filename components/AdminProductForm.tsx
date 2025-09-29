@@ -3,7 +3,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import ImageDrop from "./ImageDrop";
 import BarcodeScanner from "./BarcodeScanner";
 
@@ -42,7 +41,7 @@ export default function AdminProductForm() {
   const [productName, setProductName] = useState("");
   const [artist, setArtist] = useState("");
   const [trackTitle, setTrackTitle] = useState("");
-  const [category, setCategory] = useState("ss");
+  const [category, setCategory] = useState("sv"); // ← Default: Sonstige Vinyls
   const [format, setFormat] = useState("");
   const [weight, setWeight] = useState<string>("");
   const [condition, setCondition] = useState<string>("");
@@ -74,6 +73,7 @@ export default function AdminProductForm() {
       .slice(0, 80);
   }
 
+  // Produktname → Artist/Titel splitten
   useEffect(() => {
     if (!productName || artist || trackTitle) return;
     const parts = productName.split(/\s[-–—]\s|[-–—]/);
@@ -87,11 +87,13 @@ export default function AdminProductForm() {
     }
   }, [productName, artist, trackTitle]);
 
+  // Vinyl → Gewicht 150g vorbelegen, wenn leer
   useEffect(() => {
     const isVinyl = category === "bv" || category === "sv" || /vinyl|lp/i.test(format);
     if (isVinyl && !weight) setWeight("150");
   }, [category, format, weight]);
 
+  // Auto-Slug vorbelegen
   useEffect(() => {
     const slugInput = document.querySelector<HTMLInputElement>('input[name="slug"]');
     if (!slugInput || slugTouched) return;
@@ -106,6 +108,7 @@ export default function AdminProductForm() {
     }
   }, [artist, trackTitle, productName, slugTouched]);
 
+  // gebrauchte Vinyls → Mindestpreis setzen (wenn leer)
   useEffect(() => {
     const isVinyl = category === "bv" || category === "sv" || /vinyl|lp/i.test(format);
     const usedConditions = ["ok", "gebraucht", "stark"];
@@ -116,6 +119,7 @@ export default function AdminProductForm() {
     }
   }, [condition, category, format]);
 
+  // Ein Lookup (Discogs -> Fallbacks)
   async function lookupByBarcode(code: string) {
     if (!code) return;
     setMsg(null);
@@ -223,7 +227,7 @@ export default function AdminProductForm() {
       try { formRef.current?.reset(); } catch {}
       setImages([]); setFilenames([]);
       setProductName(""); setArtist(""); setTrackTitle("");
-      setCategory("ss"); setFormat(""); setWeight("");
+      setCategory("sv"); setFormat(""); setWeight("");
       setCondition(""); setSlugTouched(false); setStock("1");
       if (priceRef.current) priceRef.current.value = "";
 
@@ -240,6 +244,7 @@ export default function AdminProductForm() {
     <form ref={formRef} onSubmit={onSubmit} className="space-y-6">
       <ImageDrop
         max={5}
+        initial={[]}
         onChange={(arr, names) => {
           setImages(arr);
           setFilenames(names || []);
@@ -263,13 +268,116 @@ export default function AdminProductForm() {
       />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {/* alle Eingabefelder unverändert */}
-        {/* ... */}
+        <L label="Slug* (auto — du kannst überschreiben)">
+          <input
+            name="slug"
+            className="input"
+            placeholder="z. B. artist-title-2024"
+            onInput={() => setSlugTouched(true)}
+            required
+          />
+        </L>
+        <L label="Produktname (optional)">
+          <input className="input" value={productName} onChange={(e) => setProductName(e.target.value)} placeholder="Artist – Titel" />
+        </L>
+        <L label="Subtitle">
+          <input name="subtitle" className="input" placeholder="zusätzliche Info" />
+        </L>
+        <L label="Artist">
+          <input className="input" value={artist} onChange={(e) => setArtist(e.target.value)} />
+        </L>
+        <L label="TrackTitle">
+          <input className="input" value={trackTitle} onChange={(e) => setTrackTitle(e.target.value)} />
+        </L>
+
+        <L label="Preis (EUR)*">
+          <input ref={priceRef} name="priceEUR" type="number" step="0.01" min="0" className="input" required />
+        </L>
+        <L label="Währung">
+          <input name="currency" className="input" defaultValue="EUR" />
+        </L>
+
+        <L label="Kategorie-Code*">
+          <select name="categoryCode" className="input" value={category} onChange={(e) => setCategory(e.target.value)} required>
+            <option value="bv">Blutonium Vinyls</option>
+            <option value="sv">Sonstige Vinyls</option>
+            <option value="bcd">Blutonium CDs</option>
+            <option value="scd">Sonstige CDs</option>
+            <option value="bhs">Blutonium Hardstyle Samples</option>
+            <option value="ss">Sonstiges & Specials</option>
+          </select>
+        </L>
+
+        <L label="Format">
+          <input name="format" className="input" placeholder="z. B. Vinyl 12''" value={format} onChange={(e) => setFormat(e.target.value)} />
+        </L>
+        <L label="Jahr">
+          <input name="year" type="number" className="input" />
+        </L>
+
+        <L label="UPC/EAN">
+          <div className="flex gap-2">
+            <input ref={upcRef} name="upcEan" className="input flex-1" />
+            <button
+              type="button"
+              className="px-3 rounded bg-cyan-600 hover:bg-cyan-500 text-black font-semibold"
+              onClick={() => setScannerOpen(true)}
+            >
+              Scanner
+            </button>
+          </div>
+        </L>
+
+        <L label="Katalognummer">
+          <input name="catalogNumber" className="input" />
+        </L>
+
+        <L label="Zustand*">
+          <select
+            name="condition"
+            className="input"
+            value={condition}
+            onChange={(e) => setCondition(e.target.value)}
+            required
+          >
+            <option value="" disabled>neu / gebraucht / …</option>
+            <option value="neu">Neu</option>
+            <option value="neuwertig">Neuwertig</option>
+            <option value="ok">Gebraucht – ok</option>
+            <option value="gebraucht">Gebraucht</option>
+            <option value="stark">Stark gebraucht</option>
+          </select>
+        </L>
+
+        <L label="Gewicht (g)">
+          <input name="weightGrams" type="number" className="input" value={weight} onChange={(e) => setWeight(e.target.value)} />
+        </L>
+        <L label="SKU">
+          <input name="sku" className="input" />
+        </L>
+        <L label="Bestand (Stück)*">
+          <input
+            name="stock"
+            type="number"
+            min={0}
+            className="input"
+            value={stock}
+            onChange={(e) => setStock(e.target.value)}
+            placeholder="1"
+            required
+          />
+        </L>
+        <L label="Aktiv">
+          <input name="active" type="checkbox" defaultChecked />
+        </L>
+        <L label="Digital?">
+          <input name="isDigital" type="checkbox" />
+        </L>
       </div>
 
       {msg && <div className="text-sm">{msg}</div>}
 
-      <div className="flex gap-3">
+      <div className="flex gap-2">
         <button
           type="submit"
           disabled={busy}
@@ -277,12 +385,13 @@ export default function AdminProductForm() {
         >
           {busy ? "Speichere …" : "Speichern"}
         </button>
-        <Link
+        {/* Zur Liste (auch unten) */}
+        <a
           href="/admin/products"
-          className="px-4 py-2 rounded bg-white/10 hover:bg-white/20 font-semibold"
+          className="px-4 py-2 rounded bg-white/10 hover:bg-white/20"
         >
           Zur Liste
-        </Link>
+        </a>
       </div>
 
       {scannerOpen && (

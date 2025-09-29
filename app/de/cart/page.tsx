@@ -18,7 +18,6 @@ type Product = {
   weightGrams: number | null;
   isDigital: boolean | null;
   active: boolean;
-  // optional, falls API es mitsendet (kein Muss für die Buttons)
   stock?: number | null;
 };
 
@@ -32,8 +31,13 @@ function readCart(): CartMap {
 }
 
 function writeCart(next: CartMap) {
-  localStorage.setItem("cart", JSON.stringify(next));
-  // Badge updaten
+  // ⬅️ FIX: wenn leer, Key komplett entfernen
+  const hasItems = Object.values(next).some(e => (e?.qty || 0) > 0);
+  if (!hasItems) {
+    localStorage.removeItem("cart");
+  } else {
+    localStorage.setItem("cart", JSON.stringify(next));
+  }
   window.dispatchEvent(new CustomEvent("cart:changed"));
 }
 
@@ -42,7 +46,6 @@ export default function CartPage() {
   const [items, setItems] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // initial cart laden
   useEffect(() => {
     const c = readCart();
     setCart(c);
@@ -63,14 +66,16 @@ export default function CartPage() {
   }, []);
 
   const lines = useMemo(() => {
-    return items.map((p) => {
-      const qty = Math.max(0, Number(cart[p.id]?.qty || 0));
-      const unitPrice = Number.isFinite(cart[p.id]?.price!)
-        ? Number(cart[p.id]?.price)
-        : p.priceEUR;
-      const lineTotal = qty * unitPrice;
-      return { product: p, qty, unitPrice, lineTotal };
-    });
+    return items
+      .map((p) => {
+        const qty = Math.max(0, Number(cart[p.id]?.qty || 0));
+        const unitPrice = Number.isFinite(cart[p.id]?.price!)
+          ? Number(cart[p.id]?.price)
+          : p.priceEUR;
+        const lineTotal = qty * unitPrice;
+        return { product: p, qty, unitPrice, lineTotal };
+      })
+      .filter(l => l.qty > 0); // ⬅️ FIX: nur Positionen mit Menge > 0 anzeigen
   }, [items, cart]);
 
   const subtotal = useMemo(
@@ -110,7 +115,7 @@ export default function CartPage() {
         <div className="mt-6 flex flex-wrap gap-3">
           <Link
             href="/de/shop"
-            className="inline-flex items-center rounded bg-cyan-500 text-black px-4 py-2 font-semibold hover:bg-cyan-400"
+            className="inline-flex items-center rounded bg-cyan-500 text黑 px-4 py-2 font-semibold hover:bg-cyan-400"
           >
             Weiter shoppen
           </Link>
@@ -124,7 +129,6 @@ export default function CartPage() {
       <div className="flex items-start justify-between gap-3">
         <h1 className="text-3xl font-bold">Warenkorb</h1>
 
-        {/* NEU: Top-Aktionsleiste (rechts) */}
         <div className="flex flex-wrap gap-2">
           <Link
             href="/de/shop"
@@ -149,9 +153,7 @@ export default function CartPage() {
             key={p.id}
             className="flex gap-4 items-center rounded-2xl bg-white/5 border border-white/10 p-3"
           >
-            {/* Bild */}
             <div className="w-[90px] h-[90px] rounded overflow-hidden bg-black/30 shrink-0">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={p.image || "/placeholder.png"}
                 alt={p.productName || p.slug}
@@ -159,21 +161,17 @@ export default function CartPage() {
               />
             </div>
 
-            {/* Infos */}
             <div className="min-w-0 flex-1">
               <div className="font-semibold truncate">
                 {p.productName && p.productName.trim().length > 0
                   ? p.productName
-                  : `${p.artist ?? ""}${p.artist && p.trackTitle ? " – " : ""}${
-                      p.trackTitle ?? p.slug
-                    }`}
+                  : `${p.artist ?? ""}${p.artist && p.trackTitle ? " – " : ""}${p.trackTitle ?? p.slug}`}
               </div>
               <div className="text-sm opacity-75">
                 {unitPrice.toFixed(2)} € / Stück
               </div>
             </div>
 
-            {/* Menge */}
             <div className="flex items-center gap-2">
               <button
                 className="w-8 h-8 rounded bg-white/10 hover:bg-white/20"
@@ -200,12 +198,10 @@ export default function CartPage() {
               </button>
             </div>
 
-            {/* Zwischensumme Zeile */}
             <div className="w-[110px] text-right font-semibold">
               {lineTotal.toFixed(2)} €
             </div>
 
-            {/* Entfernen */}
             <button
               onClick={() => remove(p.id)}
               className="ml-2 rounded bg-red-500/20 hover:bg-red-500/30 px-3 py-2 text-red-200"
@@ -217,7 +213,6 @@ export default function CartPage() {
         ))}
       </div>
 
-      {/* Summen & Bottom-Aktionen */}
       <div className="mt-6 flex flex-col sm:flex-row items-end sm:items-center justify-end gap-4 sm:gap-6">
         <div className="text-right">
           <div className="opacity-70 text-sm">Zwischensumme</div>

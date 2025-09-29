@@ -78,7 +78,7 @@ export default function CheckoutPage() {
     setCreating(true);
     try {
       const payload = { items: lines.map((l) => ({ id: l.product.id, qty: l.qty })) };
-      const r = await fetch("/api/checkout", {
+      const r = await fetch("/api/checkout/session", {   // ✅ geändert
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),

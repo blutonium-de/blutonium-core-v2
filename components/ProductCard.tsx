@@ -12,10 +12,11 @@ type Product = {
   productName?: string | null;
   subtitle?: string | null;
   categoryCode: string;
+  condition?: string | null;     // ← NEU: Zustandslabel
   priceEUR: number;
   image: string;
-  images?: string[];        // Galerie-Bilder fürs Modal
-  stock?: number;           // Bestand
+  images?: string[];             // Galerie-Bilder fürs Modal
+  stock?: number;                // Bestand
 };
 
 type CartMap = Record<string, { qty: number; price?: number }>;
@@ -33,6 +34,17 @@ function writeCart(next: CartMap) {
   window.dispatchEvent(new CustomEvent("cart:changed"));
 }
 
+function condClass(c?: string | null) {
+  const v = (c || "").toLowerCase();
+  // dezente, aber klar unterscheidbare Farben (Dark UI)
+  if (v === "neu")        return "bg-yellow-400 text-black";
+  if (v === "neuwertig")  return "bg-emerald-400 text-black";
+  if (v === "ok")         return "bg-amber-400 text-black";
+  if (v === "gebraucht")  return "bg-orange-500 text-black";
+  if (v === "stark")      return "bg-red-500 text-black";
+  return "bg-white/20"; // fallback
+}
+
 export default function ProductCard({ p }: { p: Product }) {
   const [open, setOpen] = useState(false);
   const [added, setAdded] = useState(false);
@@ -46,6 +58,7 @@ export default function ProductCard({ p }: { p: Product }) {
 
   const soldOut = (p.stock ?? 1) <= 0;
 
+  // Galerie (mindestens Hauptbild)
   const gallery = useMemo(() => {
     const arr = Array.isArray(p.images) && p.images.length > 0 ? p.images : [p.image];
     return arr.filter(Boolean);
@@ -96,35 +109,35 @@ export default function ProductCard({ p }: { p: Product }) {
   }, [open, gallery.length]);
 
   return (
-    <div className="rounded-2xl bg-white/5 border border-white/10 p-3 w-[200px] overflow-hidden">
+    <div className="rounded-2xl bg-white/5 border border-white/10 p-3 w-[200px]">
       {/* SR-Only Live Region */}
       <div className="sr-only" aria-live="polite">
         {added ? `${title} zum Warenkorb hinzugefügt` : ""}
       </div>
 
-      {/* Thumbnail: Button als Flex-Wrapper → Bild sicher mittig */}
+      {/* Thumbnail 180x180 sauber mittig */}
       <button
         type="button"
         onClick={openModal}
-        className="relative w-full flex justify-center"
+        className="relative block w-full"
         aria-label="Bild vergrößern"
         disabled={!gallery.length}
       >
-        <div className="relative h-[180px] w-[180px] overflow-hidden rounded-xl bg-black/20">
+        <div className="relative h-[180px] w-[180px] mx-auto overflow-hidden rounded-xl">
           <img
             src={gallery[0] || "/placeholder.png"}
             alt={title}
-            className="h-[180px] w-[180px] object-cover"
+            className="absolute inset-0 h-full w-full object-cover"
             height={180}
             width={180}
             loading="lazy"
           />
           {soldOut && (
-            <div className="absolute left-1 top-1 rounded bg-red-500 text-black text-[10px] font-bold px-1.5 py-0.5">
+            <div className="absolute left-2 top-2 rounded bg-red-500 text-black text-[10px] font-bold px-1.5 py-0.5">
               Ausverkauft
             </div>
           )}
-          <div className="pointer-events-none absolute right-1 top-1 rounded-full bg-black/60 px-1.5 py-0.5 text-[10px]">
+          <div className="pointer-events-none absolute right-2 top-2 rounded-full bg-black/60 px-1.5 py-0.5 text-[10px]">
             Vergrößern
           </div>
         </div>
@@ -132,39 +145,49 @@ export default function ProductCard({ p }: { p: Product }) {
 
       {/* Text */}
       <div className="mt-3">
-        <div className="text-[10px] uppercase">
-          <span className="inline-block rounded px-1.5 py-0.5 bg-orange-500/15 text-orange-200 border border-orange-400/30">
-            {p.categoryCode.toUpperCase()}
-          </span>
+        <div className="flex items-center gap-2">
+          {/* Kategorie */}
+          <span className="text-[11px] uppercase opacity-70">{p.categoryCode.toUpperCase()}</span>
+          {/* Zustands-Label */}
+          {p.condition ? (
+            <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${condClass(p.condition)}`}>
+              {p.condition}
+            </span>
+          ) : null}
         </div>
 
-        {/* Subline: immer Platz reservieren */}
-        <div className="mt-1 text-[10px] opacity-70 line-clamp-1 min-h-[14px]">
-          {p.subtitle || "\u00A0"}
-        </div>
+        {/* Subtitle (kleiner) */}
+        {p.subtitle ? (
+          <div className="text-[10px] opacity-70 line-clamp-1">{p.subtitle}</div>
+        ) : (
+          // gleiche Höhe sichern
+          <div className="text-[10px] opacity-0 select-none">.</div>
+        )}
 
-        {/* Titel: genau 2 Zeilen reservieren */}
-        <div className="mt-1 font-semibold leading-snug line-clamp-2 min-h-[2.6em] text-sm">
+        {/* Fix: genau 2 Zeilen reservieren */}
+        <div className="mt-1 font-semibold leading-snug line-clamp-2 min-h-[2.8em]">
           {title}
         </div>
 
-        <div className="mt-2 font-semibold text-sm">{p.priceEUR.toFixed(2)} €</div>
-        <button
-          type="button"
-          onClick={addToCart}
-          disabled={soldOut}
-          className={`mt-2 w-full rounded text-xs font-semibold px-2 py-1 transition
-            ${
-              soldOut
-                ? "bg-white/10 text-white/50 cursor-not-allowed"
-                : added
-                ? "bg-emerald-500 text-black"
-                : "bg-cyan-500 text-black hover:bg-cyan-400"
-            }`}
-          title={soldOut ? "Nicht verfügbar" : "In den Warenkorb"}
-        >
-          {soldOut ? "Nicht verfügbar" : added ? "Hinzugefügt ✓" : "In den Warenkorb"}
-        </button>
+        <div className="mt-2">
+          <div className="font-semibold text-sm">{p.priceEUR.toFixed(2)} €</div>
+          <button
+            type="button"
+            onClick={addToCart}
+            disabled={soldOut}
+            className={`mt-1 w-full px-2 py-1 rounded text-xs font-semibold transition
+              ${
+                soldOut
+                  ? "bg-white/10 text-white/50 cursor-not-allowed"
+                  : added
+                  ? "bg-emerald-500 text-black"
+                  : "bg-cyan-500 text-black hover:bg-cyan-400"
+              }`}
+            title={soldOut ? "Nicht verfügbar" : "In den Warenkorb"}
+          >
+            {soldOut ? "Nicht verfügbar" : added ? "Hinzugefügt ✓" : "In den Warenkorb"}
+          </button>
+        </div>
 
         {!soldOut && added && (
           <div className="mt-2 text-[11px]">
@@ -175,7 +198,7 @@ export default function ProductCard({ p }: { p: Product }) {
         )}
 
         {!soldOut && typeof p.stock === "number" && (
-          <div className="mt-1 text-[10px] opacity-70">Lagerbestand: {p.stock}</div>
+          <div className="mt-1 text-[11px] opacity-70">Lagerbestand: {p.stock}</div>
         )}
       </div>
 
@@ -218,6 +241,7 @@ export default function ProductCard({ p }: { p: Product }) {
                   ›
                 </button>
 
+                {/* Thumbs */}
                 <div className="mt-3 flex items-center justify-center gap-2">
                   {gallery.map((src, i) => (
                     <button

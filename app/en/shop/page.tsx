@@ -51,16 +51,19 @@ export default async function ShopPage({
       productName: true,
       subtitle: true,
       categoryCode: true,
+      condition: true,   // for status chip in ProductCard
       year: true,
       priceEUR: true,
       image: true,
-      images: true,          // ⬅️ gallery
+      images: true,      // for gallery in ProductCard modal
       stock: true,
+      condition: true,      // ⬅️ NEU: Zustand für das B
     },
   });
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8">
+      {/* Header with inverted logos */}
       <header className="mb-8 text-center">
         <div className="flex items-center justify-center gap-4 sm:gap-6">
           <Image
@@ -86,9 +89,10 @@ export default async function ShopPage({
           Welcome to our online shop!
         </h2>
         <p className="mt-3 text-[13px] md:text-[15px] text-white/80 max-w-3xl mx-auto">
-          Discover rare items from the Blutonium Records vinyl and CD compilation
-          catalog, as well as hard-to-find 12&quot; maxi singles from the legendary
-          DJ era — pre-owned but still perfectly playable, at a fair price.
+          Discover rare treasures from the Blutonium Records vinyl &amp; CD
+          compilation catalog as well as hard-to-find 12&quot; maxi singles
+          from the legendary DJ era — pre-loved but still in great playable
+          condition, at a fair price.
         </p>
       </header>
 
@@ -133,7 +137,7 @@ export default async function ShopPage({
         })}
       </div>
 
-      {/* Grid */}
+      {/* Grid (compact) */}
       <div className="mt-6 grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-x-1 gap-y-4 place-items-center">
         {products.map((p) => (
           <ProductCard key={p.id} p={p as any} />
