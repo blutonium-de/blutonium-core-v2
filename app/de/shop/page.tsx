@@ -51,12 +51,13 @@ export default async function ShopPage({
       productName: true,
       subtitle: true,
       categoryCode: true,
-      condition: true,     // ⬅️ Zustands-Label für die Card
+      condition: true,     // Zustands-Label für die Card
       year: true,
       priceEUR: true,
       image: true,
-      images: true,        // ⬅️ für die Galerie im Modal
+      images: true,        // Galerie-Bilder fürs Modal
       stock: true,
+      genre: true,          // ⬅️ NEU
     },
   });
 

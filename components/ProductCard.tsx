@@ -12,11 +12,12 @@ type Product = {
   productName?: string | null;
   subtitle?: string | null;
   categoryCode: string;
-  condition?: string | null;     // ← NEU: Zustandslabel
+  condition?: string | null;     // Zustandslabel
   priceEUR: number;
   image: string;
   images?: string[];             // Galerie-Bilder fürs Modal
   stock?: number;                // Bestand
+  genre?: string | null;         // ⬅️ NEU
 };
 
 type CartMap = Record<string, { qty: number; price?: number }>;
@@ -36,13 +37,12 @@ function writeCart(next: CartMap) {
 
 function condClass(c?: string | null) {
   const v = (c || "").toLowerCase();
-  // dezente, aber klar unterscheidbare Farben (Dark UI)
   if (v === "neu")        return "bg-yellow-400 text-black";
   if (v === "neuwertig")  return "bg-emerald-400 text-black";
   if (v === "ok")         return "bg-amber-400 text-black";
   if (v === "gebraucht")  return "bg-orange-500 text-black";
   if (v === "stark")      return "bg-red-500 text-black";
-  return "bg-white/20"; // fallback
+  return "bg-white/20";
 }
 
 export default function ProductCard({ p }: { p: Product }) {
@@ -58,7 +58,6 @@ export default function ProductCard({ p }: { p: Product }) {
 
   const soldOut = (p.stock ?? 1) <= 0;
 
-  // Galerie (mindestens Hauptbild)
   const gallery = useMemo(() => {
     const arr = Array.isArray(p.images) && p.images.length > 0 ? p.images : [p.image];
     return arr.filter(Boolean);
@@ -85,7 +84,6 @@ export default function ProductCard({ p }: { p: Product }) {
     setSlide(0);
     setOpen(true);
   }
-
   function prev() {
     if (!gallery.length) return;
     setSlide((i) => (i - 1 + gallery.length) % gallery.length);
@@ -95,7 +93,6 @@ export default function ProductCard({ p }: { p: Product }) {
     setSlide((i) => (i + 1) % gallery.length);
   }
 
-  // Tastatursteuerung im Modal
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -110,12 +107,10 @@ export default function ProductCard({ p }: { p: Product }) {
 
   return (
     <div className="rounded-2xl bg-white/5 border border-white/10 p-3 w-[200px]">
-      {/* SR-Only Live Region */}
       <div className="sr-only" aria-live="polite">
         {added ? `${title} zum Warenkorb hinzugefügt` : ""}
       </div>
 
-      {/* Thumbnail 180x180 sauber mittig */}
       <button
         type="button"
         onClick={openModal}
@@ -143,12 +138,9 @@ export default function ProductCard({ p }: { p: Product }) {
         </div>
       </button>
 
-      {/* Text */}
       <div className="mt-3">
         <div className="flex items-center gap-2">
-          {/* Kategorie */}
           <span className="text-[11px] uppercase opacity-70">{p.categoryCode.toUpperCase()}</span>
-          {/* Zustands-Label */}
           {p.condition ? (
             <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${condClass(p.condition)}`}>
               {p.condition}
@@ -156,38 +148,46 @@ export default function ProductCard({ p }: { p: Product }) {
           ) : null}
         </div>
 
-        {/* Subtitle (kleiner) */}
         {p.subtitle ? (
           <div className="text-[10px] opacity-70 line-clamp-1">{p.subtitle}</div>
         ) : (
-          // gleiche Höhe sichern
           <div className="text-[10px] opacity-0 select-none">.</div>
         )}
 
-        {/* Fix: genau 2 Zeilen reservieren */}
         <div className="mt-1 font-semibold leading-snug line-clamp-2 min-h-[2.8em]">
           {title}
         </div>
 
-        <div className="mt-2">
+        <div className="mt-2 flex items-center justify-between gap-2">
+          {/* Preis links */}
           <div className="font-semibold text-sm">{p.priceEUR.toFixed(2)} €</div>
-          <button
-            type="button"
-            onClick={addToCart}
-            disabled={soldOut}
-            className={`mt-1 w-full px-2 py-1 rounded text-xs font-semibold transition
-              ${
-                soldOut
-                  ? "bg-white/10 text-white/50 cursor-not-allowed"
-                  : added
-                  ? "bg-emerald-500 text-black"
-                  : "bg-cyan-500 text-black hover:bg-cyan-400"
-              }`}
-            title={soldOut ? "Nicht verfügbar" : "In den Warenkorb"}
-          >
-            {soldOut ? "Nicht verfügbar" : added ? "Hinzugefügt ✓" : "In den Warenkorb"}
-          </button>
+          {/* Genre rechts als Badge */}
+          {p.genre ? (
+            <span
+              className="shrink-0 rounded-full border border-violet-400/30 bg-violet-500/15 px-2 py-[2px] text-[10px] leading-4 text-violet-200"
+              title={`Genre: ${p.genre}`}
+            >
+              {p.genre}
+            </span>
+          ) : null}
         </div>
+
+        <button
+          type="button"
+          onClick={addToCart}
+          disabled={soldOut}
+          className={`mt-1 w-full px-2 py-1 rounded text-xs font-semibold transition
+            ${
+              soldOut
+                ? "bg-white/10 text-white/50 cursor-not-allowed"
+                : added
+                ? "bg-emerald-500 text-black"
+                : "bg-cyan-500 text-black hover:bg-cyan-400"
+            }`}
+          title={soldOut ? "Nicht verfügbar" : "In den Warenkorb"}
+        >
+          {soldOut ? "Nicht verfügbar" : added ? "Hinzugefügt ✓" : "In den Warenkorb"}
+        </button>
 
         {!soldOut && added && (
           <div className="mt-2 text-[11px]">
@@ -202,7 +202,6 @@ export default function ProductCard({ p }: { p: Product }) {
         )}
       </div>
 
-      {/* Modal 500x500 + Carousel */}
       {open && (
         <div className="fixed inset-0 z-50 bg-black/80 grid place-items-center p-4">
           <div className="relative">
@@ -241,7 +240,6 @@ export default function ProductCard({ p }: { p: Product }) {
                   ›
                 </button>
 
-                {/* Thumbs */}
                 <div className="mt-3 flex items-center justify-center gap-2">
                   {gallery.map((src, i) => (
                     <button

@@ -54,7 +54,8 @@ export async function GET(req: NextRequest) {
         active: true,
         stock: true,
         createdAt: true,
-        image: true,            // ← NEU: Bild für Cover in der Liste
+        image: true,   // Cover für Listenansicht
+        genre: true,   // ⬅️ NEU
       },
     });
 
@@ -96,6 +97,7 @@ export async function POST(req: NextRequest) {
         image: body.image,
         images: body.images || [],
         stock: Number.isFinite(body.stock) ? Number(body.stock) : 1, // default 1
+        genre: body.genre ?? null, // ⬅️ NEU
       },
     });
 

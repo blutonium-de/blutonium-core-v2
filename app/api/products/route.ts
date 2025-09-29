@@ -1,4 +1,4 @@
-// app/api/products/route.ts — jetzt Prisma-basiert
+// app/api/products/route.ts — Prisma-basiert
 import { NextResponse } from "next/server";
 import { prisma } from "../../../lib/db";
 
@@ -17,6 +17,22 @@ export async function GET(req: Request) {
       where,
       orderBy: { createdAt: "desc" },
       take: 200,
+      select: {
+        id: true,
+        slug: true,
+        artist: true,
+        trackTitle: true,
+        productName: true,
+        subtitle: true,
+        categoryCode: true,
+        condition: true,
+        year: true,
+        priceEUR: true,
+        image: true,
+        images: true,
+        stock: true,
+        genre: true, // ⬅️ NEU
+      },
     });
 
     return NextResponse.json({ products });

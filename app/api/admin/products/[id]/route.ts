@@ -58,6 +58,7 @@ export async function PATCH(
         image: body.image || "",
         images: Array.isArray(body.images) ? body.images : [],
         stock: Number.isFinite(body.stock) ? Number(body.stock) : undefined, // <— NEU
+        genre: body.genre ?? null, // <— NEU: Genre speichern
       },
     });
 

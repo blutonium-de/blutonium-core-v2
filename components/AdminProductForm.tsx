@@ -6,6 +6,12 @@ import { useRouter } from "next/navigation";
 import ImageDrop from "./ImageDrop";
 import BarcodeScanner from "./BarcodeScanner";
 
+const GENRES = [
+  "Hardstyle","Techno","Trance","House","Reggae","Pop","Filmmusik",
+  "Dance & Electronic","Hörspiel","Jazz","Klassik","Country",
+  "Italo Disco","Disco","EDM Big Room",
+] as const;
+
 type ProductPayload = {
   slug: string;
   productName?: string;
@@ -27,6 +33,7 @@ type ProductPayload = {
   active?: boolean;
   image: string;
   images: string[];
+  genre?: string | null; // ⬅️ NEU
 };
 
 export default function AdminProductForm() {
@@ -41,11 +48,12 @@ export default function AdminProductForm() {
   const [productName, setProductName] = useState("");
   const [artist, setArtist] = useState("");
   const [trackTitle, setTrackTitle] = useState("");
-  const [category, setCategory] = useState("sv"); // ← Default: Sonstige Vinyls
+  const [category, setCategory] = useState("sv"); // Default
   const [format, setFormat] = useState("");
   const [weight, setWeight] = useState<string>("");
   const [condition, setCondition] = useState<string>("");
   const [stock, setStock] = useState<string>("1");
+  const [genre, setGenre] = useState<string>(""); // ⬅️ NEU
   const [slugTouched, setSlugTouched] = useState(false);
 
   const formRef = useRef<HTMLFormElement | null>(null);
@@ -73,7 +81,6 @@ export default function AdminProductForm() {
       .slice(0, 80);
   }
 
-  // Produktname → Artist/Titel splitten
   useEffect(() => {
     if (!productName || artist || trackTitle) return;
     const parts = productName.split(/\s[-–—]\s|[-–—]/);
@@ -87,13 +94,11 @@ export default function AdminProductForm() {
     }
   }, [productName, artist, trackTitle]);
 
-  // Vinyl → Gewicht 150g vorbelegen, wenn leer
   useEffect(() => {
     const isVinyl = category === "bv" || category === "sv" || /vinyl|lp/i.test(format);
     if (isVinyl && !weight) setWeight("150");
   }, [category, format, weight]);
 
-  // Auto-Slug vorbelegen
   useEffect(() => {
     const slugInput = document.querySelector<HTMLInputElement>('input[name="slug"]');
     if (!slugInput || slugTouched) return;
@@ -108,7 +113,6 @@ export default function AdminProductForm() {
     }
   }, [artist, trackTitle, productName, slugTouched]);
 
-  // gebrauchte Vinyls → Mindestpreis setzen (wenn leer)
   useEffect(() => {
     const isVinyl = category === "bv" || category === "sv" || /vinyl|lp/i.test(format);
     const usedConditions = ["ok", "gebraucht", "stark"];
@@ -119,7 +123,6 @@ export default function AdminProductForm() {
     }
   }, [condition, category, format]);
 
-  // Ein Lookup (Discogs -> Fallbacks)
   async function lookupByBarcode(code: string) {
     if (!code) return;
     setMsg(null);
@@ -202,6 +205,7 @@ export default function AdminProductForm() {
       active: fd.get("active") === "on",
       image: images[0] || String(fd.get("image") || ""),
       images: images.length ? images : safeJsonArray(String(fd.get("imagesJson") || "[]")),
+      genre: genre || undefined, // ⬅️ NEU
     };
 
     if (!payload.slug) return setMsg("Slug ist Pflicht.");
@@ -229,6 +233,7 @@ export default function AdminProductForm() {
       setProductName(""); setArtist(""); setTrackTitle("");
       setCategory("sv"); setFormat(""); setWeight("");
       setCondition(""); setSlugTouched(false); setStock("1");
+      setGenre(""); // reset
       if (priceRef.current) priceRef.current.value = "";
 
       setMsg("Gespeichert ✔");
@@ -373,6 +378,21 @@ export default function AdminProductForm() {
         <L label="Digital?">
           <input name="isDigital" type="checkbox" />
         </L>
+
+        {/* GENRE (Dropdown) */}
+        <L label="Music Genre">
+          <select
+            name="genre"
+            className="input"
+            value={genre}
+            onChange={(e) => setGenre(e.target.value)}
+          >
+            <option value="">– auswählen –</option>
+            {GENRES.map((g) => (
+              <option key={g} value={g}>{g}</option>
+            ))}
+          </select>
+        </L>
       </div>
 
       {msg && <div className="text-sm">{msg}</div>}
@@ -385,7 +405,6 @@ export default function AdminProductForm() {
         >
           {busy ? "Speichere …" : "Speichern"}
         </button>
-        {/* Zur Liste (auch unten) */}
         <a
           href="/admin/products"
           className="px-4 py-2 rounded bg-white/10 hover:bg-white/20"

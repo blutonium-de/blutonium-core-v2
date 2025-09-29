@@ -3,7 +3,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import ImageDrop from "../../../../../components/ImageDrop";
-import ConfirmDialog from "../../../../../components/ConfirmDialog";
+
+const GENRES = [
+  "Hardstyle","Techno","Trance","House","Reggae","Pop","Filmmusik",
+  "Dance & Electronic","Hörspiel","Jazz","Klassik","Country",
+  "Italo Disco","Disco","EDM Big Room",
+] as const;
 
 type Product = {
   id: string;
@@ -23,10 +28,10 @@ type Product = {
   weightGrams?: number | null;
   isDigital: boolean;
   sku?: string | null;
-  stock: number;
   active: boolean;
-  image: string;
-  images: string[];
+  image: string;        // Hauptbild (500x500)
+  images: string[];     // weitere Bilder
+  genre?: string | null; // ⬅️ NEU
 };
 
 export default function AdminEditProductPage({ params }: { params: { id: string } }) {
@@ -39,11 +44,10 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
   const [p, setP] = useState<Product | null>(null);
   const [images, setImages] = useState<string[]>([]);
   const [active, setActive] = useState<boolean>(false);
-  const [stock, setStock]   = useState<number>(1);
 
-  const [confirmOpen, setConfirmOpen] = useState(false);
   const formRef = useRef<HTMLFormElement | null>(null);
 
+  // Produkt laden
   useEffect(() => {
     (async () => {
       setLoading(true);
@@ -57,7 +61,6 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
         const prod: Product = j;
         setP(prod);
         setActive(prod.active);
-        setStock(prod.stock ?? 1);
         setImages(prod.images?.length ? prod.images : (prod.image ? [prod.image] : []));
       } catch (e: any) {
         setMsg(e?.message || "Fehler beim Laden");
@@ -67,6 +70,7 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
     })();
   }, [id]);
 
+  // Speichern
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!p) return;
@@ -80,8 +84,6 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
         (typeof window !== "undefined" && localStorage.getItem("admin_key")) ||
         process.env.NEXT_PUBLIC_ADMIN_TOKEN ||
         "";
-
-      const nextStock = Math.max(0, Number(fd.get("stock") || stock || 1));
 
       const body = {
         slug: String(fd.get("slug") || "").trim(),
@@ -100,10 +102,10 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
         weightGrams: numOrNull(fd.get("weightGrams")),
         isDigital: fd.get("isDigital") === "on",
         sku: strOrNull(fd.get("sku")),
-        stock: nextStock,
-        active,
+        active,                       // aus State
         image: images[0] || "",
         images,
+        genre: strOrNull(fd.get("genre")), // ⬅️ NEU
       };
 
       const r = await fetch(`/api/admin/products/${id}`, {
@@ -147,17 +149,16 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
       }
       setMsg(`Status: ${next ? "aktiv" : "inaktiv"}`);
     } catch (e:any) {
-      setActive((v) => !v);
+      setActive((v) => !v); // rollback
       setMsg(e?.message || "Fehler beim Statuswechsel");
     }
   }
 
-  function requestDelete() { setConfirmOpen(true); }
-
-  async function confirmDelete() {
+  async function handleDelete() {
     if (!p) return;
-    setConfirmOpen(false);
-    setMsg(null);
+    const really = window.confirm("Wirklich löschen? Dieser Vorgang kann nicht rückgängig gemacht werden.");
+    if (!really) return;
+
     try {
       const adminKey =
         (typeof window !== "undefined" && localStorage.getItem("admin_key")) ||
@@ -198,7 +199,7 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
           </button>
           <button
             type="button"
-            onClick={requestDelete}
+            onClick={handleDelete}
             className="px-3 py-2 rounded bg-red-500 text-black font-semibold hover:bg-red-400"
             title="Produkt endgültig löschen"
           >
@@ -208,12 +209,16 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
       </div>
 
       <p className="text-white/70 mt-2">
-        Bilder kannst du unten sehen/ändern. **Ziehen & Ablegen** sortiert die Reihenfolge (erstes Bild = Hauptbild). ✕ entfernt ein Bild.
+        Bilder kannst du unten sehen/ändern. Einzelne Bilder lassen sich in der Bildleiste mit ✕ entfernen (in <code>ImageDrop</code>).
       </p>
 
       <div className="mt-8">
         <form ref={formRef} onSubmit={onSubmit} className="space-y-6">
-          <ImageDrop max={5} initial={images} onChange={(arr) => setImages(arr)} />
+          <ImageDrop
+            max={5}
+            initial={images}
+            onChange={(arr) => setImages(arr)}
+          />
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <L label="Slug*">
@@ -271,32 +276,30 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
             <L label="SKU">
               <input name="sku" defaultValue={p.sku || ""} className="input" />
             </L>
-            <L label="Bestand (Stück)*">
-              <input name="stock" type="number" min={0} value={stock} onChange={(e)=>setStock(Math.max(0, Number(e.target.value)||0))} className="input" />
-            </L>
             <L label="Digital?">
               <input name="isDigital" type="checkbox" defaultChecked={p.isDigital} />
+            </L>
+
+            {/* GENRE */}
+            <L label="Music Genre">
+              <select name="genre" defaultValue={p.genre || ""} className="input">
+                <option value="">– auswählen –</option>
+                {GENRES.map((g) => (
+                  <option key={g} value={g}>{g}</option>
+                ))}
+              </select>
             </L>
           </div>
 
           {msg && <div className="text-sm">{msg}</div>}
 
-          {/* Buttons unten */}
-          <div className="flex items-center gap-3 pt-2">
-            <button
-              type="submit"
-              disabled={saving}
-              className="px-4 py-2 rounded bg-cyan-500 hover:bg-cyan-400 text-black font-semibold disabled:opacity-60"
-            >
-              {saving ? "Speichere …" : "Speichern"}
-            </button>
-            <a
-              href="/admin/products"
-              className="px-4 py-2 rounded bg-white/10 hover:bg-white/20"
-            >
-              Zur Liste
-            </a>
-          </div>
+          <button
+            type="submit"
+            disabled={saving}
+            className="px-4 py-2 rounded bg-cyan-500 hover:bg-cyan-400 text-black font-semibold disabled:opacity-60"
+          >
+            {saving ? "Speichere …" : "Speichern"}
+          </button>
 
           <style jsx>{`
             .input {
@@ -309,16 +312,6 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
           `}</style>
         </form>
       </div>
-
-      <ConfirmDialog
-        open={confirmOpen}
-        title="Produkt löschen?"
-        message="Dieser Vorgang kann nicht rückgängig gemacht werden. Bilder und Datensätze werden endgültig entfernt."
-        confirmLabel="Ja, löschen"
-        cancelLabel="Abbrechen"
-        onConfirm={confirmDelete}
-        onClose={() => setConfirmOpen(false)}
-      />
     </div>
   );
 }
