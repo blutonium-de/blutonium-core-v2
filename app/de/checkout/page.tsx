@@ -8,7 +8,7 @@ import {
   sumWeight,
   type RegionCode,
 } from "../../../lib/shipping";
-import { PayPalScriptProvider, PayPalButtons } from "@paypal/react-paypal-js";
+import PayPalCheckout from "@/components/PayPalCheckout";
 
 type CartEntry = { qty: number; price?: number };
 type CartMap = Record<string, CartEntry>;
@@ -49,7 +49,6 @@ export default function CheckoutPage() {
   const [creating, setCreating] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // Nur AT/EU
   const [region, setRegion] = useState<RegionCode>("AT");
   const [shipIdx, setShipIdx] = useState(0);
 
@@ -159,12 +158,6 @@ export default function CheckoutPage() {
   const shippingEUR = chosen ? chosen.amountEUR : 0;
   const grandTotal = subtotal + shippingEUR;
 
-  // --- PayPal Konfiguration ---
-  const paypalClientId = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID || "";
-  const currency = (process.env.NEXT_PUBLIC_PAYPAL_CURRENCY ||
-                    process.env.PAYPAL_CURRENCY ||
-                    "EUR");
-
   return (
     <div className="max-w-6xl mx-auto px-4 py-10">
       <h1 className="text-3xl font-bold mb-6">Zur Kasse</h1>
@@ -247,44 +240,7 @@ export default function CheckoutPage() {
 
           {/* PayPal */}
           <div className="text-left">
-            <PayPalScriptProvider
-              options={{
-                clientId: paypalClientId || "test",
-                currency,
-                intent: "CAPTURE",
-              }}
-            >
-              <PayPalButtons
-                style={{ layout: "vertical", color: "gold", shape: "rect", label: "paypal" }}
-                createOrder={(_, actions) => {
-                  return actions.order.create({
-                    intent: "CAPTURE",
-                    purchase_units: [
-                      {
-                        amount: {
-                          currency_code: currency,
-                          value: grandTotal.toFixed(2),
-                          breakdown: {
-                            item_total: { currency_code: currency, value: subtotal.toFixed(2) },
-                            shipping:    { currency_code: currency, value: shippingEUR.toFixed(2) },
-                          },
-                        },
-                      },
-                    ],
-                  });
-                }}
-                onApprove={async (_data, actions) => {
-                  await actions?.order?.capture();
-                  try { localStorage.removeItem("cart"); } catch {}
-                  window.location.href = "/de/checkout/success?paypal=1";
-                }}
-                onError={(e) => {
-                  console.error("PayPal Error:", e);
-                  alert("PayPal Fehler. Bitte versuche es erneut oder wähle Karte/Stripe.");
-                }}
-                disabled={grandTotal <= 0}
-              />
-            </PayPalScriptProvider>
+            <PayPalCheckout total={grandTotal} />
           </div>
         </div>
       </div>
