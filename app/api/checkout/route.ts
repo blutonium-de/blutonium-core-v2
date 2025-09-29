@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "../../../lib/db";
 import { stripe, appOriginFromHeaders } from "../../../lib/stripe";
 import { chooseBestShipping, type RegionCode } from "../../../lib/shipping";
+import type Stripe from "stripe";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -90,21 +91,21 @@ export async function POST(req: Request) {
       ? chooseBestShipping({ region, totalWeightGrams, subtotalEUR })
       : null;
 
-    // Stripe line_items
-    const line_items = safe.map((it) => ({
+    // Stripe line_items (explizit typisiert)
+    const line_items: Stripe.Checkout.SessionCreateParams.LineItem[] = safe.map((it) => ({
       quantity: it.qty,
       price_data: {
         currency: "eur",
         unit_amount: it.unitAmount,
         product_data: {
           name: it.title,
-          images: it.image ? [it.image] : undefined,
-          metadata: { productId: it.id },
+          images: it.image ? [it.image] : [], // immer Array
+          metadata: { productId: it.id },     // immer metadata
         },
       },
     }));
 
-    // Versand als zusätzliche Position (mit images & metadata, damit TS passt)
+    // Versand als zusätzliche Position – ebenfalls mit images + metadata
     if (shippingQuote && shippingQuote.amountEUR > 0) {
       line_items.push({
         quantity: 1,
@@ -113,7 +114,7 @@ export async function POST(req: Request) {
           unit_amount: Math.round(shippingQuote.amountEUR * 100),
           product_data: {
             name: `Versand (${shippingQuote.name})`,
-            images: [],
+            images: [],                       // wichtig für einheitlichen Typ
             metadata: { productId: "shipping" },
           },
         },
