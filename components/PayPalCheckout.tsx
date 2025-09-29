@@ -16,15 +16,15 @@ function Buttons({ total }: { total: number }) {
         style={{ layout: 'horizontal' }}
         createOrder={(_, actions) =>
           actions.order.create({
+            intent: 'CAPTURE', // ✅ Pflichtfeld laut Typ
             purchase_units: [
               {
                 amount: {
-                  currency_code: 'EUR', // ✅ wichtig für Typen & PayPal
+                  currency_code: 'EUR',
                   value,
                 },
               },
             ],
-            // optional: description, invoice_id etc.
           })
         }
         onApprove={(_, actions) =>
