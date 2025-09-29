@@ -29,8 +29,8 @@ type Product = {
   isDigital: boolean;
   sku?: string | null;
   active: boolean;
-  image: string;        // Hauptbild (500x500)
-  images: string[];     // weitere Bilder
+  image: string;
+  images: string[];
   genre?: string | null; // ⬅️ NEU
 };
 
@@ -47,7 +47,6 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
 
   const formRef = useRef<HTMLFormElement | null>(null);
 
-  // Produkt laden
   useEffect(() => {
     (async () => {
       setLoading(true);
@@ -70,7 +69,6 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
     })();
   }, [id]);
 
-  // Speichern
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!p) return;
@@ -102,7 +100,7 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
         weightGrams: numOrNull(fd.get("weightGrams")),
         isDigital: fd.get("isDigital") === "on",
         sku: strOrNull(fd.get("sku")),
-        active,                       // aus State
+        active,
         image: images[0] || "",
         images,
         genre: strOrNull(fd.get("genre")), // ⬅️ NEU
@@ -149,7 +147,7 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
       }
       setMsg(`Status: ${next ? "aktiv" : "inaktiv"}`);
     } catch (e:any) {
-      setActive((v) => !v); // rollback
+      setActive((v) => !v);
       setMsg(e?.message || "Fehler beim Statuswechsel");
     }
   }

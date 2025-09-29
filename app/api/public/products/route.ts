@@ -35,6 +35,7 @@ export async function GET(req: Request) {
         isDigital: true,
         active: true,
         stock: true,           // << NEU: Bestand mitgeben
+        genre: true,           // << NEU: Genre mitgeben
       },
     });
 

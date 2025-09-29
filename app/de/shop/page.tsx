@@ -55,9 +55,9 @@ export default async function ShopPage({
       year: true,
       priceEUR: true,
       image: true,
-      images: true,        // Galerie-Bilder fürs Modal
+      images: true,        // für die Galerie im Modal
       stock: true,
-      genre: true,          // ⬅️ NEU
+      genre: true,         // ⬅️ NEU: Genre für Badge
     },
   });
 

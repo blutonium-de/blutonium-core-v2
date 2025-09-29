@@ -19,6 +19,7 @@ type Row = {
   createdAt: string;
   stock?: number | null;
   image?: string | null; // Cover für die Liste
+  genre?: string | null; // ⬅️ NEU: Genre für Badge
 };
 
 export default function AdminProductsPage() {
@@ -241,21 +242,31 @@ export default function AdminProductsPage() {
                       </div>
                     </td>
 
-                    {/* Status */}
+                    {/* Status + Genre */}
                     <td className="py-2 pr-4">
-                      <button
-                        onClick={() => toggleActive(r.id, r.active)}
-                        className={`px-2 py-0.5 rounded text-xs ${
-                          isOut
-                            ? "bg-red-500/30"
-                            : r.active
-                            ? "bg-green-500/30"
-                            : "bg-orange-500/30"
-                        }`}
-                        title="Aktiv/Inaktiv umschalten"
-                      >
-                        {isOut ? "ausverkauft" : r.active ? "aktiv" : "inaktiv"}
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => toggleActive(r.id, r.active)}
+                          className={`px-2 py-0.5 rounded text-xs ${
+                            isOut
+                              ? "bg-red-500/30"
+                              : r.active
+                              ? "bg-green-500/30"
+                              : "bg-orange-500/30"
+                          }`}
+                          title="Aktiv/Inaktiv umschalten"
+                        >
+                          {isOut ? "ausverkauft" : r.active ? "aktiv" : "inaktiv"}
+                        </button>
+                        {r.genre ? (
+                          <span
+                            className="rounded-full border border-violet-400/30 bg-violet-500/15 px-2 py-[1px] text-[10px] leading-4 text-violet-200"
+                            title={`Genre: ${r.genre}`}
+                          >
+                            {r.genre}
+                          </span>
+                        ) : null}
+                      </div>
                     </td>
 
                     {/* Artist / Titel */}
