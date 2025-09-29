@@ -82,8 +82,8 @@ export async function POST(req: Request) {
           unit_amount: Math.round(shipping.amountEUR * 100),
           product_data: {
             name: `Versand – ${shipping.name}`,
-            images: [], // leer lassen, erfüllt den Typ
-            metadata: { productId: "shipping", carrier: shipping.carrier || "" },
+            images: [],
+            metadata: { productId: "shipping" }, // <-- nur productId erlaubt
           },
         },
       });
