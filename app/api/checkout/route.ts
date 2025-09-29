@@ -8,6 +8,7 @@ import {
   sumWeight,
   type RegionCode,
 } from "../../../lib/shipping";
+import type Stripe from "stripe"; // ✅ Typen für allowed_countries
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -132,17 +133,25 @@ export async function POST(req: Request) {
           }))
         : undefined;
 
-    // Address collection (wenn physisch)
-    const allowed_countries = hasPhysical
-      ? region === "AT"
-        ? ["AT"]
-        : region === "EU"
-        ? [
-            "AT","BE","BG","HR","CY","CZ","DK","EE","FI","FR","DE","GR","HU","IE","IT",
-            "LV","LT","LU","MT","NL","PL","PT","RO","SK","SI","ES","SE"
-          ]
-        : ["US","CA","AU","NZ","JP","GB","NO","CH","BR","MX","SG","HK","AE","ZA","IL","TR","TH","PH","MY","ID","IN","KR","TW","AR","CL","PE"] // grobe Auswahl
-      : undefined;
+    // ✅ Allowed countries *typisiert* (Stripe union type), abhängig von Region
+    const EU_COUNTRIES: Stripe.Checkout.SessionCreateParams.ShippingAddressCollection.AllowedCountry[] = [
+      "AT","BE","BG","HR","CY","CZ","DK","EE","FI","FR","DE","GR","HU","IE","IT",
+      "LV","LT","LU","MT","NL","PL","PT","RO","SK","SI","ES","SE"
+    ];
+
+    const WORLD_PICK: Stripe.Checkout.SessionCreateParams.ShippingAddressCollection.AllowedCountry[] = [
+      "US","CA","AU","NZ","JP","GB","NO","CH","BR","MX","SG","HK","AE","ZA","IL","TR",
+      "TH","PH","MY","ID","IN","KR","TW","AR","CL","PE","IS"
+    ];
+
+    const allowedCountries: Stripe.Checkout.SessionCreateParams.ShippingAddressCollection.AllowedCountry[] | undefined =
+      hasPhysical
+        ? region === "AT"
+          ? ["AT"]
+          : region === "EU"
+          ? EU_COUNTRIES
+          : WORLD_PICK
+        : undefined;
 
     // Payload für spätere Bestandsreduktion
     const payload = safe.map((it) => ({ id: it.id, qty: it.qty, unit: it.unitAmount }));
@@ -160,7 +169,7 @@ export async function POST(req: Request) {
       },
       ...(hasPhysical
         ? {
-            shipping_address_collection: { allowed_countries },
+            shipping_address_collection: { allowed_countries: allowedCountries! },
             shipping_options,
           }
         : {}),
