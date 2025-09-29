@@ -16,7 +16,14 @@ function Buttons({ total }: { total: number }) {
         style={{ layout: 'horizontal' }}
         createOrder={(_, actions) =>
           actions.order.create({
-            purchase_units: [{ amount: { value } }],
+            purchase_units: [
+              {
+                amount: {
+                  currency_code: 'EUR', // ✅ wichtig für Typen & PayPal
+                  value,
+                },
+              },
+            ],
             // optional: description, invoice_id etc.
           })
         }
