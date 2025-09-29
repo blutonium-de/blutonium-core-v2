@@ -80,7 +80,11 @@ export async function POST(req: Request) {
         price_data: {
           currency: "eur",
           unit_amount: Math.round(shipping.amountEUR * 100),
-          product_data: { name: `Versand – ${shipping.name}` },
+          product_data: {
+            name: `Versand – ${shipping.name}`,
+            images: [], // leer lassen, erfüllt den Typ
+            metadata: { productId: "shipping", carrier: shipping.carrier || "" },
+          },
         },
       });
     }
