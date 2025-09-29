@@ -104,7 +104,7 @@ export async function POST(req: Request) {
       },
     }));
 
-    // Versand als zusätzliche Position
+    // Versand als zusätzliche Position (mit images & metadata, damit TS passt)
     if (shippingQuote && shippingQuote.amountEUR > 0) {
       line_items.push({
         quantity: 1,
@@ -113,6 +113,8 @@ export async function POST(req: Request) {
           unit_amount: Math.round(shippingQuote.amountEUR * 100),
           product_data: {
             name: `Versand (${shippingQuote.name})`,
+            images: [],
+            metadata: { productId: "shipping" },
           },
         },
       });

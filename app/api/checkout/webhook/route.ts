@@ -29,4 +29,4 @@ export async function POST(req: Request) {
 
 export const config = {
   api: { bodyParser: false }, // Stripe braucht den Raw-Body
-} as const;
+};
