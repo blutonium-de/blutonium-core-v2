@@ -8,6 +8,7 @@ import {
   sumWeight,
   type RegionCode,
 } from "../../../lib/shipping";
+import { PayPalScriptProvider, PayPalButtons } from "@paypal/react-paypal-js";
 
 type CartEntry = { qty: number; price?: number };
 type CartMap = Record<string, CartEntry>;
@@ -160,6 +161,9 @@ export default function CheckoutPage() {
 
   const shippingEUR = chosen ? chosen.amountEUR : 0;
   const grandTotal = subtotal + shippingEUR;
+  const grandTotalStr = grandTotal.toFixed(2); // PayPal benötigt String
+
+  const paypalClientId = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID || "";
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-10">
@@ -225,13 +229,72 @@ export default function CheckoutPage() {
           <div className="text-2xl font-extrabold">{grandTotal.toFixed(2)} €</div>
 
           {err && <div className="mt-2 text-red-400 text-sm">{err}</div>}
+
+          {/* --- Stripe Button --- */}
           <button
             onClick={goToStripe}
             disabled={creating}
-            className="mt-3 inline-flex items-center rounded bg-cyan-500 text-black px-5 py-3 font-semibold hover:bg-cyan-400 disabled:opacity-60"
+            className="mt-3 inline-flex items-center rounded bg-cyan-500 text-black px-5 py-3 font-semibold hover:bg-cyan-400 disabled:opacity-60 w-full sm:w-auto justify-center"
           >
-            {creating ? "Weiter zu Stripe …" : "Jetzt bezahlen"}
+            {creating ? "Weiter zu Stripe …" : "Mit Karte / Apple Pay zahlen"}
           </button>
+
+          {/* Trenner */}
+          <div className="my-4 flex items-center gap-3">
+            <div className="h-px flex-1 bg-white/15" />
+            <div className="text-xs opacity-70">oder</div>
+            <div className="h-px flex-1 bg-white/15" />
+          </div>
+
+          {/* --- PayPal --- */}
+          <div className="text-left">
+            <PayPalScriptProvider
+              options={{
+                clientId: paypalClientId || "test",
+                currency: "EUR",
+                intent: "CAPTURE",
+              }}
+            >
+              <PayPalButtons
+                style={{ layout: "horizontal" }}
+                forceReRender={[grandTotalStr, region, shipIdx]}
+                createOrder={(_, actions) => {
+                  // Minimal-Setup: 1 Purchase Unit mit Gesamtbetrag
+                  return actions.order.create({
+                    purchase_units: [
+                      {
+                        amount: {
+                          currency_code: "EUR",
+                          value: grandTotalStr,
+                          breakdown: {
+                            item_total: { currency_code: "EUR", value: subtotal.toFixed(2) },
+                            shipping:   { currency_code: "EUR", value: (shippingEUR).toFixed(2) },
+                          },
+                        },
+                      },
+                    ],
+                  });
+                }}
+                onApprove={async (_, actions) => {
+                  try {
+                    const details = await actions.order!.capture();
+                    // Warenkorb leeren (lokal)
+                    try { localStorage.removeItem("cart"); } catch {}
+                    // Weiter zur Success-Seite (PayPal)
+                    const id = details.id || "";
+                    window.location.href = `/de/checkout/success?paypal=1&order_id=${encodeURIComponent(id)}`;
+                  } catch (e: any) {
+                    alert(e?.message || "PayPal-Abschluss fehlgeschlagen.");
+                  }
+                }}
+                onError={(err) => {
+                  console.error("PayPal Error:", err);
+                  alert("PayPal Fehler. Bitte versuche es erneut oder wähle Karte/Stripe.");
+                }}
+                disabled={grandTotal <= 0}
+              />
+            </PayPalScriptProvider>
+          </div>
         </div>
       </div>
     </div>
