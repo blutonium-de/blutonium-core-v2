@@ -3,7 +3,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { loadStripe } from "@stripe/stripe-js";
 
 type CartEntry = { qty: number; price?: number };
 type CartMap = Record<string, CartEntry>;
@@ -16,27 +15,22 @@ type Product = {
   trackTitle: string | null;
   priceEUR: number;
   image: string;
-  stock?: number | null;
+  stock: number | null;
+  isDigital: boolean | null;
   active: boolean;
 };
 
 function readCart(): CartMap {
-  try {
-    const raw = localStorage.getItem("cart");
-    return raw ? (JSON.parse(raw) as CartMap) : {};
-  } catch {
-    return {};
-  }
+  try { return JSON.parse(localStorage.getItem("cart") || "{}"); } catch { return {}; }
 }
 
 export default function CheckoutPage() {
   const [cart, setCart] = useState<CartMap>({});
   const [items, setItems] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // load cart + fetch product details
   useEffect(() => {
     const c = readCart();
     setCart(c);
@@ -59,76 +53,51 @@ export default function CheckoutPage() {
   const lines = useMemo(() => {
     return items.map((p) => {
       const qty = Math.max(0, Number(cart[p.id]?.qty || 0));
-      const unit =
-        Number.isFinite(cart[p.id]?.price!) && Number(cart[p.id]?.price) > 0
-          ? Number(cart[p.id]?.price)
-          : p.priceEUR;
+      const unitPrice = Number.isFinite(cart[p.id]?.price!) ? Number(cart[p.id]?.price) : p.priceEUR;
       const max = Math.max(0, Number(p.stock ?? 0));
-      const clampedQty = Math.min(qty, max || qty); // if max==0 keep 0
-      const total = clampedQty * unit;
-      return { product: p, qty: clampedQty, unitPrice: unit, lineTotal: total, max };
-    });
+      const clampedQty = Math.min(qty, max);
+      const lineTotal = clampedQty * unitPrice;
+      const title =
+        (p.productName && p.productName.trim().length > 0)
+          ? p.productName
+          : `${p.artist ?? ""}${p.artist && p.trackTitle ? " – " : ""}${p.trackTitle ?? p.slug}`;
+
+      return { product: p, qty: clampedQty, unitPrice, lineTotal, title };
+    }).filter(l => l.qty > 0 && l.product.active);
   }, [items, cart]);
 
-  const subtotal = useMemo(
-    () => lines.reduce((sum, l) => sum + l.lineTotal, 0),
-    [lines]
-  );
+  const subtotal = useMemo(() => lines.reduce((s, l) => s + l.lineTotal, 0), [lines]);
 
-  const disabled = useMemo(() => {
-    if (lines.length === 0) return true;
-    // disable if any clamped qty is 0 while user had >0 (out of stock)
-    if (lines.some((l) => (cart[l.product.id]?.qty || 0) > l.max)) return true;
-    return false;
-  }, [lines, cart]);
-
-  async function startCheckout() {
+  async function goToStripe() {
     setErr(null);
-    setSubmitting(true);
+    setCreating(true);
     try {
-      // payload for session creation
-      const body = lines
-        .filter((l) => l.qty > 0)
-        .map((l) => ({ productId: l.product.id, qty: l.qty }));
-
-      if (body.length === 0) {
-        setErr("Your cart is empty or items are out of stock.");
-        setSubmitting(false);
-        return;
-      }
-
-      const r = await fetch("/api/checkout/session", {
+      const payload = { items: lines.map((l) => ({ id: l.product.id, qty: l.qty })), locale: "en" };
+      const r = await fetch("/api/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        cache: "no-store",
-        body: JSON.stringify({ items: body, locale: "en" }),
+        body: JSON.stringify(payload),
       });
-      const j = await r.json();
-      if (!r.ok) throw new Error(j?.error || "Failed to create checkout session.");
 
-      // 1) If server returns a direct URL, prefer navigating there (Stripe-hosted)
-      if (j?.url) {
-        window.location.href = j.url as string;
-        return;
-      }
+      // robuster Fehler-Output
+      const txt = await r.text();
+      let j: any; try { j = JSON.parse(txt); } catch { j = null; }
+      if (!r.ok) throw new Error(j?.error || txt || "Could not start checkout.");
 
-      // 2) Fallback: redirect via stripe-js with sessionId
-      const pk = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || "";
-      const stripe = await loadStripe(pk);
-      if (!stripe) throw new Error("Stripe failed to initialize.");
-      const { error } = await stripe.redirectToCheckout({ sessionId: j.sessionId });
-      if (error) throw error;
+      const url = j?.url as string | undefined;
+      if (!url) throw new Error("No checkout URL returned.");
+      window.location.href = url;
     } catch (e: any) {
-      setErr(e?.message || "Checkout failed.");
-      setSubmitting(false);
+      setErr(e?.message || "Error starting checkout");
+      setCreating(false);
     }
   }
 
   if (loading) {
     return (
       <div className="max-w-6xl mx-auto px-4 py-10">
-        <h1 className="text-3xl font-extrabold mb-4">Checkout</h1>
-        <p className="opacity-70">Loading your cart…</p>
+        <h1 className="text-3xl font-bold mb-6">Checkout</h1>
+        <p className="opacity-70">Loading …</p>
       </div>
     );
   }
@@ -136,13 +105,10 @@ export default function CheckoutPage() {
   if (lines.length === 0) {
     return (
       <div className="max-w-6xl mx-auto px-4 py-10">
-        <h1 className="text-3xl font-extrabold mb-4">Checkout</h1>
+        <h1 className="text-3xl font-bold mb-6">Checkout</h1>
         <p className="opacity-70">Your cart is empty.</p>
         <div className="mt-6">
-          <Link
-            href="/en/shop"
-            className="inline-flex items-center rounded bg-cyan-500 text-black px-4 py-2 font-semibold hover:bg-cyan-400"
-          >
+          <Link href="/en/shop" className="inline-flex items-center rounded bg-cyan-500 text-black px-4 py-2 font-semibold hover:bg-cyan-400">
             Continue shopping
           </Link>
         </div>
@@ -152,79 +118,35 @@ export default function CheckoutPage() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-10">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <h1 className="text-3xl font-extrabold">Checkout</h1>
-        <Link
-          href="/en/cart"
-          className="rounded bg-white/10 hover:bg-white/20 px-3 py-2 text-sm"
-        >
-          Back to cart
-        </Link>
+      <h1 className="text-3xl font-bold mb-6">Checkout</h1>
+
+      <div className="space-y-3">
+        {lines.map((l) => (
+          <div key={l.product.id} className="flex items-center justify-between gap-3 rounded-xl bg-white/5 border border-white/10 px-3 py-2">
+            <div className="min-w-0">
+              <div className="font-semibold truncate">{l.title}</div>
+              <div className="text-xs opacity-70">{l.qty} × {l.unitPrice.toFixed(2)} €</div>
+            </div>
+            <div className="shrink-0 font-semibold">{l.lineTotal.toFixed(2)} €</div>
+          </div>
+        ))}
       </div>
 
-      {/* Summary */}
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-        <div className="opacity-70 text-sm mb-3">Order summary</div>
-        <div className="space-y-2">
-          {lines.map((l) => (
-            <div
-              key={l.product.id}
-              className="flex items-center justify-between gap-3"
-            >
-              <div className="min-w-0">
-                <div className="truncate font-semibold">
-                  {l.product.productName && l.product.productName.trim().length > 0
-                    ? l.product.productName
-                    : `${l.product.artist ?? ""}${
-                        l.product.artist && l.product.trackTitle ? " – " : " "
-                      }${l.product.trackTitle ?? l.product.slug}`}
-                </div>
-                <div className="text-xs opacity-70">
-                  {l.qty} × {l.unitPrice.toFixed(2)} €
-                </div>
-                {l.max > 0 && l.qty > l.max && (
-                  <div className="text-xs text-amber-300">
-                    Quantity reduced to stock: {l.max}
-                  </div>
-                )}
-                {l.max === 0 && (
-                  <div className="text-xs text-red-300">Out of stock</div>
-                )}
-              </div>
-              <div className="shrink-0 font-semibold">
-                {l.lineTotal.toFixed(2)} €
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <div className="mt-4 flex items-center justify-end gap-6">
-          <div className="text-right">
-            <div className="opacity-70 text-sm">Subtotal</div>
-            <div className="text-2xl font-extrabold">{subtotal.toFixed(2)} €</div>
-            <div className="opacity-60 text-xs">
-              Shipping is calculated at checkout.
-            </div>
-          </div>
+      <div className="mt-6 flex items-center justify-between">
+        <Link href="/en/cart" className="px-4 py-2 rounded bg-white/10 hover:bg-white/20">Back to cart</Link>
+        <div className="text-right">
+          <div className="opacity-70 text-sm">Subtotal</div>
+          <div className="text-2xl font-extrabold">{subtotal.toFixed(2)} €</div>
+          <div className="opacity-60 text-xs">Shipping (if needed) in Stripe checkout.</div>
+          {err && <div className="mt-2 text-red-400 text-sm">{err}</div>}
           <button
-            onClick={startCheckout}
-            disabled={disabled || submitting}
-            className="inline-flex items-center rounded bg-cyan-500 text-black px-5 py-3 font-semibold hover:bg-cyan-400 disabled:opacity-60"
+            onClick={goToStripe}
+            disabled={creating}
+            className="mt-3 inline-flex items-center rounded bg-cyan-500 text-black px-5 py-3 font-semibold hover:bg-cyan-400 disabled:opacity-60"
           >
-            {submitting ? "Redirecting…" : "Pay now"}
+            {creating ? "Redirecting to Stripe …" : "Pay now"}
           </button>
         </div>
-
-        {err && <p className="mt-3 text-sm text-red-300">{err}</p>}
-      </div>
-
-      <div className="mt-6">
-        <Link
-          href="/en/shop"
-          className="inline-flex items-center rounded bg-white/10 hover:bg-white/20 px-3 py-2 text-sm"
-        >
-          Continue shopping
-        </Link>
       </div>
     </div>
   );

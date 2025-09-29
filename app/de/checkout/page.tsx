@@ -1,3 +1,4 @@
+// app/de/checkout/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -29,6 +30,22 @@ export default function CheckoutPage() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  // 👇 NEU: Standard-Versandregion AT (Österreich)
+  const [region, setRegion] = useState<"AT" | "EU" | "WORLD">("AT");
+
+  // Region aus localStorage vorfüllen
+  useEffect(() => {
+    try {
+      const r = localStorage.getItem("ship_region") as "AT" | "EU" | "WORLD" | null;
+      if (r === "AT" || r === "EU" || r === "WORLD") setRegion(r);
+    } catch {}
+  }, []);
+
+  // Änderungen direkt speichern (damit Warenkorb & Checkout konsistent sind)
+  useEffect(() => {
+    try { localStorage.setItem("ship_region", region); } catch {}
+  }, [region]);
 
   useEffect(() => {
     const c = readCart();
@@ -76,26 +93,19 @@ export default function CheckoutPage() {
     setErr(null);
     setCreating(true);
     try {
-      const payload = { items: lines.map((l) => ({ id: l.product.id, qty: l.qty })) };
-
-      const r = await fetch("/api/checkout", {
+      // 👇 NEU: Region mitsenden (und Session-Route verwenden)
+      const payload = {
+        region,
+        items: lines.map((l) => ({ id: l.product.id, qty: l.qty })),
+      };
+      const r = await fetch("/api/checkout/session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-
-      // robustes Parsing, damit wir echte Fehler sehen
-      const text = await r.text();
-      let j: any;
-      try { j = JSON.parse(text); } catch {
-        throw new Error(text || `HTTP ${r.status}`);
-      }
-
-      if (!r.ok || !j?.url) {
-        throw new Error(j?.error || `HTTP ${r.status}`);
-      }
-
-      window.location.href = j.url as string; // weiter zu Stripe
+      const j = await r.json();
+      if (!r.ok || !j?.url) throw new Error(j?.error || "Konnte Checkout nicht starten.");
+      window.location.href = j.url as string;
     } catch (e: any) {
       setErr(e?.message || "Fehler beim Start des Checkouts");
       setCreating(false);
@@ -129,6 +139,20 @@ export default function CheckoutPage() {
     <div className="max-w-6xl mx-auto px-4 py-10">
       <h1 className="text-3xl font-bold mb-6">Zur Kasse</h1>
 
+      {/* 👇 NEU: Versandregion wählen */}
+      <div className="mb-4 flex items-center gap-2">
+        <div className="text-sm opacity-80">Versandregion:</div>
+        <select
+          value={region}
+          onChange={(e) => setRegion(e.target.value as any)}
+          className="rounded bg-white/5 border border-white/15 px-2 py-1 text-sm"
+        >
+          <option value="AT">Österreich (AT)</option>
+          <option value="EU">EU</option>
+          <option value="WORLD">Weltweit</option>
+        </select>
+      </div>
+
       <div className="space-y-3">
         {lines.map((l) => (
           <div key={l.product.id} className="flex items-center justify-between gap-3 rounded-xl bg-white/5 border border-white/10 px-3 py-2">
@@ -146,7 +170,7 @@ export default function CheckoutPage() {
         <div className="text-right">
           <div className="opacity-70 text-sm">Zwischensumme</div>
           <div className="text-2xl font-extrabold">{subtotal.toFixed(2)} €</div>
-          <div className="opacity-60 text-xs">Versand (falls nötig) im Stripe-Checkout.</div>
+          <div className="opacity-60 text-xs">Versand wird im Stripe-Checkout berechnet.</div>
           {err && <div className="mt-2 text-red-400 text-sm">{err}</div>}
           <button
             onClick={goToStripe}

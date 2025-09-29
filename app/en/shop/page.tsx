@@ -51,68 +51,43 @@ export default async function ShopPage({
       productName: true,
       subtitle: true,
       categoryCode: true,
-      condition: true,   // for status chip in ProductCard
+      condition: true,
       year: true,
       priceEUR: true,
       image: true,
-      images: true,      // for gallery in ProductCard modal
+      images: true,
       stock: true,
     },
   });
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8">
-      {/* Header with inverted logos */}
       <header className="mb-8 text-center">
         <div className="flex items-center justify-center gap-4 sm:gap-6">
-          <Image
-            src="/logos/blutonium-records.png"
-            alt="Blutonium Records"
-            width={150}
-            height={150}
-            className="invert w-[100px] sm:w-[130px] md:w-[150px] h-auto"
-          />
-          <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight">
-            Blutonium Records Shop
-          </h1>
-          <Image
-            src="/logos/blutonium-media.png"
-            alt="Blutonium Media"
-            width={150}
-            height={150}
-            className="invert w-[100px] sm:w-[130px] md:w-[150px] h-auto"
-          />
+          <Image src="/logos/blutonium-records.png" alt="Blutonium Records" width={150} height={150} className="invert w-[100px] sm:w-[130px] md:w-[150px] h-auto" />
+          <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight">Blutonium Records Shop</h1>
+          <Image src="/logos/blutonium-media.png" alt="Blutonium Media" width={150} height={150} className="invert w-[100px] sm:w-[130px] md:w-[150px] h-auto" />
         </div>
 
-        <h2 className="mt-4 text-xl md:text-2xl font-bold">
-          Welcome to our online shop!
-        </h2>
+        <h2 className="mt-4 text-xl md:text-2xl font-bold">Welcome to our online shop!</h2>
         <p className="mt-3 text-[13px] md:text-[15px] text-white/80 max-w-3xl mx-auto">
-          Discover rare treasures from the Blutonium Records vinyl &amp; CD
-          compilation catalog as well as hard-to-find 12&quot; maxi singles
-          from the legendary DJ era — pre-loved but still in great playable
-          condition, at a fair price.
+          Rare items from Blutonium Records vinyl & CD catalog, plus classic 12&quot; maxis from the legendary DJ era — used, but still fully playable at a fair price.
         </p>
       </header>
 
-      {/* Search */}
       <form className="max-w-xl mx-auto mb-5 flex gap-2" method="get">
         {cat ? <input type="hidden" name="cat" value={cat} /> : null}
         <input
           name="q"
           defaultValue={q}
-          placeholder="Search artist, title, EAN, catalog no. …"
+          placeholder="Search by artist, title, EAN, catalog number …"
           className="flex-1 rounded-lg px-3 py-2 bg-white/5 border border-white/10 text-sm"
         />
-        <button
-          className="px-4 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-black font-semibold text-sm"
-          type="submit"
-        >
+        <button className="px-4 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-black font-semibold text-sm" type="submit">
           Search
         </button>
       </form>
 
-      {/* Category chips (orange) */}
       <div className="flex flex-wrap gap-2 justify-center">
         {CATS.map((c) => {
           const params = new URLSearchParams();
@@ -136,7 +111,6 @@ export default async function ShopPage({
         })}
       </div>
 
-      {/* Grid (compact) */}
       <div className="mt-6 grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-x-1 gap-y-4 place-items-center">
         {products.map((p) => (
           <ProductCard key={p.id} p={p as any} />
