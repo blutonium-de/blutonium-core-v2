@@ -8,7 +8,7 @@ import {
   sumWeight,
   type RegionCode,
 } from "../../../lib/shipping";
-import PayPalInline from "@/components/PayPalInline";
+import PayPalCheckout from "@/components/PayPalCheckout"; // <— statt PayPalInline
 
 type CartEntry = { qty: number; price?: number };
 type CartMap = Record<string, CartEntry>;
@@ -290,9 +290,9 @@ export default function CheckoutPage() {
             <div className="h-px flex-1 bg-white/15" />
           </div>
 
-          {/* PayPal (RAW) */}
+          {/* PayPal */}
           <div className="text-left">
-            <PayPalInline total={grandTotal} />
+            <PayPalCheckout total={grandTotal} />
           </div>
         </div>
       </div>

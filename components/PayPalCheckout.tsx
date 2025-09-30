@@ -1,25 +1,30 @@
 // components/PayPalCheckout.tsx
 'use client';
 
-import { PayPalScriptProvider, PayPalButtons, usePayPalScriptReducer } from '@paypal/react-paypal-js';
+import {
+  PayPalScriptProvider,
+  PayPalButtons,
+  usePayPalScriptReducer,
+  FUNDING,
+} from '@paypal/react-paypal-js';
 import { useMemo } from 'react';
 
 function Buttons({ total }: { total: number }) {
   const [{ isPending }] = usePayPalScriptReducer();
-  const value = useMemo(() => Number.isFinite(total) ? total.toFixed(2) : '0.00', [total]);
+  const value = useMemo(() => (Number.isFinite(total) ? total.toFixed(2) : '0.00'), [total]);
 
   return (
     <>
       {isPending && <div>PayPal lädt…</div>}
       <PayPalButtons
+        // Nur gelber PayPal-Button
+        fundingSource={FUNDING.PAYPAL}
+        style={{ layout: 'horizontal', label: 'paypal', shape: 'rect' }}
         forceReRender={[value, 'EUR']}
-        style={{ layout: 'horizontal' }}
         createOrder={(_, actions) =>
           actions.order.create({
-            intent: 'CAPTURE', // JSON: groß
-            purchase_units: [
-              { amount: { currency_code: 'EUR', value } },
-            ],
+            intent: 'CAPTURE',
+            purchase_units: [{ amount: { currency_code: 'EUR', value } }],
           })
         }
         onApprove={(_, actions) =>
@@ -30,7 +35,7 @@ function Buttons({ total }: { total: number }) {
         }
         onError={(err) => {
           console.error('PayPal error', err);
-          alert('PayPal-Zahlung fehlgeschlagen.');
+          alert('PayPal-Zahlung fehlgeschlagen. Bitte erneut versuchen.');
         }}
         disabled={Number(value) <= 0}
       />
@@ -47,7 +52,7 @@ export default function PayPalCheckout({ total }: { total: number }) {
       options={{
         clientId,
         currency: 'EUR',
-        intent: 'capture', // 🔧 URL-Query: klein!
+        intent: 'capture', // wichtig: klein in der URL
         'data-sdk-integration-source': 'react-paypal-js',
       } as any}
     >
