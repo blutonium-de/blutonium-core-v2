@@ -25,6 +25,7 @@ type Product = {
   isDigital: boolean | null;
   active: boolean;
   weightGrams: number | null;
+  genre?: string | null; // ⬅️ NEU: Genre vom API
 };
 
 function readCart(): CartMap {
@@ -214,12 +215,28 @@ export default function CheckoutPage() {
             key={l.product.id}
             className="flex items-center justify-between gap-3 rounded-xl bg-white/5 border border-white/10 px-3 py-2"
           >
-            <div className="min-w-0">
+            {/* Bild links */}
+            <img
+              src={l.product.image}
+              alt={l.title}
+              className="w-16 h-16 object-cover rounded"
+            />
+
+            {/* Text */}
+            <div className="flex-1 min-w-0">
               <div className="font-semibold truncate">{l.title}</div>
+
+              {/* Subline: Genre */}
+              <div className="text-[11px] opacity-70">
+                Genre: {l.product.genre?.trim() || "—"}
+              </div>
+
               <div className="text-xs opacity-70">
                 {l.qty} × {l.unitPrice.toFixed(2)} €
               </div>
             </div>
+
+            {/* Preis rechts */}
             <div className="shrink-0 font-semibold">
               {l.lineTotal.toFixed(2)} €
             </div>

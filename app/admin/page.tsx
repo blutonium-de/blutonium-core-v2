@@ -1,4 +1,3 @@
-// app/admin/page.tsx
 "use client";
 
 import Link from "next/link";
@@ -9,11 +8,9 @@ export default function AdminHome() {
   return (
     <div className="max-w-5xl mx-auto px-4 py-12">
       <h1 className="text-3xl sm:text-4xl font-extrabold">Backend · Admin</h1>
-      <p className="mt-2 opacity-70">
-        Wohin möchtest du?
-      </p>
+      <p className="mt-2 opacity-70">Wohin möchtest du?</p>
 
-      <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-6">
+      <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
         <Link
           href="/admin/products"
           className="group rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition-colors p-6 block"
@@ -27,8 +24,7 @@ export default function AdminHome() {
             bearbeiten oder löschen.
           </p>
           <div className="mt-4 inline-flex items-center gap-2 text-cyan-400 group-hover:underline">
-            Öffnen
-            <span>→</span>
+            Öffnen <span>→</span>
           </div>
         </Link>
 
@@ -44,8 +40,24 @@ export default function AdminHome() {
             Neues Produkt mit Fotos/Barcode anlegen. Discogs-Lookup &amp; Auto-Felder inklusive.
           </p>
           <div className="mt-4 inline-flex items-center gap-2 text-cyan-400 group-hover:underline">
-            Öffnen
-            <span>→</span>
+            Öffnen <span>→</span>
+          </div>
+        </Link>
+
+        {/* NEU: Analytics */}
+        <Link
+          href="/admin/analytics"
+          className="group rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition-colors p-6 block"
+        >
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold">Analytics · Besucher</h2>
+            <span className="text-2xl">📈</span>
+          </div>
+          <p className="mt-2 opacity-70">
+            Seitenaufrufe &amp; Top-Seiten der letzten Zeit auf einen Blick.
+          </p>
+          <div className="mt-4 inline-flex items-center gap-2 text-cyan-400 group-hover:underline">
+            Öffnen <span>→</span>
           </div>
         </Link>
       </div>

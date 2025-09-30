@@ -6,6 +6,7 @@ import CartButton from "../components/CartButton"
 import FloatingCheckoutBar from "../components/FloatingCheckoutBar"
 import SiteFooter from "../components/SiteFooter"
 import CookieConsent from "../components/CookieConsent"
+import AnalyticsBeacon from "@/components/AnalyticsBeacon"
 
 export const metadata: Metadata = {
   title: "Blutonium Records",
@@ -41,6 +42,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
         {/* Cookie-Banner (unten fix) */}
         <CookieConsent />
+
+        {/* Analytics (sendBeacon) – in Prod aktiv; in Dev kein Post */}
+        <AnalyticsBeacon />
       </body>
     </html>
   )

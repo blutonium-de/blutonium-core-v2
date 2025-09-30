@@ -100,3 +100,18 @@ model Artist {
   website    String?
   createdAt  DateTime @default(now())
 }
+
+model PageView {
+  id         String   @id @default(cuid())
+  path       String
+  referrer   String?
+  ua         String?
+  ipHash     String?   // gehashte IP (mit Salz)
+  sessionId  String?   // optionale Besucher-Session
+  country    String?   // aus Header (z.B. Vercel)
+  createdAt  DateTime  @default(now())
+
+  @@index([path, createdAt])
+  @@index([createdAt])
+  @@index([ipHash, createdAt])
+}

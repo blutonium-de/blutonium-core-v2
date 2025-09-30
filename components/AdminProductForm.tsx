@@ -7,9 +7,9 @@ import ImageDrop from "./ImageDrop";
 import BarcodeScanner from "./BarcodeScanner";
 
 const GENRES = [
-  "Hardstyle","Techno","Trance","House","Reggae","Pop","Filmmusik",
-  "Dance & Electronic","Hörspiel","Jazz","Klassik","Country",
-  "Italo Disco","Disco","EDM Big Room",
+  "Hardstyle","Techno","Trance","House","Reggae","Pop","Film",
+  "Dance","Hörspiel","Jazz","Klassik","Country",
+  "Italo Disco","Disco","EDM","Hip Hop",
 ] as const;
 
 type ProductPayload = {

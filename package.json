@@ -5,7 +5,9 @@
     "start": "next start",
     "seed": "node prisma/seed.js",
     "postinstall": "prisma generate",
-    "prisma:deploy": "prisma migrate deploy"
+    "prisma:deploy": "prisma migrate deploy",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:generate": "prisma generate"
   },
   "dependencies": {
     "@paypal/react-paypal-js": "^8.9.1",

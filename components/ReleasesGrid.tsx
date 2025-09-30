@@ -174,6 +174,8 @@ export default function ReleasesGrid() {
                           spotifyUrl={r.spotifyUrl || undefined}
                           appleUrl={r.appleUrl || undefined}
                           beatportUrl={r.beatportUrl || undefined}
+                          artist={r.artists || undefined}   // ⬅️ hinzugefügt (Fallback-Suche)
+                          title={r.title || undefined}      // ⬅️ hinzugefügt (Fallback-Suche)
                           compact
                         />
                       </div>

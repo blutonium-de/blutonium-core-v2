@@ -1,7 +1,7 @@
 // app/de/shop/page.tsx
 import ProductCard from "../../../components/ProductCard";
 import { prisma } from "../../../lib/db";
-import Image from "next/image";
+import type { CSSProperties } from "react";
 
 export const dynamic = "force-dynamic";
 
@@ -15,16 +15,29 @@ const CATS = [
   { code: "ss",  label: "Sonstiges & Specials" },
 ];
 
+const GENRES = [
+  "Hardstyle","Techno","Trance","House","Reggae","Pop","Film",
+  "Dance","Hörspiel","Jazz","Klassik","Country",
+  "Italo Disco","Disco","EDM","Hip Hop",
+] as const;
+
+const PAGE_SIZE = 60;
+
 export default async function ShopPage({
   searchParams,
-}: { searchParams?: { cat?: string; q?: string } }) {
-  const cat = (searchParams?.cat || "").toLowerCase();
-  const q   = (searchParams?.q || "").trim();
+}: {
+  searchParams?: { cat?: string; q?: string; genre?: string; page?: string };
+}) {
+  const cat   = (searchParams?.cat || "").toLowerCase();
+  const q     = (searchParams?.q || "").trim();
+  const genre = (searchParams?.genre || "").trim();
+  const page  = Math.max(1, parseInt(searchParams?.page || "1", 10) || 1);
 
   const where: any = {
     active: true,
     stock: { gt: 0 },
     ...(cat ? { categoryCode: cat } : {}),
+    ...(genre ? { genre } : {}),
   };
 
   if (q) {
@@ -40,9 +53,13 @@ export default async function ShopPage({
     ];
   }
 
+  const total = await prisma.product.count({ where });
+
   const products = await prisma.product.findMany({
     where,
     orderBy: { createdAt: "desc" },
+    take: PAGE_SIZE,
+    skip: (page - 1) * PAGE_SIZE,
     select: {
       id: true,
       slug: true,
@@ -51,81 +68,137 @@ export default async function ShopPage({
       productName: true,
       subtitle: true,
       categoryCode: true,
-      condition: true,     // Zustands-Label für die Card
+      condition: true,
       year: true,
       priceEUR: true,
       image: true,
-      images: true,        // für die Galerie im Modal
+      images: true,
       stock: true,
-      genre: true,         // ⬅️ NEU: Genre für Badge
+      genre: true,
     },
   });
 
-  return (
-    <div className="mx-auto max-w-7xl px-4 py-8">
-      {/* Header mit invertierten Logos (responsive Größen) */}
-      <header className="mb-8 text-center">
-        <div className="flex items-center justify-center gap-4 sm:gap-6">
-          <Image
-            src="/logos/blutonium-records.png"
-            alt="Blutonium Records"
-            width={150}
-            height={150}
-            className="invert w-[100px] sm:w-[130px] md:w-[150px] h-auto"
-          />
-          <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight">
-            Blutonium Records Shop
-          </h1>
-          <Image
-            src="/logos/blutonium-media.png"
-            alt="Blutonium Media"
-            width={150}
-            height={150}
-            className="invert w-[100px] sm:w-[130px] md:w-[150px] h-auto"
-          />
-        </div>
+  const hasMore = page * PAGE_SIZE < total;
 
-        <h2 className="mt-4 text-xl md:text-2xl font-bold">
-          Herzlich Willkommen in unserem Online Shop!
-        </h2>
-        <p className="mt-3 text-[13px] md:text-[15px] text-white/80 max-w-3xl mx-auto">
-          Hier findest Du absolute Raritäten, sei es aus dem Blutonium Records
-          Vinyl &amp; CD Compilation Sortiment, sowie auch ganz seltene Maxi 12"
-          Vinyls aus der legendären DJ Zeit – gebraucht, aber noch absolut
-          einsetzbar, und das zu einem fairen Preis.
-        </p>
+  const linkWith = (patch: Partial<{ cat: string; q: string; genre: string; page: number }>) => {
+    const params = new URLSearchParams();
+    const next = { cat, q, genre, page, ...patch };
+    if (next.cat) params.set("cat", next.cat);
+    if (next.q) params.set("q", next.q);
+    if (next.genre) params.set("genre", next.genre);
+    if (next.page && next.page > 1) params.set("page", String(next.page));
+    const qs = params.toString();
+    return qs ? `?${qs}` : "/de/shop";
+  };
+
+  const tapFix: CSSProperties = {
+    WebkitTapHighlightColor: "transparent",
+    WebkitTouchCallout: "none",
+    backgroundImage: "none",
+  };
+
+  return (
+    <div className="mx-auto max-w-7xl px-4 py-2">
+      {/* Header */}
+      <header className="mb-4 text-center -mt-3 md:-mt-4">
+        {/* HERO mit Hintergrundbild */}
+        <div className="relative mx-auto max-w-7xl">
+          <div
+            className="relative bg-cover bg-no-repeat rounded-2xl overflow-hidden"
+            style={{
+              backgroundImage: "url(/shop/shophero.png)",
+              backgroundPosition: "center 0.5cm", // ca. 1 cm höher als vorher
+            }}
+          >
+            <div className="absolute inset-0 bg-black/30" />
+
+            {/* Inhalt im Hero */}
+            <div className="relative flex flex-col items-center justify-start h-[210px] sm:h-[250px] px-4 pt-4">
+              {/* Headline */}
+              <h1 className="text-[34px] sm:text-[40px] md:text-[44px] font-extrabold tracking-tight text-white drop-shadow-lg">
+                Blutonium Records Shop
+              </h1>
+
+              {/* Suche */}
+              <form className="w-full max-w-xl mt-2 flex gap-2" method="get">
+                {cat ? <input type="hidden" name="cat" value={cat} /> : null}
+                {genre ? <input type="hidden" name="genre" value={genre} /> : null}
+                {page > 1 ? <input type="hidden" name="page" value="1" /> : null}
+                <input
+                  name="q"
+                  defaultValue={q}
+                  placeholder="Suche nach Artist, Titel, EAN, Katalognummer …"
+                  className="flex-1 rounded-lg px-3 py-2 bg-white/85 text-black border border-white/20 text-sm"
+                />
+                <button
+                  className="px-4 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-black font-semibold text-sm"
+                  type="submit"
+                >
+                  Suchen
+                </button>
+              </form>
+
+              {/* Subline im Hero */}
+              <div className="pointer-events-none absolute inset-x-0 bottom-2 px-4">
+                <h2 className="text-lg sm:text-xl md:text-2xl font-bold text-white drop-shadow text-center">
+                  Herzlich Willkommen in unserem Online Shop!
+                </h2>
+                <p className="mt-1 text-[12px] sm:text-[13px] md:text-[15px] max-w-3xl mx-auto text-white/90 text-center">
+                  <span className="font-bold">
+                    Hier findest Du absolute Raritäten • Neu &amp; Gebraucht
+                  </span>
+                  <br />
+                  12&quot; Vinyl DJ Maxi Singles • CD Maxis • CD Compilations • CD Alben • Vinyl Alben
+                  <br />
+                  und natürlich seltene Blutonium Records CDs &amp; Vinyls die Dir noch in deiner Sammlung vielleicht fehlen!
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
       </header>
 
-      {/* Suche */}
-      <form className="max-w-xl mx-auto mb-5 flex gap-2" method="get">
-        {cat ? <input type="hidden" name="cat" value={cat} /> : null}
-        <input
-          name="q"
-          defaultValue={q}
-          placeholder="Suche nach Artist, Titel, EAN, Katalognummer …"
-          className="flex-1 rounded-lg px-3 py-2 bg-white/5 border border-white/10 text-sm"
-        />
-        <button
-          className="px-4 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-black font-semibold text-sm"
-          type="submit"
+      {/* Genres */}
+      <div className="mb-5 flex items-center justify-center gap-2 overflow-x-auto whitespace-nowrap px-1">
+        <a
+          href={linkWith({ genre: "", page: 1 })}
+          style={tapFix}
+          className={`px-3 py-1 rounded-full text-xs border transition select-none ${
+            !genre
+              ? "bg-white text-black border-white"
+              : "bg-white/10 border-white/20 hover:bg-white/20"
+          }`}
         >
-          Suchen
-        </button>
-      </form>
+          Alle Genres
+        </a>
+        {GENRES.map((g) => (
+          <a
+            key={g}
+            href={linkWith({ genre: g, page: 1 })}
+            style={tapFix}
+            className={`px-3 py-1 rounded-full text-xs border transition select-none ${
+              genre === g
+                ? "bg-white text-black border-white"
+                : "bg-white/10 border-white/20 hover:bg-white/20"
+            }`}
+            title={`Genre: ${g}`}
+          >
+            {g}
+          </a>
+        ))}
+      </div>
 
-      {/* Kategorie-Chips (Orange) */}
+      {/* Kategorien */}
       <div className="flex flex-wrap gap-2 justify-center">
         {CATS.map((c) => {
-          const params = new URLSearchParams();
-          if (c.code) params.set("cat", c.code);
-          if (q) params.set("q", q);
-          const href = c.code ? `?${params.toString()}` : q ? `?q=${encodeURIComponent(q)}` : ".";
+          const href = linkWith({ cat: c.code, page: 1 });
           const active = c.code === (cat || "");
           return (
             <a
               key={c.code || "all"}
               href={href}
-              className={`px-3 py-1 rounded-lg border transition text-sm ${
+              style={tapFix}
+              className={`px-3 py-1 rounded-lg border transition text-sm select-none ${
                 active
                   ? "bg-[rgba(255,140,0,0.9)] text-black border-[rgba(255,140,0,0.9)]"
                   : "bg-[rgba(255,140,0,0.12)] border-[rgba(255,140,0,0.25)] hover:bg-[rgba(255,140,0,0.2)]"
@@ -137,8 +210,8 @@ export default async function ShopPage({
         })}
       </div>
 
-      {/* Grid (kompakt) */}
-      <div className="mt-6 grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-x-1 gap-y-4 place-items-center">
+      {/* Grid */}
+      <div className="mt-5 grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-x-1 gap-y-4 place-items-center">
         {products.map((p) => (
           <ProductCard key={p.id} p={p as any} />
         ))}
@@ -146,9 +219,26 @@ export default async function ShopPage({
 
       {products.length === 0 && (
         <p className="text-center mt-8 opacity-70 text-sm">
-          Keine Produkte gefunden{q ? ` für „${q}“` : ""}.
+          Keine Produkte gefunden
+          {q ? ` für „${q}“` : ""}{genre ? ` im Genre „${genre}“` : ""}.
         </p>
       )}
+
+      {hasMore && (
+        <div className="flex justify-center mt-8">
+          <a
+            href={linkWith({ page: page + 1 })}
+            style={tapFix}
+            className="px-4 py-2 rounded bg-white/10 hover:bg-white/20 border border-white/15 text-sm select-none"
+          >
+            Weitere {PAGE_SIZE} Produkte laden
+          </a>
+        </div>
+      )}
+
+      <div className="mt-6 text-center text-xs opacity-60">
+        Seite {page} · {Math.min(page * PAGE_SIZE, total)} / {total} Artikel
+      </div>
     </div>
   );
 }

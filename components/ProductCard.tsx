@@ -17,7 +17,7 @@ type Product = {
   image: string;
   images?: string[];             // Galerie-Bilder fürs Modal
   stock?: number;                // Bestand
-  genre?: string | null;         // ⬅️ NEU
+  genre?: string | null;         // ⬅️ Genre
 };
 
 type CartMap = Record<string, { qty: number; price?: number }>;
@@ -106,7 +106,7 @@ export default function ProductCard({ p }: { p: Product }) {
   }, [open, gallery.length]);
 
   return (
-    <div className="rounded-2xl bg-white/5 border border-white/10 p-3 w-[200px]">
+    <div className="rounded-2xl border border-white/10 bg-white/[0.06] hover:bg-white/[0.08] transition p-3 w-[200px]">
       <div className="sr-only" aria-live="polite">
         {added ? `${title} zum Warenkorb hinzugefügt` : ""}
       </div>
@@ -158,18 +158,14 @@ export default function ProductCard({ p }: { p: Product }) {
           {title}
         </div>
 
+        {/* Subline: Genre */}
+        <div className="text-[11px] opacity-70 mt-0.5">
+          Genre: {p.genre?.trim() || "—"}
+        </div>
+
         <div className="mt-2 flex items-center justify-between gap-2">
           {/* Preis links */}
           <div className="font-semibold text-sm">{p.priceEUR.toFixed(2)} €</div>
-          {/* Genre rechts als Badge */}
-          {p.genre ? (
-            <span
-              className="shrink-0 rounded-full border border-violet-400/30 bg-violet-500/15 px-2 py-[2px] text-[10px] leading-4 text-violet-200"
-              title={`Genre: ${p.genre}`}
-            >
-              {p.genre}
-            </span>
-          ) : null}
         </div>
 
         <button
