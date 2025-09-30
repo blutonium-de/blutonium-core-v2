@@ -1,44 +1,22 @@
+// app/en/checkout/success/page.tsx
 "use client";
+import { useEffect } from "react";
+import Link from "next/link";
 
-import { Suspense, useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-
-export default function CheckoutSuccessPage() {
-  // IMPORTANT: wrap everything that uses useSearchParams in Suspense
-  return (
-    <Suspense fallback={<div className="p-6">Loading order confirmation …</div>}>
-      <CheckoutSuccessInner />
-    </Suspense>
-  );
-}
-
-function CheckoutSuccessInner() {
-  const router = useRouter();
-  const search = useSearchParams();
-
+export default function CheckoutSuccess() {
   useEffect(() => {
-    const sessionId = search.get("session_id") || "";
-    try {
-      localStorage.removeItem("cart");
-    } catch {}
-
-    // stay here OR redirect if needed:
-    // router.replace("/en/cart");
-  }, [search, router]);
+    try { localStorage.removeItem("cart"); window.dispatchEvent(new CustomEvent("cart:changed")); } catch {}
+  }, []);
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-10">
-      <h1 className="text-3xl sm:text-4xl font-extrabold">Thank you for your order!</h1>
-      <p className="mt-2 opacity-80">
-        Your payment was successful. You will receive a confirmation email shortly.
-      </p>
-      <div className="mt-6">
-        <a
-          href="/en/shop"
-          className="inline-block px-4 py-2 rounded bg-cyan-500 hover:bg-cyan-400 text-black font-semibold"
-        >
+    <div className="max-w-6xl mx-auto px-4 py-10">
+      <h1 className="text-3xl font-extrabold">Thanks for your order! 🎉</h1>
+      <p className="mt-2 opacity-80">You’ll receive an order confirmation via email shortly.</p>
+      <div className="mt-6 flex gap-3">
+        <Link href="/en/shop" className="rounded bg-cyan-500 text-black px-4 py-2 font-semibold hover:bg-cyan-400">
           Continue shopping
-        </a>
+        </Link>
+        <Link href="/en" className="rounded bg-white/10 hover:bg-white/20 px-4 py-2">Back to homepage</Link>
       </div>
     </div>
   );

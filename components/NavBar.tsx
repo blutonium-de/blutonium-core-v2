@@ -5,7 +5,6 @@ import Link from "next/link"
 import Image from "next/image"
 import { usePathname } from "next/navigation"
 import { useState, useEffect, type ReactNode } from "react"
-import LangSwitch from "./LangSwitch"
 
 type NavLink = { href: string; label: string }
 type Props = { children?: ReactNode }
@@ -15,17 +14,17 @@ export default function NavBar({ children }: Props) {
   const [open, setOpen] = useState(false)
   useEffect(() => { setOpen(false) }, [pathname])
 
-  // Aktueller Sprach-Basis-Pfad
-  const base = pathname.startsWith("/en") ? "/en" : "/de"
+  // Basis-Pfad fest auf /de
+  const base = "/de"
 
   const links: NavLink[] = [
-    { href: `${base}/releases`, label: base === "/en" ? "Releases" : "Releases" },
-    { href: `${base}/artists`,  label: base === "/en" ? "Artists & Booking" : "Artists & Booking" },
-    { href: `${base}/shop`,     label: base === "/en" ? "Shop" : "Shop" },
-    { href: `${base}/videos`,   label: base === "/en" ? "Videos" : "Videos" },
+    { href: `${base}/releases`, label: "Releases" },
+    { href: `${base}/artists`,  label: "Artists & Booking" },
+    { href: `${base}/shop`,     label: "Shop" },
+    { href: `${base}/videos`,   label: "Videos" },
   ]
 
-  const homeHref = base // Home je Sprache
+  const homeHref = base
   const isActive = (href: string) => {
     if (pathname === href) return true
     if (href !== "/" && pathname.startsWith(href + "/")) return true
@@ -53,7 +52,6 @@ export default function NavBar({ children }: Props) {
               {l.label}
             </Link>
           ))}
-          <LangSwitch />
           {children ? <div className="ml-2">{children}</div> : null}
         </div>
 
@@ -76,8 +74,7 @@ export default function NavBar({ children }: Props) {
       />
       <div
         className={`md:hidden fixed top-0 right-0 h-full w-72 max-w-[85%] bg-black/90 border-l border-white/10 backdrop-blur-md transition-transform ${open ? "translate-x-0" : "translate-x-full"}`}
-        role="dialog"
-        aria-modal="true"
+        role="dialog" aria-modal="true"
       >
         <div className="h-16 px-4 flex items-center justify-between border-b border-white/10">
           <span className="font-semibold">Menü</span>
@@ -104,9 +101,6 @@ export default function NavBar({ children }: Props) {
               {l.label}
             </Link>
           ))}
-          <div className="mt-3">
-            <LangSwitch />
-          </div>
           {children ? <div className="mt-3">{children}</div> : null}
         </div>
       </div>

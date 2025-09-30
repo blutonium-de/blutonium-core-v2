@@ -3,7 +3,7 @@ import SiteLayout from "@/components/SiteLayout";
 
 export const metadata: Metadata = {
   title: "Blutonium Records",
-  description: "Since 1995 — Hardstyle / Hardtrance / Hard Dance",
+  description: "Seit 1995 — Hardstyle / Hardtrance / Hard Dance",
 };
 export const viewport: Viewport = {
   width: "device-width",
@@ -13,5 +13,5 @@ export const viewport: Viewport = {
 };
 
 export default function Layout({ children }: { children: React.ReactNode }) {
-  return <SiteLayout lang="en">{children}</SiteLayout>;
+  return <SiteLayout lang="de">{children}</SiteLayout>;
 }

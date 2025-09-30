@@ -5,8 +5,11 @@ import NavBar from "../components/NavBar"
 import CartButton from "../components/CartButton"
 import FloatingCheckoutBar from "../components/FloatingCheckoutBar"
 import SiteFooter from "../components/SiteFooter"
-import CookieConsent from "../components/CookieConsent"
 import AnalyticsBeacon from "@/components/AnalyticsBeacon"
+
+// ⬇️ CookieConsent client-only:
+import dynamic from "next/dynamic"
+const CookieConsent = dynamic(() => import("../components/CookieConsent"), { ssr: false })
 
 export const metadata: Metadata = {
   title: "Blutonium Records",
@@ -23,27 +26,23 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="de">
-      {/* body mit fixer NavBar (64px/4rem) → main bekommt top-padding */}
       <body className="min-h-screen bg-black text-white antialiased">
-        {/* NavBar mit Warenkorb-Button */}
         <NavBar>
           <CartButton href="/de/cart" />
         </NavBar>
 
-        <main className="min-h-[calc(100vh-4rem)] pt-16">
+        {/* kleine Sicherheitsleine: Warnungen unterdrücken, falls ein Client-Only Kind später mounted */}
+        <main className="min-h-[calc(100vh-4rem)] pt-16" suppressHydrationWarning>
           {children}
         </main>
 
-        {/* Footer mit Impressum/Datenschutz-Links */}
         <SiteFooter />
-
-        {/* Sticky Checkout-Bar (unten) */}
         <FloatingCheckoutBar href="/de/cart" />
 
-        {/* Cookie-Banner (unten fix) */}
+        {/* Cookie-Banner (wird NUR im Client gerendert) */}
         <CookieConsent />
 
-        {/* Analytics (sendBeacon) – in Prod aktiv; in Dev kein Post */}
+        {/* sendBeacon ist rein clientseitig, aber harmlos */}
         <AnalyticsBeacon />
       </body>
     </html>

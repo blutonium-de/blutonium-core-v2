@@ -11,10 +11,9 @@ export default async function ReleasesPage() {
         Blutonium Records Releases
       </h1>
       <p className="opacity-70 mt-2">
-        Latest first. The most recent years are preloaded completely.
+        Newest first. Latest years are preloaded.
       </p>
 
-      {/* Grid with year filter & lazy loading by year */}
       <ReleasesGrid />
     </div>
   );

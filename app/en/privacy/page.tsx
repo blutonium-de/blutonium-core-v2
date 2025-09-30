@@ -1,36 +1,84 @@
+// app/en/privacy/page.tsx
+export const dynamic = "force-dynamic";
+
 export default function PrivacyPage() {
   return (
-    <div className="max-w-3xl mx-auto px-4 py-12 space-y-6">
-      <h1 className="text-2xl font-bold mb-4">Privacy Policy</h1>
+    <main className="mx-auto max-w-3xl px-4 py-10">
+      <h1 className="text-3xl sm:text-4xl font-extrabold mb-4">Privacy Policy</h1>
 
-      <p>
-        We process personal data (name, address, email, payment data) only as far as necessary
-        to handle your orders.
-      </p>
+      <div className="space-y-6 leading-relaxed">
+        <section>
+          <h2 className="text-xl font-bold mb-2">1. Controller</h2>
+          <p>
+            Blutonium Media, Owner: Dirk Adamiak<br />
+            Bahnhofstraße 27, 4650 Lambach, Austria<br />
+            Email: <a className="underline" href="mailto:shop@blutonium.de">shop@blutonium.de</a>
+          </p>
+        </section>
 
-      <h2 className="text-xl font-semibold mt-6">Cookies & Local Storage</h2>
-      <p>
-        Our website uses cookies and local storage, e.g. for the shopping cart.
-        On your first visit, you will be asked for consent.
-      </p>
+        <section>
+          <h2 className="text-xl font-bold mb-2">2. Data we process</h2>
+          <ul className="list-disc pl-6 space-y-1">
+            <li>Name, address, email, optional phone number</li>
+            <li>Order data (products, quantity, price)</li>
+            <li>Payment data (processed by Stripe)</li>
+          </ul>
+        </section>
 
-      <h2 className="text-xl font-semibold mt-6">Payment Provider</h2>
-      <p>
-        Payments are handled via <strong>Stripe</strong>. Data such as name, address
-        and payment details will be transmitted to Stripe.
-      </p>
+        <section>
+          <h2 className="text-xl font-bold mb-2">3. Payments via Stripe</h2>
+          <p>
+            Payments are processed by Stripe Payments Europe, Ltd. Payment data
+            is transmitted to Stripe. Further info:&nbsp;
+            <a className="underline" href="https://stripe.com/privacy" target="_blank" rel="noreferrer">
+              stripe.com/privacy
+            </a>.
+          </p>
+        </section>
 
-      <h2 className="text-xl font-semibold mt-6">Third-Party Services</h2>
-      <p>
-        We use external services such as the Spotify API and Beatport to display
-        information about our releases.
-      </p>
+        <section>
+          <h2 className="text-xl font-bold mb-2">4. Cookies & LocalStorage</h2>
+          <p>
+            We use cookies and LocalStorage to store your cart, remember preferences,
+            and collect anonymous usage statistics. On your first visit we ask for
+            consent, which you can withdraw at any time.
+          </p>
+        </section>
 
-      <h2 className="text-xl font-semibold mt-6">Contact</h2>
-      <p>
-        For privacy-related inquiries, please contact:<br />
-        <a href="mailto:shop@blutonium.de" className="underline">shop@blutonium.de</a>
-      </p>
-    </div>
+        <section>
+          <h2 className="text-xl font-bold mb-2">5. Third-party services</h2>
+          <ul className="list-disc pl-6 space-y-1">
+            <li>Spotify API (displaying releases)</li>
+            <li>Stripe (payments)</li>
+            <li>Hosting & optional analytics: Vercel</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2 className="text-xl font-bold mb-2">6. Retention</h2>
+          <p>
+            We store personal data only as long as required to fulfill your order
+            or due to legal obligations.
+          </p>
+        </section>
+
+        <section>
+          <h2 className="text-xl font-bold mb-2">7. Your rights</h2>
+          <p>
+            You have the right to access, rectification, erasure, restriction of processing,
+            and data portability. Contact:{" "}
+            <a className="underline" href="mailto:shop@blutonium.de">shop@blutonium.de</a>.
+          </p>
+        </section>
+
+        <section>
+          <h2 className="text-xl font-bold mb-2">8. Complaints</h2>
+          <p>
+            You may lodge a complaint with your local data protection authority.
+            In Austria this is the Datenschutzbehörde.
+          </p>
+        </section>
+      </div>
+    </main>
   );
 }

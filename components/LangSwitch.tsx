@@ -1,34 +1,29 @@
+// components/LangSwitch.tsx
 "use client";
+import { usePathname, useSearchParams } from "next/navigation";
 
-import { usePathname } from "next/navigation";
-import Link from "next/link";
-
-export default function LangSwitch() {
+export default function LangSwitch({ className = "" }: { className?: string }) {
   const pathname = usePathname() || "/";
+  const search = useSearchParams();
+  const qs = search?.toString();
 
-  // Hilfsfunktion: entfernt vorhandenes Locale und setzt das gewünschte davor.
-  function toLocale(path: string, locale: "de" | "en") {
-    // strip führendes /de oder /en (auch wenn nur /de oder /en ohne Slash dahinter)
-    const stripped = path.replace(/^\/(de|en)(?=\/|$)/, "");
-    // zusammensetzen; wenn stripped leer ist, landen wir auf /<locale>
-    return `/${locale}${stripped || ""}`;
-  }
+  const isEN = pathname.startsWith("/en");
+  const isDE = pathname.startsWith("/de");
 
-  const isGerman =
-    pathname === "/de" ||
-    pathname.startsWith("/de/") ||
-    // falls Middleware / auf /de umleitet, behandeln wir nacktes "/" als DE
-    pathname === "/";
+  const twin = isEN
+    ? pathname.replace(/^\/en(?=\/|$)/, "/de")
+    : isDE
+    ? pathname.replace(/^\/de(?=\/|$)/, "/en")
+    : "/de";
 
-  const target = isGerman ? toLocale(pathname, "en") : toLocale(pathname, "de");
-  const label = isGerman ? "EN" : "DE";
+  const href = qs ? `${twin}?${qs}` : twin;
 
   return (
-    <Link
-      href={target}
-      className="px-2 py-1 text-sm rounded bg-white/10 hover:bg-white/20"
+    <a
+      href={href}
+      className={`inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 hover:bg-white/15 px-3 py-1 text-sm ${className}`}
     >
-      {label}
-    </Link>
+      {isEN ? "DE" : "EN"}
+    </a>
   );
 }

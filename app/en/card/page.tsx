@@ -3,6 +3,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import {
+  sumWeight,
+  chooseBestShipping,
+  labelForBracket,
+  type RegionCode,
+} from "../../../lib/shipping";
 
 type CartEntry = { qty: number; price?: number };
 type CartMap = Record<string, CartEntry>;
@@ -18,7 +24,7 @@ type Product = {
   weightGrams: number | null;
   isDigital: boolean | null;
   active: boolean;
-  stock?: number | null; // we read this from /api/public/products
+  stock?: number | null;
 };
 
 function readCart(): CartMap {
@@ -29,20 +35,30 @@ function readCart(): CartMap {
     return {};
   }
 }
-
 function writeCart(next: CartMap) {
   localStorage.setItem("cart", JSON.stringify(next));
-  // update badge
   window.dispatchEvent(new CustomEvent("cart:changed"));
+}
+function readRegion(): RegionCode {
+  try {
+    const r = localStorage.getItem("ship_region") as RegionCode | null;
+    if (r === "AT" || r === "EU" || r === "WORLD") return r;
+  } catch {}
+  return "AT";
+}
+function writeRegion(r: RegionCode) {
+  try { localStorage.setItem("ship_region", r); } catch {}
 }
 
 export default function CartPage() {
   const [cart, setCart] = useState<CartMap>({});
   const [items, setItems] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [region, setRegion] = useState<RegionCode>("AT");
 
-  // initial load
   useEffect(() => {
+    setRegion(readRegion());
+
     const c = readCart();
     setCart(c);
 
@@ -53,8 +69,7 @@ export default function CartPage() {
       return;
     }
 
-    const url = `/api/public/products?ids=${encodeURIComponent(ids.join(","))}`;
-    fetch(url, { cache: "no-store" })
+    fetch(`/api/public/products?ids=${encodeURIComponent(ids.join(","))}`, { cache: "no-store" })
       .then((r) => r.json())
       .then((j) => setItems(Array.isArray(j?.items) ? j.items : []))
       .catch(() => setItems([]))
@@ -63,17 +78,17 @@ export default function CartPage() {
 
   const lines = useMemo(() => {
     return items.map((p) => {
-      const cartQty = Math.max(0, Number(cart[p.id]?.qty || 0));
-      const max = Math.max(0, Number(p.stock ?? 0)); // clamp to stock
-      const qty = max > 0 ? Math.min(cartQty, max) : 0;
-
+      const qty = Math.max(0, Number(cart[p.id]?.qty || 0));
       const unitPrice = Number.isFinite(cart[p.id]?.price!)
         ? Number(cart[p.id]?.price)
         : p.priceEUR;
-
       const lineTotal = qty * unitPrice;
-      return { product: p, qty, unitPrice, lineTotal, max };
-    });
+      const title =
+        p.productName && p.productName.trim().length > 0
+          ? p.productName
+          : `${p.artist ?? ""}${p.artist && p.trackTitle ? " – " : ""}${p.trackTitle ?? p.slug}`;
+      return { product: p, qty, unitPrice, lineTotal, title };
+    }).filter((l) => l.qty > 0 && l.product.active);
   }, [items, cart]);
 
   const subtotal = useMemo(
@@ -81,22 +96,33 @@ export default function CartPage() {
     [lines]
   );
 
-  function setQty(id: string, qty: number) {
-    // find product max
-    const prod = items.find((x) => x.id === id);
-    const max = Math.max(0, Number(prod?.stock ?? 0));
-    const clamped = Math.max(1, Math.min(qty || 1, max || 1)); // if max==0, we’ll end up removing below
+  const totalWeight = useMemo(
+    () =>
+      sumWeight(
+        lines.map((l) => ({
+          weightGrams: l.product.weightGrams ?? 0,
+          qty: l.qty,
+        }))
+      ),
+    [lines]
+  );
 
+  const shipping = useMemo(() => {
+    if (lines.length === 0) return null;
+    return chooseBestShipping({
+      region,
+      totalWeightGrams: totalWeight,
+      subtotalEUR: subtotal,
+    });
+  }, [region, totalWeight, subtotal, lines.length]);
+
+  function setQty(id: string, qty: number) {
     const next = { ...cart };
-    if (max <= 0 || clamped <= 0) {
-      delete next[id];
-    } else {
-      next[id] = { ...(next[id] || {}), qty: clamped };
-    }
+    if (qty <= 0) delete next[id];
+    else next[id] = { ...(next[id] || {}), qty };
     setCart(next);
     writeCart(next);
   }
-
   function remove(id: string) {
     const next = { ...cart };
     delete next[id];
@@ -118,7 +144,7 @@ export default function CartPage() {
       <div className="max-w-6xl mx-auto px-4 py-10">
         <h1 className="text-3xl font-bold mb-6">Cart</h1>
         <p className="opacity-70">Your cart is empty.</p>
-        <div className="mt-6">
+        <div className="mt-6 flex flex-wrap gap-3">
           <Link
             href="/en/shop"
             className="inline-flex items-center rounded bg-cyan-500 text-black px-4 py-2 font-semibold hover:bg-cyan-400"
@@ -132,98 +158,72 @@ export default function CartPage() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-10">
-      <div className="mb-4 flex items-center justify-between gap-3">
+      <div className="flex items-start justify-between gap-3">
         <h1 className="text-3xl font-bold">Cart</h1>
-        <div className="flex items-center gap-2">
+
+        <div className="flex flex-wrap gap-2 items-center">
+          <label className="text-sm opacity-80 mr-1">Shipping region:</label>
+          <select
+            value={region}
+            onChange={(e) => {
+              const r = e.target.value as RegionCode;
+              setRegion(r);
+              writeRegion(r);
+            }}
+            className="rounded bg-white/10 border border-white/15 px-2 py-1 text-sm"
+            title="Choose shipping region"
+          >
+            <option value="AT">Austria</option>
+            <option value="EU">EU</option>
+            <option value="WORLD">Worldwide</option>
+          </select>
+
           <Link
             href="/en/shop"
-            className="rounded bg-white/10 hover:bg-white/20 px-3 py-2 text-sm"
+            className="inline-flex items-center rounded border border-white/15 bg-white/5 hover:bg-white/10 px-4 py-2 text-sm"
+            title="Back to shop"
           >
             Continue shopping
           </Link>
           <Link
             href="/en/checkout"
-            className="inline-flex items-center rounded bg-cyan-500 text-black px-4 py-2 font-semibold hover:bg-cyan-400"
+            className="inline-flex items-center rounded bg-cyan-500 text-black px-4 py-2 text-sm font-semibold hover:bg-cyan-400"
+            title="Checkout"
           >
             Checkout
           </Link>
         </div>
       </div>
 
-      <div className="space-y-4">
-        {lines.map(({ product: p, qty, unitPrice, lineTotal, max }) => (
+      <div className="mt-4 space-y-4">
+        {lines.map(({ product: p, qty, unitPrice, lineTotal, title }) => (
           <div
             key={p.id}
             className="flex gap-4 items-center rounded-2xl bg-white/5 border border-white/10 p-3"
           >
-            {/* Image */}
             <div className="w-[90px] h-[90px] rounded overflow-hidden bg-black/30 shrink-0">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={p.image || "/placeholder.png"}
-                alt={p.productName || p.slug}
-                className="w-full h-full object-cover"
-              />
+              <img src={p.image || "/placeholder.png"} alt={title} className="w-full h-full object-cover" />
             </div>
 
-            {/* Info */}
             <div className="min-w-0 flex-1">
-              <div className="font-semibold truncate">
-                {p.productName && p.productName.trim().length > 0
-                  ? p.productName
-                  : `${p.artist ?? ""}${p.artist && p.trackTitle ? " – " : ""}${
-                      p.trackTitle ?? p.slug
-                    }`}
-              </div>
-              <div className="text-sm opacity-75">
-                {unitPrice.toFixed(2)} € / item
-              </div>
-              {typeof p.stock === "number" && (
-                <div className="text-xs opacity-70 mt-0.5">
-                  In stock: {Math.max(0, p.stock)}
-                </div>
-              )}
+              <div className="font-semibold truncate">{title}</div>
+              <div className="text-sm opacity-75">{unitPrice.toFixed(2)} € / item</div>
             </div>
 
-            {/* Quantity */}
             <div className="flex items-center gap-2">
-              <button
-                className="w-8 h-8 rounded bg-white/10 hover:bg-white/20"
-                onClick={() => setQty(p.id, qty - 1)}
-                aria-label="Decrease quantity"
-              >
-                −
-              </button>
+              <button className="w-8 h-8 rounded bg-white/10 hover:bg-white/20" onClick={() => setQty(p.id, qty - 1)} aria-label="Decrease quantity">−</button>
               <input
                 type="number"
                 min={1}
-                max={Math.max(1, max || 1)}
                 value={qty}
-                onChange={(e) =>
-                  setQty(
-                    p.id,
-                    Math.max(1, Math.min(Number(e.target.value) || 1, Math.max(1, max || 1)))
-                  )
-                }
+                onChange={(e) => setQty(p.id, Math.max(1, Number(e.target.value) || 1))}
                 className="w-16 text-center rounded bg-white/10 px-2 py-1"
               />
-              <button
-                className="w-8 h-8 rounded bg-white/10 hover:bg-white/20"
-                onClick={() => setQty(p.id, qty + 1)}
-                aria-label="Increase quantity"
-                disabled={qty >= Math.max(0, max)}
-                title={qty >= Math.max(0, max) ? "Reached stock limit" : "Increase quantity"}
-              >
-                +
-              </button>
+              <button className="w-8 h-8 rounded bg-white/10 hover:bg-white/20" onClick={() => setQty(p.id, qty + 1)} aria-label="Increase quantity">+</button>
             </div>
 
-            {/* Line total */}
-            <div className="w-[110px] text-right font-semibold">
-              {lineTotal.toFixed(2)} €
-            </div>
+            <div className="w-[110px] text-right font-semibold">{lineTotal.toFixed(2)} €</div>
 
-            {/* Remove */}
             <button
               onClick={() => remove(p.id)}
               className="ml-2 rounded bg-red-500/20 hover:bg-red-500/30 px-3 py-2 text-red-200"
@@ -235,21 +235,39 @@ export default function CartPage() {
         ))}
       </div>
 
-      {/* Totals */}
-      <div className="mt-6 flex items-center justify-end gap-6">
-        <div className="text-right">
-          <div className="opacity-70 text-sm">Subtotal</div>
-          <div className="text-2xl font-extrabold">{subtotal.toFixed(2)} €</div>
-          <div className="opacity-60 text-xs">
-            Shipping is calculated at checkout.
+      <div className="mt-6 grid gap-4 sm:grid-cols-2 items-start">
+        <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+          <div className="text-sm opacity-80">Weight</div>
+          <div className="font-semibold">
+            {(totalWeight / 1000).toFixed(2)} kg{" "}
+            <span className="opacity-70 text-sm">({labelForBracket(totalWeight)})</span>
           </div>
+
+          {shipping && (
+            <>
+              <div className="mt-3 text-sm opacity-80">Shipping ({region})</div>
+              <div className="font-semibold">
+                {shipping.amountEUR === 0 ? "Free" : `${shipping.amountEUR.toFixed(2)} €`}
+                {shipping.freeByThreshold && <span className="ml-2 text-xs opacity-70">(free threshold reached)</span>}
+              </div>
+              <div className="mt-1 opacity-60 text-xs">{shipping.name}</div>
+            </>
+          )}
         </div>
-        <Link
-          href="/en/checkout"
-          className="inline-flex items-center rounded bg-cyan-500 text-black px-5 py-3 font-semibold hover:bg-cyan-400"
-        >
-          Checkout
-        </Link>
+
+        <div className="flex flex-col items-end gap-3">
+          <div className="text-right">
+            <div className="opacity-70 text-sm">Subtotal (excl. shipping)</div>
+            <div className="text-2xl font-extrabold">{subtotal.toFixed(2)} €</div>
+            <div className="opacity-60 text-xs">Exact shipping in next step (Stripe) – region is carried over.</div>
+          </div>
+          <Link
+            href="/en/checkout"
+            className="inline-flex items-center rounded bg-cyan-500 text-black px-5 py-3 font-semibold hover:bg-cyan-400"
+          >
+            Checkout
+          </Link>
+        </div>
       </div>
     </div>
   );

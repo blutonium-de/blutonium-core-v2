@@ -1,10 +1,10 @@
-// app/en/page.tsx
+// app/de/page.tsx
 import Image from "next/image"
 
-export default function HomeEN() {
+export default function HomeDE() {
   return (
     <div className="relative">
-      {/* HERO – slightly shorter to reveal cards below */}
+      {/* HERO */}
       <section
         className="
           full-bleed relative
@@ -19,7 +19,6 @@ export default function HomeEN() {
             priority
             className="object-cover"
           />
-          {/* Darken + color wash */}
           <div className="absolute inset-0 bg-black/40" />
           <div
             className="absolute inset-0 pointer-events-none"
@@ -28,7 +27,6 @@ export default function HomeEN() {
                 "radial-gradient(80% 60% at 30% 10%, rgba(0,255,255,0.12) 0%, rgba(0,0,0,0) 40%), radial-gradient(80% 60% at 90% 30%, rgba(128,0,255,0.18) 0%, rgba(0,0,0,0) 50%)",
             }}
           />
-          {/* soft fade at bottom */}
           <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-b from-transparent to-black/80" />
         </div>
 
@@ -37,16 +35,20 @@ export default function HomeEN() {
             Blutonium Records 🚀
           </h1>
           <p className="mt-4 text-white/85 text-lg md:text-xl max-w-3xl">
-            Since 1995 — Hardstyle / Hardtrance / Hard Dance
+            Seit 1995 — Hardstyle / Hardtrance / Hard Dance
           </p>
         </div>
-
-        <div className="absolute inset-x-0 bottom-4 flex justify-center opacity-70"></div>
       </section>
 
-      {/* 4 CARDS */}
-      <section className="mx-auto max-w-6xl px-4 pb-10 md:pb-14 -mt-10 md:-mt-16 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-        {/* Box 1: Logo */}
+      {/* 5 BOXEN */}
+      <section
+        className="
+          mx-auto max-w-6xl px-6 pb-10 md:pb-14
+          -mt-52 md:-mt-56
+          grid gap-6 sm:grid-cols-2 lg:grid-cols-5
+        "
+      >
+        {/* Box 1 */}
         <article className="card flex flex-col items-center justify-center">
           <img
             src="/logo.png"
@@ -55,41 +57,48 @@ export default function HomeEN() {
             draggable={false}
           />
           <p className="mt-3 text-white/70 text-sm">
-            Blutonium Records — Since 1995
+            Blutonium Records — Seit 1995
           </p>
         </article>
 
-        {/* Box 2: Releases */}
+        {/* Box 2 */}
         <article className="card">
-          <h2 className="text-2xl font-bold">Latest Releases</h2>
+          <h2 className="text-2xl font-bold">Neueste Releases</h2>
           <p className="mt-2 text-white/70">
-            All radio edits with cover art & direct links.
+            Der ganze Blutonium Records Katalog von 1995 bis heute mit Links zum Reinhören!
           </p>
-          <a href="/en/releases" className="btn mt-4 inline-flex">
-            See releases →
+          <a href="/de/releases" className="btn mt-4 inline-flex">
+            Releases ansehen →
           </a>
         </article>
 
-        {/* Box 3: Merch */}
+        {/* Box 3 */}
         <article className="card">
-          <h2 className="text-2xl font-bold">Merch & Classics</h2>
+          <h2 className="text-2xl font-bold">Vinyl &amp; CD Shop</h2>
           <p className="mt-2 text-white/70">
-            CDs, shirts, caps & autographs.
+            12&quot; Vinyl Maxi Singles, Maxi CDs, Compilations, Neu &amp; Gebraucht zu super Preisen
           </p>
-          <a href="/en/shop" className="btn mt-4 inline-flex">
-            Go to shop →
+          <a href="/de/shop" className="btn mt-4 inline-flex">
+            Zum Shop →
           </a>
         </article>
 
-        {/* Box 4: Samples */}
+        {/* Box 4 */}
         <article className="card">
           <h2 className="text-2xl font-bold">Hardstyle Samples</h2>
           <p className="mt-2 text-white/70">
-            Blutonium presents Hardstyle Samples Vol. 1 & 2.
+            Blutonium präsentiert Hardstyle Samples Vol. 2 — Producer Sound Pack
           </p>
-          <a href="/en/samples" className="btn mt-4 inline-flex">
-            Get samples →
+          <a href="/de/shop/hardstyle-samples-vol-2" className="btn mt-4 inline-flex">
+            Produkt ansehen →
           </a>
+        </article>
+
+        {/* Box 5 */}
+        <article className="card opacity-95">
+          <h2 className="text-2xl font-bold">Gebrauchte DVDs &amp; Blu-rays</h2>
+          <p className="mt-2 text-white/70">Angebotsseite kommt in Kürze</p>
+          <div className="mt-4 inline-flex text-white/40">Coming soon</div>
         </article>
       </section>
     </div>

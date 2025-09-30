@@ -2,53 +2,55 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import useMounted from "./useMounted";
 
-type Props = {
-  href?: string;
-};
+type CartMap = Record<string, { qty: number; price?: number }>;
 
-export default function FloatingCheckoutBar({ href = "/de/cart" }: Props) {
+function readCount(): number {
+  try {
+    const raw = localStorage.getItem("cart");
+    if (!raw) return 0;
+    const obj: CartMap = JSON.parse(raw);
+    return Object.values(obj).reduce((s, it) => s + (Number(it.qty) || 0), 0);
+  } catch {
+    return 0;
+  }
+}
+
+export default function FloatingCheckoutBar({ href = "/de/cart" }: { href?: string }) {
+  const mounted = useMounted();
   const [count, setCount] = useState(0);
-  const [visible, setVisible] = useState(false);
 
   useEffect(() => {
-    function readCart() {
-      try {
-        const raw =
-          localStorage.getItem("cart") ||
-          localStorage.getItem("cart_v1") ||
-          "{}";
-        const obj = JSON.parse(raw || "{}") as Record<string, { qty?: number }>;
-        const c = Object.values(obj).reduce((sum, it) => sum + (it?.qty ?? 0), 0);
-        setCount(c);
-        setVisible(c > 0);
-      } catch {
-        setCount(0);
-        setVisible(false);
-      }
-    }
-    readCart();
+    if (!mounted) return;
+    setCount(readCount());
     const onStorage = (e: StorageEvent) => {
-      if (e.key === "cart" || e.key === "cart_v1") readCart();
+      if (e.key === "cart") setCount(readCount());
     };
+    const onCustom = () => setCount(readCount());
     window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, []);
+    window.addEventListener("cart:changed", onCustom as EventListener);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("cart:changed", onCustom as EventListener);
+    };
+  }, [mounted]);
 
-  if (!visible) return null;
+  // SSR: nichts rendern; nach Mount nur anzeigen, wenn Artikel im Korb sind
+  if (!mounted || count <= 0) return null;
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-black/80 backdrop-blur">
-      <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3">
-        <div className="text-sm opacity-80">
+    <div className="fixed inset-x-0 bottom-3 z-40 px-4">
+      <div className="mx-auto max-w-6xl rounded-2xl border border-white/15 bg-black/85 backdrop-blur p-3 flex items-center justify-between">
+        <div className="text-sm">
           {count} {count === 1 ? "Artikel" : "Artikel"} im Warenkorb
         </div>
         <Link
           href={href}
-          className="rounded-lg bg-cyan-500 px-4 py-2 font-semibold text-black hover:bg-cyan-400"
+          className="rounded bg-cyan-500 hover:bg-cyan-400 text-black font-semibold px-4 py-2"
         >
-          Zum Warenkorb
+          Zur Kasse
         </Link>
       </div>
     </div>
