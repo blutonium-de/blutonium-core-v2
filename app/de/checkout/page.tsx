@@ -8,7 +8,7 @@ import {
   sumWeight,
   type RegionCode,
 } from "../../../lib/shipping";
-import PayPalCheckout from "@/components/PayPalCheckout";
+import PayPalInline from "@/components/PayPalInline";
 
 type CartEntry = { qty: number; price?: number };
 type CartMap = Record<string, CartEntry>;
@@ -34,6 +34,7 @@ function readCart(): CartMap {
     return {};
   }
 }
+
 function readRegion(): RegionCode {
   try {
     const r = localStorage.getItem("ship_region") as RegionCode | null;
@@ -52,14 +53,25 @@ export default function CheckoutPage() {
   const [region, setRegion] = useState<RegionCode>("AT");
   const [shipIdx, setShipIdx] = useState(0);
 
-  useEffect(() => { setRegion(readRegion()); }, []);
-  useEffect(() => { try { localStorage.setItem("ship_region", region); } catch {} }, [region]);
+  useEffect(() => {
+    setRegion(readRegion());
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("ship_region", region);
+    } catch {}
+  }, [region]);
 
   useEffect(() => {
     const c = readCart();
     setCart(c);
     const ids = Object.keys(c);
-    if (ids.length === 0) { setItems([]); setLoading(false); return; }
+    if (ids.length === 0) {
+      setItems([]);
+      setLoading(false);
+      return;
+    }
     const url = `/api/public/products?ids=${encodeURIComponent(ids.join(","))}`;
     fetch(url, { cache: "no-store" })
       .then((r) => r.json())
@@ -79,9 +91,11 @@ export default function CheckoutPage() {
         const clampedQty = Math.min(qty, max);
         const lineTotal = clampedQty * unitPrice;
         const title =
-          (p.productName && p.productName.trim().length > 0)
+          p.productName && p.productName.trim().length > 0
             ? p.productName
-            : `${p.artist ?? ""}${p.artist && p.trackTitle ? " – " : ""}${p.trackTitle ?? p.slug}`;
+            : `${p.artist ?? ""}${
+                p.artist && p.trackTitle ? " – " : ""
+              }${p.trackTitle ?? p.slug}`;
         return { product: p, qty: clampedQty, unitPrice, lineTotal, title };
       })
       .filter((l) => l.qty > 0 && l.product.active);
@@ -93,7 +107,13 @@ export default function CheckoutPage() {
   );
 
   const totalWeight = useMemo(
-    () => sumWeight(lines.map(l => ({ weightGrams: l.product.weightGrams ?? 0, qty: l.qty }))),
+    () =>
+      sumWeight(
+        lines.map((l) => ({
+          weightGrams: l.product.weightGrams ?? 0,
+          qty: l.qty,
+        }))
+      ),
     [lines]
   );
 
@@ -115,7 +135,11 @@ export default function CheckoutPage() {
       const payload = {
         region,
         shipping: chosen
-          ? { name: chosen.name, amountEUR: chosen.amountEUR, carrier: chosen.carrier }
+          ? {
+              name: chosen.name,
+              amountEUR: chosen.amountEUR,
+              carrier: chosen.carrier,
+            }
           : null,
         items: lines.map((l) => ({ id: l.product.id, qty: l.qty })),
       };
@@ -125,7 +149,8 @@ export default function CheckoutPage() {
         body: JSON.stringify(payload),
       });
       const j = await r.json();
-      if (!r.ok || !j?.url) throw new Error(j?.error || "Konnte Checkout nicht starten.");
+      if (!r.ok || !j?.url)
+        throw new Error(j?.error || "Konnte Checkout nicht starten.");
       window.location.href = j.url as string;
     } catch (e: any) {
       setErr(e?.message || "Fehler beim Start des Checkouts");
@@ -141,13 +166,17 @@ export default function CheckoutPage() {
       </div>
     );
   }
+
   if (lines.length === 0) {
     return (
       <div className="max-w-6xl mx-auto px-4 py-10">
         <h1 className="text-3xl font-bold mb-6">Zur Kasse</h1>
         <p className="opacity-70">Dein Warenkorb ist leer.</p>
         <div className="mt-6">
-          <Link href="/de/shop" className="inline-flex items-center rounded bg-cyan-500 text-black px-4 py-2 font-semibold hover:bg-cyan-400">
+          <Link
+            href="/de/shop"
+            className="inline-flex items-center rounded bg-cyan-500 text-black px-4 py-2 font-semibold hover:bg-cyan-400"
+          >
             Weiter shoppen
           </Link>
         </div>
@@ -167,7 +196,10 @@ export default function CheckoutPage() {
         <div className="text-sm opacity-80">Versandregion:</div>
         <select
           value={region}
-          onChange={(e) => { setRegion(e.target.value as RegionCode); setShipIdx(0); }}
+          onChange={(e) => {
+            setRegion(e.target.value as RegionCode);
+            setShipIdx(0);
+          }}
           className="rounded bg-white/5 border border-white/15 px-2 py-1 text-sm"
         >
           <option value="AT">Österreich (AT)</option>
@@ -178,19 +210,31 @@ export default function CheckoutPage() {
       {/* Positionen */}
       <div className="space-y-3">
         {lines.map((l) => (
-          <div key={l.product.id} className="flex items-center justify-between gap-3 rounded-xl bg-white/5 border border-white/10 px-3 py-2">
+          <div
+            key={l.product.id}
+            className="flex items-center justify-between gap-3 rounded-xl bg-white/5 border border-white/10 px-3 py-2"
+          >
             <div className="min-w-0">
               <div className="font-semibold truncate">{l.title}</div>
-              <div className="text-xs opacity-70">{l.qty} × {l.unitPrice.toFixed(2)} €</div>
+              <div className="text-xs opacity-70">
+                {l.qty} × {l.unitPrice.toFixed(2)} €
+              </div>
             </div>
-            <div className="shrink-0 font-semibold">{l.lineTotal.toFixed(2)} €</div>
+            <div className="shrink-0 font-semibold">
+              {l.lineTotal.toFixed(2)} €
+            </div>
           </div>
         ))}
       </div>
 
       {/* Versandauswahl & Summen */}
       <div className="mt-6 flex items-start justify-between gap-6 flex-wrap">
-        <Link href="/de/cart" className="px-4 py-2 rounded bg-white/10 hover:bg-white/20">Zurück zum Warenkorb</Link>
+        <Link
+          href="/de/cart"
+          className="px-4 py-2 rounded bg-white/10 hover:bg-white/20"
+        >
+          Zurück zum Warenkorb
+        </Link>
 
         <div className="ml-auto w-full sm:w-auto text-right">
           <div className="opacity-70 text-sm">Zwischensumme</div>
@@ -206,19 +250,27 @@ export default function CheckoutPage() {
               >
                 {shippingOptions.map((q, idx) => (
                   <option key={`${q.carrier}-${idx}`} value={idx}>
-                    {q.name} — {q.amountEUR === 0 ? "Kostenlos" : `${q.amountEUR.toFixed(2)} €`}
+                    {q.name} —{" "}
+                    {q.amountEUR === 0
+                      ? "Kostenlos"
+                      : `${q.amountEUR.toFixed(2)} €`}
                   </option>
                 ))}
               </select>
 
               <div className="mt-2 text-sm opacity-80">
-                Versand: {shippingEUR === 0 ? "Kostenlos" : `${shippingEUR.toFixed(2)} €`}
+                Versand:{" "}
+                {shippingEUR === 0
+                  ? "Kostenlos"
+                  : `${shippingEUR.toFixed(2)} €`}
               </div>
             </div>
           )}
 
           <div className="mt-3 opacity-70 text-sm">Gesamtsumme</div>
-          <div className="text-2xl font-extrabold">{grandTotal.toFixed(2)} €</div>
+          <div className="text-2xl font-extrabold">
+            {grandTotal.toFixed(2)} €
+          </div>
 
           {err && <div className="mt-2 text-red-400 text-sm">{err}</div>}
 
@@ -238,9 +290,9 @@ export default function CheckoutPage() {
             <div className="h-px flex-1 bg-white/15" />
           </div>
 
-          {/* PayPal */}
+          {/* PayPal (RAW) */}
           <div className="text-left">
-            <PayPalCheckout total={grandTotal} />
+            <PayPalInline total={grandTotal} />
           </div>
         </div>
       </div>
