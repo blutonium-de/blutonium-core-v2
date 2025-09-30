@@ -2,29 +2,29 @@
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-import "./globals.css"
-import type { Metadata, Viewport } from "next"
-import NavBar from "../components/NavBar"
-import CartButton from "../components/CartButton"
-import FloatingCheckoutBar from "../components/FloatingCheckoutBar"
-import SiteFooter from "../components/SiteFooter"
-import AnalyticsBeacon from "@/components/AnalyticsBeacon"
+import "./globals.css";
+import type { Metadata, Viewport } from "next";
+import NavBar from "../components/NavBar";
+import CartButton from "../components/CartButton";
+import FloatingCheckoutBar from "../components/FloatingCheckoutBar";
+import SiteFooter from "../components/SiteFooter";
+import AnalyticsBeacon from "@/components/AnalyticsBeacon";
 
 // ⬇️ CookieConsent client-only:
-import dynamic from "next/dynamic"
-const CookieConsent = dynamic(() => import("../components/CookieConsent"), { ssr: false })
+import dynamicImport from "next/dynamic";
+const CookieConsent = dynamicImport(() => import("../components/CookieConsent"), { ssr: false });
 
 export const metadata: Metadata = {
   title: "Blutonium Records",
   description: "Since 1995 — Hardstyle / Hardtrance / Hard Dance",
-}
+};
 
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
   viewportFit: "cover",
-}
+};
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -34,7 +34,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <CartButton href="/de/cart" />
         </NavBar>
 
-        {/* kleine Sicherheitsleine: Warnungen unterdrücken, falls ein Client-Only Kind später mounted */}
         <main className="min-h-[calc(100vh-4rem)] pt-16" suppressHydrationWarning>
           {children}
         </main>
@@ -42,12 +41,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <SiteFooter />
         <FloatingCheckoutBar href="/de/cart" />
 
-        {/* Cookie-Banner (wird NUR im Client gerendert) */}
         <CookieConsent />
-
-        {/* sendBeacon ist rein clientseitig, aber harmlos */}
         <AnalyticsBeacon />
       </body>
     </html>
-  )
+  );
 }
