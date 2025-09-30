@@ -1,4 +1,3 @@
-// components/PayPalCheckout.tsx
 'use client';
 
 import {
@@ -17,8 +16,7 @@ function Buttons({ total }: { total: number }) {
     <>
       {isPending && <div>PayPal lädt…</div>}
       <PayPalButtons
-        // Nur gelber PayPal-Button
-        fundingSource={FUNDING.PAYPAL}
+        fundingSource={FUNDING.PAYPAL}               // <- nur gelber PayPal-Button
         style={{ layout: 'horizontal', label: 'paypal', shape: 'rect' }}
         forceReRender={[value, 'EUR']}
         createOrder={(_, actions) =>
@@ -52,7 +50,7 @@ export default function PayPalCheckout({ total }: { total: number }) {
       options={{
         clientId,
         currency: 'EUR',
-        intent: 'capture', // wichtig: klein in der URL
+        intent: 'capture',                           // <- klein in der URL!
         'data-sdk-integration-source': 'react-paypal-js',
       } as any}
     >
