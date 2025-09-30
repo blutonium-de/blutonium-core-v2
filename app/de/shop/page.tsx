@@ -158,6 +158,22 @@ export default async function ShopPage({
         </div>
       </header>
 
+      {/* (Optional) Bedingter SEO-Block bei Disco/Italo Disco */}
+      {(genre === "Disco" || genre === "Italo Disco") && (
+        <section className="mb-4 text-center max-w-3xl mx-auto">
+          <h2 className="text-2xl md:text-3xl font-extrabold mb-2">
+            Disco 12&quot; Maxi Vinyls (1980–2010) – gebraucht &amp; selten
+          </h2>
+          <p className="text-sm md:text-base text-white/80 leading-relaxed">
+            Willkommen bei Blutonium Records – deinem Shop für originale{" "}
+            <strong>12&quot; Disco Maxi-Singles aus den Jahren 1980 bis 2010</strong>.
+            Klassiker aus <strong>Disco, Italo Disco, Funk und Eurodance</strong>,
+            gebraucht &amp; geprüft in top Qualität. <br />
+            <span className="font-semibold">✔ Weltweiter Versand ✔ Sammlerstücke ✔ Raritäten für DJs</span>
+          </p>
+        </section>
+      )}
+
       {/* Genres */}
       <div className="mb-5 flex items-center justify-center gap-2 overflow-x-auto whitespace-nowrap px-1">
         <a
@@ -208,6 +224,22 @@ export default async function ShopPage({
             </a>
           );
         })}
+      </div>
+
+      {/* Themen-Links (SEO + UX) */}
+      <div className="mt-4 flex flex-wrap justify-center gap-2 text-xs">
+        <a href="/de/shop/disco-12-maxi-vinyl-1980-2010" className="px-3 py-1 rounded bg-white/8 hover:bg-white/15 border border-white/15">
+          Disco 12&quot; Maxi (1980–2010)
+        </a>
+        <a href="/de/shop/italo-disco-12-maxi-vinyl" className="px-3 py-1 rounded bg-white/8 hover:bg-white/15 border border-white/15">
+          Italo Disco 12&quot; Singles (1983–1992)
+        </a>
+        <a href="/de/shop/techno-12-maxi-90s" className="px-3 py-1 rounded bg-white/8 hover:bg-white/15 border border-white/15">
+          Techno 12&quot; Maxis (90s)
+        </a>
+        <a href="/de/shop/hardstyle-12-maxi-2000s" className="px-3 py-1 rounded bg-white/8 hover:bg-white/15 border border-white/15">
+          Hardstyle 12&quot; Maxis (2000er)
+        </a>
       </div>
 
       {/* Grid */}

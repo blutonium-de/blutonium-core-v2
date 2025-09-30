@@ -20,7 +20,7 @@ type Product = {
   artist: string | null;
   trackTitle: string | null;
   priceEUR: number;
-  image: string;
+  image: string | null; // ★ robust: kann bei Alt-Daten leer sein
   stock: number | null;
   isDigital: boolean | null;
   active: boolean;
@@ -94,9 +94,9 @@ export default function CheckoutPage() {
         const title =
           p.productName && p.productName.trim().length > 0
             ? p.productName
-            : `${p.artist ?? ""}${
-                p.artist && p.trackTitle ? " – " : ""
-              }${p.trackTitle ?? p.slug}`;
+            : `${p.artist ?? ""}${p.artist && p.trackTitle ? " – " : ""}${
+                p.trackTitle ?? p.slug
+              }`;
         return { product: p, qty: clampedQty, unitPrice, lineTotal, title };
       })
       .filter((l) => l.qty > 0 && l.product.active);
@@ -210,38 +210,52 @@ export default function CheckoutPage() {
 
       {/* Positionen */}
       <div className="space-y-3">
-        {lines.map((l) => (
-          <div
-            key={l.product.id}
-            className="flex items-center justify-between gap-3 rounded-xl bg-white/5 border border-white/10 px-3 py-2"
-          >
-            {/* Bild links */}
-            <img
-              src={l.product.image}
-              alt={l.title}
-              className="w-16 h-16 object-cover rounded"
-            />
+        {lines.map((l) => {
+          // ★ Fallback-Bild: stabiler „slot“ für jedes Item
+          const imgSrc =
+            (l.product.image && l.product.image.trim()) || "/placeholder.png";
 
-            {/* Text */}
-            <div className="flex-1 min-w-0">
-              <div className="font-semibold truncate">{l.title}</div>
-
-              {/* Subline: Genre */}
-              <div className="text-[11px] opacity-70">
-                Genre: {l.product.genre?.trim() || "—"}
+          return (
+            <div
+              key={l.product.id}
+              className="flex items-center justify-between gap-3 rounded-xl bg-white/5 border border-white/10 px-3 py-2"
+            >
+              {/* Bild links – fester Slot */}
+              <div className="shrink-0">
+                <img
+                  src={imgSrc}
+                  alt={l.title}
+                  width={56}
+                  height={56}
+                  className="w-14 h-14 object-cover rounded border border-white/10"
+                  onError={(e) => {
+                    // ★ falls Bild kaputt ist → Platzhalter setzen
+                    (e.currentTarget as HTMLImageElement).src = "/placeholder.png";
+                  }}
+                />
               </div>
 
-              <div className="text-xs opacity-70">
-                {l.qty} × {l.unitPrice.toFixed(2)} €
+              {/* Text */}
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold truncate">{l.title}</div>
+
+                {/* Subline: Genre */}
+                <div className="text-[11px] opacity-70">
+                  Genre: {l.product.genre?.trim() || "—"}
+                </div>
+
+                <div className="text-xs opacity-70">
+                  {l.qty} × {l.unitPrice.toFixed(2)} €
+                </div>
+              </div>
+
+              {/* Preis rechts */}
+              <div className="shrink-0 font-semibold">
+                {l.lineTotal.toFixed(2)} €
               </div>
             </div>
-
-            {/* Preis rechts */}
-            <div className="shrink-0 font-semibold">
-              {l.lineTotal.toFixed(2)} €
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Versandauswahl & Summen */}

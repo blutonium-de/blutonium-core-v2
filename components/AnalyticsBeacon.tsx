@@ -1,21 +1,33 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
 
-export default function AnalyticsBeacon({ enabled = true }: { enabled?: boolean }) {
-  useEffect(() => {
-    if (!enabled) return;
-    if (typeof window === "undefined") return;
+type Props = { enabled?: boolean };
 
-    // Nicht in Dev-Umgebung posten
-    if (process.env.NODE_ENV === "development") return;
+export default function AnalyticsBeacon({ enabled = true }: Props) {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
 
-    const payload = {
-      path: window.location.pathname + window.location.search,
-      ref: document.referrer?.slice(0, 200) || "",
-      ts: Date.now(),
-    };
+  // Merker für vorherigen Pfad (als interner Referrer)
+  const prevPathRef = useRef<string | null>(null);
 
+  // stabile Session-ID pro Tab/Session
+  function getSessionId() {
+    try {
+      const k = "session_id";
+      let v = sessionStorage.getItem(k);
+      if (!v) {
+        v = crypto.randomUUID();
+        sessionStorage.setItem(k, v);
+      }
+      return v;
+    } catch {
+      return null;
+    }
+  }
+
+  function send(payload: any) {
     try {
       const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
       if (navigator.sendBeacon) {
@@ -28,8 +40,36 @@ export default function AnalyticsBeacon({ enabled = true }: { enabled?: boolean 
           body: JSON.stringify(payload),
         }).catch(() => {});
       }
-    } catch {}
-  }, [enabled]);
+    } catch {
+      // schlucken
+    }
+  }
+
+  useEffect(() => {
+    if (!enabled) return;
+    if (typeof window === "undefined") return;
+    if (process.env.NODE_ENV === "development") return;
+
+    const path = pathname + (searchParams?.toString() ? `?${searchParams.toString()}` : "");
+
+    // Referrer: erster Hit -> document.referrer, danach -> vorheriger interner Pfad
+    const ref =
+      prevPathRef.current ??
+      (document.referrer ? String(document.referrer).slice(0, 200) : "");
+
+    const payload = {
+      path,
+      ref,
+      ts: Date.now(),
+      sessionId: getSessionId(),
+    };
+
+    send(payload);
+
+    // aktuellen Pfad als zukünftigen Referrer merken
+    prevPathRef.current = path;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, pathname, searchParams]);
 
   return null;
 }
