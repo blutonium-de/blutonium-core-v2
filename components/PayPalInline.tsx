@@ -12,23 +12,34 @@ export default function PayPalInline({ total }: Props) {
   const [elig, setElig] = useState<{ paypal?: boolean; card?: boolean }>({});
 
   const value = Number.isFinite(total) ? total.toFixed(2) : '0.00';
-  const clientId = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID || '';
+
+  const rawId = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID || '';
+  const id = rawId.trim();
+
+  const DEMO = false; // bei Bedarf kurz auf true setzen
+  const clientId = DEMO ? 'sb' : id;
+
+  // 🔧 WICHTIG: intent=capture (klein!)
   const sdkUrl = `https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(
     clientId
-  )}&currency=EUR&intent=CAPTURE&components=buttons`;
+  )}&currency=EUR&intent=capture&components=buttons`;
+
+  useEffect(() => {
+    console.log('[paypal] id first/last/len =', id.slice(0,8),'…',id.slice(-8),'len:',id.length);
+    console.log('[paypal] sdk url =', sdkUrl);
+  }, [id, sdkUrl]);
 
   useEffect(() => {
     if (!sdkLoaded || !ref.current) return;
     // @ts-ignore
     const pp = (window as any).paypal;
-    console.log('[raw] window.paypal =', !!pp, pp?.version, 'src=', sdkUrl);
+    console.log('[raw] window.paypal =', !!pp, pp?.version);
     if (!pp) {
       setError('SDK geladen, aber window.paypal fehlt (Blocker/3rd-Party-Cookies?).');
       return;
     }
 
     try {
-      // Eligibility prüfen
       const funding = (pp as any).FUNDING;
       const isEligible = (src: any) => (pp as any).isFundingEligible ? (pp as any).isFundingEligible(src) : undefined;
       const paypalElig = isEligible(funding?.PAYPAL);
@@ -36,12 +47,11 @@ export default function PayPalInline({ total }: Props) {
       setElig({ paypal: paypalElig, card: cardElig });
       console.log('[raw] elig paypal=', paypalElig, 'card=', cardElig);
 
-      // Wenn PayPal nicht eligible ist, versuche Card (nur zum Testen)
       const opts: any = {
         style: { layout: 'vertical', shape: 'rect', label: 'paypal' },
         createOrder: (_: any, actions: any) =>
           actions.order.create({
-            intent: 'CAPTURE',
+            intent: 'CAPTURE', // JSON darf groß bleiben
             purchase_units: [{ amount: { currency_code: 'EUR', value } }],
           }),
         onApprove: (_: any, actions: any) =>
@@ -56,11 +66,10 @@ export default function PayPalInline({ total }: Props) {
         },
       };
 
-      // Versuche zuerst "paypal", sonst "card"
       const buttons =
         paypalElig !== false
-          ? pp.Buttons(opts) // paypal (Standard)
-          : pp.Buttons({ ...opts, fundingSource: (pp as any).FUNDING.CARD }); // Fallback: Card
+          ? pp.Buttons(opts)
+          : pp.Buttons({ ...opts, fundingSource: (pp as any).FUNDING.CARD });
 
       buttons.render(ref.current);
     } catch (e: any) {
@@ -92,6 +101,9 @@ export default function PayPalInline({ total }: Props) {
           Eligibility → PayPal: {String(elig.paypal)} · Card: {String(elig.card)}
         </div>
       )}
+      <p className="mt-2 text-xs break-all opacity-70">
+        SDK-URL: <a href={sdkUrl} target="_blank" rel="noreferrer">{sdkUrl}</a>
+      </p>
     </div>
   );
 }
