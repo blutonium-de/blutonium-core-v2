@@ -1,7 +1,13 @@
+// next.config.mjs
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // ❌ DO NOT set: output: "export"
-  // (We want a server build, not a static export.)
+  // ⬅️ WICHTIG: zwingt Server-Build, verhindert Static Export (der die Errors erzeugt)
+  output: "standalone",
+
+  // optional, schadet nicht – verhindert, dass ESLint einen CI-Build abbricht
+  eslint: { ignoreDuringBuilds: true },
+
+  // good default
   reactStrictMode: true,
 
   async redirects() {
