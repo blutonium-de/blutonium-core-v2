@@ -21,6 +21,28 @@ const nextConfig = {
       { source: "/de/admin", destination: "/admin", permanent: true },
     ];
   },
+
+  async headers() {
+    return [
+      {
+        source: "/(.*)",
+        headers: [
+          {
+            key: "Content-Security-Policy",
+            value: [
+              "default-src 'self'",
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.paypal.com https://*.paypalobjects.com",
+              "frame-src 'self' https://*.paypal.com",
+              "img-src 'self' data: https://*.paypal.com https://*.paypalobjects.com",
+              "connect-src 'self' https://*.paypal.com https://*.paypalobjects.com",
+              "style-src 'self' 'unsafe-inline'",
+              "font-src 'self' data:",
+            ].join("; "),
+          },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;
