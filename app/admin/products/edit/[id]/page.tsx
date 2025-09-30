@@ -31,7 +31,7 @@ type Product = {
   active: boolean;
   image: string;
   images: string[];
-  genre?: string | null; // ⬅️ NEU
+  genre?: string | null;
 };
 
 export default function AdminEditProductPage({ params }: { params: { id: string } }) {
@@ -46,6 +46,24 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
   const [active, setActive] = useState<boolean>(false);
 
   const formRef = useRef<HTMLFormElement | null>(null);
+
+  // --------- Helpers ----------
+  function submitForm() {
+    formRef.current?.requestSubmit();
+  }
+
+  useEffect(() => {
+    // Cmd/Ctrl + S => speichern
+    const onKey = (e: KeyboardEvent) => {
+      const isMac = navigator.platform.toLowerCase().includes("mac");
+      if ((isMac ? e.metaKey : e.ctrlKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        submitForm();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -103,7 +121,7 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
         active,
         image: images[0] || "",
         images,
-        genre: strOrNull(fd.get("genre")), // ⬅️ NEU
+        genre: strOrNull(fd.get("genre")),
       };
 
       const r = await fetch(`/api/admin/products/${id}`, {
@@ -163,7 +181,7 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
         process.env.NEXT_PUBLIC_ADMIN_TOKEN ||
         "";
 
-      const r = await fetch(`/api/admin/products/${id}`, {
+    const r = await fetch(`/api/admin/products/${id}`, {
         method: "DELETE",
         headers: { "x-admin-key": adminKey },
       });
@@ -185,8 +203,28 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
     <div className="max-w-6xl mx-auto px-4 py-10">
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-3xl sm:text-4xl font-extrabold">Produkt bearbeiten</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <a href="/admin/products" className="px-3 py-2 rounded bg-white/10 hover:bg-white/20">Zur Liste</a>
+
+          {/* NEU: Speichern oben */}
+          <button
+            type="button"
+            onClick={submitForm}
+            className="px-3 py-2 rounded bg-cyan-500 hover:bg-cyan-400 text-black font-semibold"
+            title="Speichern (⌘/Ctrl+S)"
+          >
+            Speichern
+          </button>
+
+          {/* NEU: EAN-Scan oben */}
+          <a
+            href="/admin/scanner-test"
+            className="px-3 py-2 rounded bg-white/10 hover:bg-white/20"
+            title="EAN-Code scannen"
+          >
+            EAN scannen
+          </a>
+
           <button
             type="button"
             onClick={toggleActive}
@@ -291,13 +329,32 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
 
           {msg && <div className="text-sm">{msg}</div>}
 
-          <button
-            type="submit"
-            disabled={saving}
-            className="px-4 py-2 rounded bg-cyan-500 hover:bg-cyan-400 text-black font-semibold disabled:opacity-60"
-          >
-            {saving ? "Speichere …" : "Speichern"}
-          </button>
+          {/* Untere Buttonleiste */}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="submit"
+              disabled={saving}
+              className="px-4 py-2 rounded bg-cyan-500 hover:bg-cyan-400 text-black font-semibold disabled:opacity-60"
+            >
+              {saving ? "Speichere …" : "Speichern"}
+            </button>
+
+            <a
+              href="/admin/products"
+              className="px-3 py-2 rounded bg-white/10 hover:bg-white/20"
+              title="Zurück zur Liste"
+            >
+              Zurück zur Liste
+            </a>
+
+            <a
+              href="/admin/scanner-test"
+              className="px-3 py-2 rounded bg-white/10 hover:bg-white/20"
+              title="EAN-Code scannen"
+            >
+              EAN scannen
+            </a>
+          </div>
 
           <style jsx>{`
             .input {
