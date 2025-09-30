@@ -1,5 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // ❌ DO NOT set: output: "export"
+  // (We want a server build, not a static export.)
+  reactStrictMode: true,
+
   async redirects() {
     return [
       // ► Einsprachig: Alles auf DE
@@ -16,46 +20,41 @@ const nextConfig = {
       { source: "/shop",           destination: "/de/shop", permanent: true },
       { source: "/de/merchandise", destination: "/de/shop", permanent: true },
 
-      // Falls „Samples“-Links irgendwo existieren: aktuell zum Shop
+      // Samples-Altlinks → Shop
       { source: "/samples",    destination: "/de/shop", permanent: true },
       { source: "/de/samples", destination: "/de/shop", permanent: true },
 
-      // Admin: nur /admin (LE: /de/admin -> /admin)
+      // Admin
       { source: "/de/admin", destination: "/admin", permanent: true },
     ];
   },
 
   async headers() {
     const csp = [
-      // Grundschutz
       "default-src 'self'",
       "base-uri 'self'",
       "object-src 'none'",
       "frame-ancestors 'self'",
 
-      // Skripte: PayPal SDK + Stripe.js (für Checkout/Apple Pay), inline für Next/Tailwind
+      // Scripts (Next, Tailwind, PayPal, Stripe)
       "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.paypal.com https://*.paypalobjects.com https://js.stripe.com",
-
-      // explizit auch für Script-Elemente (einige Browser trennen das)
       "script-src-elem 'self' 'unsafe-inline' 'unsafe-eval' https://*.paypal.com https://*.paypalobjects.com https://js.stripe.com",
 
-      // Frames: PayPal + Stripe (+ YouTube für evtl. Embeds)
+      // Frames (PayPal, Stripe, optional YouTube)
       "frame-src 'self' https://*.paypal.com https://js.stripe.com https://checkout.stripe.com https://hooks.stripe.com https://www.youtube.com https://www.youtube-nocookie.com",
 
-      // Verbindungen (XHR/fetch/EventSource/WebSocket): eigene API + PayPal/Stripe
+      // XHR/fetch
       "connect-src 'self' https://*.paypal.com https://*.paypalobjects.com https://api.stripe.com",
 
-      // Bilder: eigene, data/blob, Spotify-Cover, PayPal-Assets + YouTube-Thumbnails
+      // Images (local, data, Spotify, PayPal, YouTube thumbs)
       "img-src 'self' data: blob: https://i.scdn.co https://*.paypalobjects.com https://i.ytimg.com https://img.youtube.com https://yt3.ggpht.com",
 
       // Styles/Fonts
       "style-src 'self' 'unsafe-inline'",
       "font-src 'self' data:",
 
-      // Worker (für Next.js/Edge-Runtime/PayPal ggf.)
+      // Workers
       "worker-src 'self' blob:",
-      // Optional:
-      // "upgrade-insecure-requests"
     ].join("; ");
 
     return [
