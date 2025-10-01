@@ -75,6 +75,7 @@ export default async function ShopPage({
       images: true,
       stock: true,
       genre: true,
+      format: true, // ⬅️ WICHTIG: Format für Card mitliefern
     },
   });
 
@@ -99,64 +100,81 @@ export default async function ShopPage({
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-2">
-      {/* Header */}
+      {/* ======= RESPONSIVER HERO ======= */}
       <header className="mb-4 text-center -mt-3 md:-mt-4">
-        {/* HERO mit Hintergrundbild */}
-        <div className="relative mx-auto max-w-7xl">
+        <div className="relative mx-auto max-w-7xl overflow-hidden rounded-2xl">
+          {/* Hintergrund */}
           <div
-            className="relative bg-cover bg-no-repeat rounded-2xl overflow-hidden"
+            className="absolute inset-0 bg-cover bg-no-repeat"
             style={{
               backgroundImage: "url(/shop/shophero.png)",
-              backgroundPosition: "center 0.5cm", // ca. 1 cm höher als vorher
+              backgroundPosition: "center 0.5cm",
             }}
-          >
-            <div className="absolute inset-0 bg-black/30" />
+          />
+          <div className="absolute inset-0 bg-black/35" />
 
-            {/* Inhalt im Hero */}
-            <div className="relative flex flex-col items-center justify-start h-[210px] sm:h-[250px] px-4 pt-4">
-              {/* Headline */}
-              <h1 className="text-[34px] sm:text-[40px] md:text-[44px] font-extrabold tracking-tight text-white drop-shadow-lg">
-                Blutonium Records Shop
-              </h1>
+          {/* Inhalt */}
+          <div className="relative px-4 pt-4 pb-5 md:pt-6 md:pb-8">
+            {/* Logos – auf Mobile oben klein, auf Desktop ausgeblendet (wir zeigen dort die breite Fläche) */}
+            <div className="flex items-center justify-between mb-2 md:hidden">
+              <img
+                src="/logos/blutonium-records.png"
+                alt="Blutonium Records"
+                className="h-12 w-auto invert"
+              />
+              <img
+                src="/logos/blutonium-media.png"
+                alt="Blutonium Media"
+                className="h-12 w-auto invert"
+              />
+            </div>
 
-              {/* Suche */}
-              <form className="w-full max-w-xl mt-2 flex gap-2" method="get">
-                {cat ? <input type="hidden" name="cat" value={cat} /> : null}
-                {genre ? <input type="hidden" name="genre" value={genre} /> : null}
-                {page > 1 ? <input type="hidden" name="page" value="1" /> : null}
-                <input
-                  name="q"
-                  defaultValue={q}
-                  placeholder="Suche nach Artist, Titel, EAN, Katalognummer …"
-                  className="flex-1 rounded-lg px-3 py-2 bg-white/85 text-black border border-white/20 text-sm"
-                />
-                <button
-                  className="px-4 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-black font-semibold text-sm"
-                  type="submit"
-                >
-                  Suchen
-                </button>
-              </form>
+            {/* Headline */}
+            <h1 className="text-[28px] sm:text-[32px] md:text-[44px] font-extrabold tracking-tight text-white drop-shadow-lg">
+              Blutonium Records Shop
+            </h1>
 
-              {/* Subline im Hero */}
-              <div className="pointer-events-none absolute inset-x-0 bottom-2 px-4">
-                <h2 className="text-lg sm:text-xl md:text-2xl font-bold text-white drop-shadow text-center">
-                  Herzlich Willkommen in unserem Online Shop!
-                </h2>
-                <p className="mt-1 text-[12px] sm:text-[13px] md:text-[15px] max-w-3xl mx-auto text-white/90 text-center">
-                  <span className="font-bold">
-                    Hier findest Du absolute Raritäten • Neu &amp; Gebraucht
-                  </span>
-                  <br />
+            {/* Suche */}
+            <form className="w-full max-w-xl mx-auto mt-2 flex gap-2">
+              {cat ? <input type="hidden" name="cat" value={cat} /> : null}
+              {genre ? <input type="hidden" name="genre" value={genre} /> : null}
+              {page > 1 ? <input type="hidden" name="page" value="1" /> : null}
+              <input
+                name="q"
+                defaultValue={q}
+                placeholder="Suche nach Artist, Titel, EAN, Katalognummer …"
+                className="flex-1 rounded-lg px-3 py-2 bg-white/90 text-black border border-white/20 text-sm"
+              />
+              <button
+                className="px-4 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-black font-semibold text-sm"
+                type="submit"
+              >
+                Suchen
+              </button>
+            </form>
+
+            {/* Subline */}
+            <div className="mt-3 md:mt-4">
+              <h2 className="text-base sm:text-lg md:text-2xl font-bold text-white drop-shadow text-center">
+                Herzlich Willkommen in unserem Online Shop!
+              </h2>
+              <p className="mt-1 text-[12px] sm:text-[13px] md:text-[15px] max-w-3xl mx-auto text-white/90 text-center leading-snug">
+                <span className="font-semibold">
+                  Hier findest Du absolute Raritäten • Neu &amp; Gebraucht
+                </span>
+                <br className="hidden sm:block" />
+                <span className="sm:inline block">
                   12&quot; Vinyl DJ Maxi Singles • CD Maxis • CD Compilations • CD Alben • Vinyl Alben
-                  <br />
-                  und natürlich seltene Blutonium Records CDs &amp; Vinyls die Dir noch in deiner Sammlung vielleicht fehlen!
-                </p>
-              </div>
+                </span>
+                <br className="hidden sm:block" />
+                und natürlich seltene Blutonium Records CDs &amp; Vinyls, die dir
+                noch in deiner Sammlung vielleicht fehlen!
+              </p>
             </div>
           </div>
         </div>
       </header>
+      {/* ======= /RESPONSIVER HERO ======= */}
 
       {/* (Optional) Bedingter SEO-Block bei Disco/Italo Disco */}
       {(genre === "Disco" || genre === "Italo Disco") && (
@@ -226,7 +244,7 @@ export default async function ShopPage({
         })}
       </div>
 
-      {/* Themen-Links (SEO + UX) */}
+      {/* Themen-Links */}
       <div className="mt-4 flex flex-wrap justify-center gap-2 text-xs">
         <a href="/de/shop/disco-12-maxi-vinyl-1980-2010" className="px-3 py-1 rounded bg-white/8 hover:bg-white/15 border border-white/15">
           Disco 12&quot; Maxi (1980–2010)
