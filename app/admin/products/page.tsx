@@ -18,15 +18,21 @@ type Row = {
   active: boolean;
   createdAt: string;
   stock?: number | null;
-  image?: string | null; // Cover für die Liste
-  genre?: string | null; // ⬅️ NEU: Genre für Badge
+  image?: string | null;
+  genre?: string | null;
 };
+
+const PAGE_SIZE = 10;
 
 export default function AdminProductsPage() {
   const [q, setQ] = useState("");
   const [cat, setCat] = useState("");
   const [soldOutOnly, setSoldOutOnly] = useState(false);
+
   const [rows, setRows] = useState<Row[]>([]);
+  const [total, setTotal] = useState<number>(0);
+  const [page, setPage] = useState<number>(1);
+
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -38,7 +44,7 @@ export default function AdminProductsPage() {
     []
   );
 
-  async function load() {
+  async function load(p: number = page) {
     setLoading(true);
     setErr(null);
     try {
@@ -47,21 +53,29 @@ export default function AdminProductsPage() {
       if (cat) url.searchParams.set("cat", cat);
       if (soldOutOnly) url.searchParams.set("soldOut", "1");
       if (adminKey) url.searchParams.set("key", adminKey);
+      // nur letzte 10, serverseitig paginiert
+      url.searchParams.set("limit", String(PAGE_SIZE));
+      url.searchParams.set("page", String(p)); // 1-basiert
 
       const r = await fetch(url.toString(), { cache: "no-store" });
       const j = await r.json();
       if (!r.ok) throw new Error(j?.error || "Fehler beim Laden");
-      setRows(Array.isArray(j.items) ? j.items : []);
+
+      const items: Row[] = Array.isArray(j.items) ? j.items : [];
+      setRows(items);
+      setTotal(Number.isFinite(j?.total) ? Number(j.total) : items.length);
+      setPage(p);
     } catch (e: any) {
       setErr(e?.message || "Fehler");
       setRows([]);
+      setTotal(0);
     } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => {
-    load();
+    load(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -99,39 +113,47 @@ export default function AdminProductsPage() {
       });
       if (!r.ok) throw new Error("Löschen fehlgeschlagen");
       setRows((old) => old.filter((x) => x.id !== id));
+      // total ggf. dekrementieren & bei leerer Seite zurückspringen
+      setTotal((t) => Math.max(0, t - 1));
+      if (rows.length === 1 && page > 1) load(page - 1);
     } catch {
       alert("Konnte nicht löschen.");
     }
   }
 
+  const maxPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const hasPrev = page > 1;
+  const hasNext = page < maxPage;
+
   return (
     <div className="max-w-7xl mx-auto px-4 py-10">
-      <div className="flex items-center justify-between">
+      {/* TOP BAR */}
+      <div className="flex items-center justify-between gap-2 flex-wrap">
         <h1 className="text-3xl sm:text-4xl font-extrabold">Admin · Produkte</h1>
         <div className="flex gap-2">
-          <button
-            onClick={load}
-            className="px-4 py-2 rounded bg-white/10 hover:bg-white/20"
-          >
+          <Link href="/admin" className="px-4 py-2 rounded bg-white/10 hover:bg-white/20">
+            ← Admin Hauptmenü
+          </Link>
+          <button onClick={() => load(page)} className="px-4 py-2 rounded bg-white/10 hover:bg-white/20">
             Produktliste aktualisieren
           </button>
           <Link
             href="/admin/new"
             className="px-4 py-2 rounded bg-cyan-500 hover:bg-cyan-400 text-black font-semibold"
           >
-            Neues Produkt anlegen
+            + Neues Produkt
           </Link>
         </div>
       </div>
 
       {/* Filter */}
-      <div className="mt-6 grid grid-cols-1 sm:grid-cols-[1fr_auto_auto] gap-3">
+      <div className="mt-6 grid grid-cols-1 sm:grid-cols-[1fr_auto_auto_auto] gap-3">
         <input
           className="input"
           placeholder="Suche (Artist, Titel, Slug, SKU, EAN ...)"
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && load()}
+          onKeyDown={(e) => e.key === "Enter" && load(1)}
         />
         <select className="input" value={cat} onChange={(e) => setCat(e.target.value)}>
           <option value="">Alle Kategorien</option>
@@ -142,41 +164,60 @@ export default function AdminProductsPage() {
           <option value="bhs">Blutonium Hardstyle Samples</option>
           <option value="ss">Sonstiges & Specials</option>
         </select>
-        <button onClick={load} className="px-4 py-2 rounded bg-white/10 hover:bg-white/20">
-          Filtern
-        </button>
-      </div>
-
-      <div className="mt-3 flex flex-wrap gap-2">
         <button
-          type="button"
-          onClick={() => { setSoldOutOnly(false); load(); }}
-          className={`px-3 py-1 rounded-lg border ${
-            !soldOutOnly
-              ? "bg-cyan-500 text-black border-cyan-500"
-              : "bg-white/5 border-white/10 hover:bg-white/10"
+          onClick={() => {
+            setSoldOutOnly(false);
+            load(1);
+          }}
+          className={`px-4 py-2 rounded ${
+            !soldOutOnly ? "bg-cyan-500 text-black" : "bg-white/10 hover:bg-white/20"
           }`}
+          title="Alle"
         >
           Alle
         </button>
         <button
-          type="button"
-          onClick={() => { setSoldOutOnly(true); load(); }}
-          className={`px-3 py-1 rounded-lg border ${
-            soldOutOnly
-              ? "bg-cyan-500 text-black border-cyan-500"
-              : "bg-white/5 border-white/10 hover:bg-white/10"
+          onClick={() => {
+            setSoldOutOnly(true);
+            load(1);
+          }}
+          className={`px-4 py-2 rounded ${
+            soldOutOnly ? "bg-cyan-500 text-black" : "bg-white/10 hover:bg-white/20"
           }`}
+          title="Nur ausverkauft"
         >
           Nur ausverkauft
         </button>
       </div>
 
+      {/* Info + Pagination (oben) */}
+      <div className="mt-3 flex items-center justify-between flex-wrap gap-2 text-sm">
+        <div className="opacity-70">
+          Seite {page} / {maxPage} · {Math.min(page * PAGE_SIZE, total)} von {total} Einträgen
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={() => hasPrev && load(page - 1)}
+            disabled={!hasPrev}
+            className="px-3 py-1 rounded bg-white/10 disabled:opacity-40 hover:bg-white/20"
+          >
+            ‹ Zurück
+          </button>
+          <button
+            onClick={() => hasNext && load(page + 1)}
+            disabled={!hasNext}
+            className="px-3 py-1 rounded bg-white/10 disabled:opacity-40 hover:bg-white/20"
+          >
+            Weiter ›
+          </button>
+        </div>
+      </div>
+
       {err && <p className="text-red-500 mt-4">{err}</p>}
       {loading && <p className="mt-4 opacity-70">Lade …</p>}
 
-      {/* NEUE SPALTENREIHENFOLGE */}
-      <div className="mt-6 overflow-x-auto">
+      {/* TABELLE */}
+      <div className="mt-4 overflow-x-auto">
         <table className="min-w-full text-sm">
           <thead className="opacity-70 text-left">
             <tr>
@@ -210,7 +251,6 @@ export default function AdminProductsPage() {
                     {/* Cover */}
                     <td className="py-2 pr-4">
                       <div className="h-[50px] w-[50px] rounded overflow-hidden bg-white/5 border border-white/10">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                           src={r.image || "/placeholder.png"}
                           alt={title}
@@ -297,15 +337,46 @@ export default function AdminProductsPage() {
                     </td>
 
                     {/* Datum */}
-                    <td className="py-2 pr-4 whitespace-nowrap">
-                      {fmtDate(r.createdAt)}
-                    </td>
+                    <td className="py-2 pr-4 whitespace-nowrap">{fmtDate(r.createdAt)}</td>
                   </tr>
                 );
               })
             )}
           </tbody>
         </table>
+      </div>
+
+      {/* BOTTOM BAR */}
+      <div className="mt-6 flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex gap-2">
+          <Link href="/admin" className="px-4 py-2 rounded bg-white/10 hover:bg-white/20">
+            ← Admin Hauptmenü
+          </Link>
+          <Link
+            href="/admin/new"
+            className="px-4 py-2 rounded bg-cyan-500 hover:bg-cyan-400 text-black font-semibold"
+          >
+            + Neues Produkt
+          </Link>
+        </div>
+
+        <div className="flex gap-2 text-sm">
+          <button
+            onClick={() => hasPrev && load(page - 1)}
+            disabled={!hasPrev}
+            className="px-3 py-1 rounded bg-white/10 disabled:opacity-40 hover:bg-white/20"
+          >
+            ‹ Zurück
+          </button>
+          <div className="px-2 py-1 opacity-70">Seite {page} / {maxPage}</div>
+          <button
+            onClick={() => hasNext && load(page + 1)}
+            disabled={!hasNext}
+            className="px-3 py-1 rounded bg-white/10 disabled:opacity-40 hover:bg-white/20"
+          >
+            Weiter ›
+          </button>
+        </div>
       </div>
 
       <style jsx>{`

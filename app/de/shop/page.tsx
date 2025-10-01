@@ -243,22 +243,6 @@ export default async function ShopPage({
         })}
       </div>
 
-      {/* Themen-Links */}
-      <div className="mt-4 flex flex-wrap justify-center gap-2 text-xs">
-        <a href="/de/shop/disco-12-maxi-vinyl-1980-2010" className="px-3 py-1 rounded bg-white/8 hover:bg-white/15 border border-white/15">
-          Disco 12&quot; Maxi (1980–2010)
-        </a>
-        <a href="/de/shop/italo-disco-12-maxi-vinyl" className="px-3 py-1 rounded bg-white/8 hover:bg-white/15 border border-white/15">
-          Italo Disco 12&quot; Singles (1983–1992)
-        </a>
-        <a href="/de/shop/techno-12-maxi-90s" className="px-3 py-1 rounded bg-white/8 hover:bg-white/15 border border-white/15">
-          Techno 12&quot; Maxis (90s)
-        </a>
-        <a href="/de/shop/hardstyle-12-maxi-2000s" className="px-3 py-1 rounded bg-white/8 hover:bg-white/15 border border-white/15">
-          Hardstyle 12&quot; Maxis (2000er)
-        </a>
-      </div>
-
       {/* Grid: Handy 2 Spalten, ab sm: dein Auto-Fill-Grid */}
       <div
         className="
@@ -293,6 +277,22 @@ export default async function ShopPage({
 
       <div className="mt-6 text-center text-xs opacity-60">
         Seite {page} · {Math.min(page * PAGE_SIZE, total)} / {total} Artikel
+      </div>
+
+      {/* Themen-/Landing-Links GANZ UNTEN (SEO, unaufdringlich) */}
+      <div className="mt-10 mb-4 flex flex-wrap justify-center gap-2 text-xs opacity-70">
+        <a href="/de/shop/disco-12-maxi-vinyl-1980-2010" className="px-3 py-1 rounded bg-white/8 hover:bg-white/15 border border-white/15">
+          Disco 12&quot; Maxi (1980–2010)
+        </a>
+        <a href="/de/shop/italo-disco-12-maxi-vinyl" className="px-3 py-1 rounded bg-white/8 hover:bg-white/15 border border-white/15">
+          Italo Disco 12&quot; Singles (1983–1992)
+        </a>
+        <a href="/de/shop/techno-12-maxi-90s" className="px-3 py-1 rounded bg-white/8 hover:bg-white/15 border border-white/15">
+          Techno 12&quot; Maxis (90s)
+        </a>
+        <a href="/de/shop/hardstyle-12-maxi-2000s" className="px-3 py-1 rounded bg-white/8 hover:bg-white/15 border border-white/15">
+          Hardstyle 12&quot; Maxis (2000er)
+        </a>
       </div>
     </div>
   );
