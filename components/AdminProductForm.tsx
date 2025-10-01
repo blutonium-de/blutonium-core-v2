@@ -33,7 +33,7 @@ type ProductPayload = {
   active?: boolean;
   image: string;
   images: string[];
-  genre?: string | null; // ⬅️ NEU
+  genre?: string | null;
 };
 
 export default function AdminProductForm() {
@@ -53,7 +53,7 @@ export default function AdminProductForm() {
   const [weight, setWeight] = useState<string>("");
   const [condition, setCondition] = useState<string>("");
   const [stock, setStock] = useState<string>("1");
-  const [genre, setGenre] = useState<string>(""); // ⬅️ NEU
+  const [genre, setGenre] = useState<string>("");
   const [slugTouched, setSlugTouched] = useState(false);
 
   const formRef = useRef<HTMLFormElement | null>(null);
@@ -61,7 +61,9 @@ export default function AdminProductForm() {
   const priceRef = useRef<HTMLInputElement | null>(null);
 
   const [scannerOpen, setScannerOpen] = useState(false);
+  const [lookupBusy, setLookupBusy] = useState(false);
 
+  // ---- Helpers ----
   function strOrNull(v: FormDataEntryValue | null): string | undefined {
     const s = (v == null ? "" : String(v)).trim();
     return s ? s : undefined;
@@ -80,7 +82,29 @@ export default function AdminProductForm() {
       .replace(/^-+|-+$/g, "")
       .slice(0, 80);
   }
+  function requestSave() {
+    formRef.current?.requestSubmit();
+  }
+  async function handleManualBarcode() {
+    const code = upcRef.current?.value?.trim();
+    if (!code) { setMsg("Bitte EAN/UPC eingeben."); return; }
+    await lookupByBarcode(code);
+  }
 
+  // Cmd/Ctrl+S = Speichern
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const isMac = navigator.platform.toLowerCase().includes("mac");
+      if ((isMac ? e.metaKey : e.ctrlKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        requestSave();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // Produktname → Artist/Track splitten (nur wenn leer)
   useEffect(() => {
     if (!productName || artist || trackTitle) return;
     const parts = productName.split(/\s[-–—]\s|[-–—]/);
@@ -94,11 +118,13 @@ export default function AdminProductForm() {
     }
   }, [productName, artist, trackTitle]);
 
+  // Vinyl → Gewicht auto
   useEffect(() => {
     const isVinyl = category === "bv" || category === "sv" || /vinyl|lp/i.test(format);
     if (isVinyl && !weight) setWeight("150");
   }, [category, format, weight]);
 
+  // Slug automatisch vorbelegen
   useEffect(() => {
     const slugInput = document.querySelector<HTMLInputElement>('input[name="slug"]');
     if (!slugInput || slugTouched) return;
@@ -113,6 +139,7 @@ export default function AdminProductForm() {
     }
   }, [artist, trackTitle, productName, slugTouched]);
 
+  // Gebraucht-Vinyl & kein Preis → 9.90
   useEffect(() => {
     const isVinyl = category === "bv" || category === "sv" || /vinyl|lp/i.test(format);
     const usedConditions = ["ok", "gebraucht", "stark"];
@@ -123,8 +150,10 @@ export default function AdminProductForm() {
     }
   }, [condition, category, format]);
 
+  // --- Barcode Lookup (Scanner + manuell) ---
   async function lookupByBarcode(code: string) {
-    if (!code) return;
+    if (!code || lookupBusy) return;
+    setLookupBusy(true);
     setMsg(null);
     try {
       const r = await fetch(`/api/utils/lookup?barcode=${encodeURIComponent(code)}`, { cache: "no-store" });
@@ -168,6 +197,8 @@ export default function AdminProductForm() {
       setMsg(`Gefunden (${j.source}) ✔`);
     } catch (e: any) {
       setMsg(e?.message || "Lookup Fehler");
+    } finally {
+      setLookupBusy(false);
     }
   }
 
@@ -177,6 +208,7 @@ export default function AdminProductForm() {
     lookupByBarcode(code);
   }
 
+  // --- Submit ---
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setMsg(null);
@@ -205,7 +237,7 @@ export default function AdminProductForm() {
       active: fd.get("active") === "on",
       image: images[0] || String(fd.get("image") || ""),
       images: images.length ? images : safeJsonArray(String(fd.get("imagesJson") || "[]")),
-      genre: genre || undefined, // ⬅️ NEU
+      genre: genre || undefined,
     };
 
     if (!payload.slug) return setMsg("Slug ist Pflicht.");
@@ -233,8 +265,7 @@ export default function AdminProductForm() {
       setProductName(""); setArtist(""); setTrackTitle("");
       setCategory("sv"); setFormat(""); setWeight("");
       setCondition(""); setSlugTouched(false); setStock("1");
-      setGenre(""); // reset
-      if (priceRef.current) priceRef.current.value = "";
+      setGenre(""); if (priceRef.current) priceRef.current.value = "";
 
       setMsg("Gespeichert ✔");
       router.push("/admin/products");
@@ -246,172 +277,259 @@ export default function AdminProductForm() {
   }
 
   return (
-    <form ref={formRef} onSubmit={onSubmit} className="space-y-6">
-      <ImageDrop
-        max={5}
-        initial={[]}
-        onChange={(arr, names) => {
-          setImages(arr);
-          setFilenames(names || []);
-          if ((!artist && !trackTitle && !productName) && names && names[0]) {
-            const base = names[0].replace(/\.[a-z0-9]+$/i, "").trim();
-            const generic = /^photo[-_]\d+$/i.test(base) || /^\d+$/.test(base);
-            if (!generic) {
-              const parts = base.split(/\s[-–—]\s|[-–—]/);
-              if (parts.length >= 2) {
-                const a = parts[0]?.trim();
-                const t = parts.slice(1).join(" - ").trim();
-                if (a && t) {
-                  setArtist(a);
-                  setTrackTitle(t);
-                  setProductName(`${a} – ${t}`);
+    <div className="space-y-6">
+      {/* TOP BAR (fixiert) */}
+      <div className="sticky top-16 z-30 bg-black/70 backdrop-blur border border-white/10 rounded-xl px-3 py-2 flex flex-wrap items-center gap-2">
+        <a href="/admin/products" className="px-3 py-2 rounded bg-white/10 hover:bg-white/20">
+          Zur Liste
+        </a>
+        <button
+          type="button"
+          onClick={requestSave}
+          className="px-3 py-2 rounded bg-cyan-500 hover:bg-cyan-400 text-black font-semibold"
+          title="Speichern (⌘/Ctrl+S)"
+        >
+          Speichern
+        </button>
+        <button
+          type="button"
+          onClick={() => setScannerOpen(true)}
+          className="px-3 py-2 rounded bg-white/10 hover:bg-white/20"
+          title="EAN scannen"
+        >
+          Scanner
+        </button>
+        <button
+          type="button"
+          onClick={handleManualBarcode}
+          className="px-3 py-2 rounded bg-white/10 hover:bg-white/20 disabled:opacity-60"
+          title="EAN per Hand übernehmen"
+          disabled={lookupBusy}
+        >
+          {lookupBusy ? "Prüfe …" : "EAN übernehmen"}
+        </button>
+        {msg && <span className="ml-auto text-sm opacity-80">{msg}</span>}
+      </div>
+
+      {/* FORM */}
+      <form ref={formRef} onSubmit={onSubmit} className="space-y-6">
+        <ImageDrop
+          max={5}
+          initial={[]}
+          onChange={(arr, names) => {
+            setImages(arr);
+            setFilenames(names || []);
+            if ((!artist && !trackTitle && !productName) && names && names[0]) {
+              const base = names[0].replace(/\.[a-z0-9]+$/i, "").trim();
+              const generic = /^photo[-_]\d+$/i.test(base) || /^\d+$/.test(base);
+              if (!generic) {
+                const parts = base.split(/\s[-–—]\s|[-–—]/);
+                if (parts.length >= 2) {
+                  const a = parts[0]?.trim();
+                  const t = parts.slice(1).join(" - ").trim();
+                  if (a && t) {
+                    setArtist(a);
+                    setTrackTitle(t);
+                    setProductName(`${a} – ${t}`);
+                  }
                 }
               }
             }
-          }
-        }}
-      />
+          }}
+        />
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <L label="Slug* (auto — du kannst überschreiben)">
-          <input
-            name="slug"
-            className="input"
-            placeholder="z. B. artist-title-2024"
-            onInput={() => setSlugTouched(true)}
-            required
-          />
-        </L>
-        <L label="Produktname (optional)">
-          <input className="input" value={productName} onChange={(e) => setProductName(e.target.value)} placeholder="Artist – Titel" />
-        </L>
-        <L label="Subtitle">
-          <input name="subtitle" className="input" placeholder="zusätzliche Info" />
-        </L>
-        <L label="Artist">
-          <input className="input" value={artist} onChange={(e) => setArtist(e.target.value)} />
-        </L>
-        <L label="TrackTitle">
-          <input className="input" value={trackTitle} onChange={(e) => setTrackTitle(e.target.value)} />
-        </L>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <L label="Slug* (auto — du kannst überschreiben)">
+            <input
+              name="slug"
+              className="input"
+              placeholder="z. B. artist-title-2024"
+              onInput={() => setSlugTouched(true)}
+              required
+            />
+          </L>
+          <L label="Produktname (optional)">
+            <input className="input" value={productName} onChange={(e) => setProductName(e.target.value)} placeholder="Artist – Titel" />
+          </L>
+          <L label="Subtitle">
+            <input name="subtitle" className="input" placeholder="zusätzliche Info" />
+          </L>
+          <L label="Artist">
+            <input className="input" value={artist} onChange={(e) => setArtist(e.target.value)} />
+          </L>
+          <L label="TrackTitle">
+            <input className="input" value={trackTitle} onChange={(e) => setTrackTitle(e.target.value)} />
+          </L>
 
-        <L label="Preis (EUR)*">
-          <input ref={priceRef} name="priceEUR" type="number" step="0.01" min="0" className="input" required />
-        </L>
-        <L label="Währung">
-          <input name="currency" className="input" defaultValue="EUR" />
-        </L>
+          <L label="Preis (EUR)*">
+            <input ref={priceRef} name="priceEUR" type="number" step="0.01" min="0" className="input" required />
+          </L>
+          <L label="Währung">
+            <input name="currency" className="input" defaultValue="EUR" />
+          </L>
 
-        <L label="Kategorie-Code*">
-          <select name="categoryCode" className="input" value={category} onChange={(e) => setCategory(e.target.value)} required>
-            <option value="bv">Blutonium Vinyls</option>
-            <option value="sv">Sonstige Vinyls</option>
-            <option value="bcd">Blutonium CDs</option>
-            <option value="scd">Sonstige CDs</option>
-            <option value="bhs">Blutonium Hardstyle Samples</option>
-            <option value="ss">Sonstiges & Specials</option>
-          </select>
-        </L>
+          <L label="Kategorie-Code*">
+            <select name="categoryCode" className="input" value={category} onChange={(e) => setCategory(e.target.value)} required>
+              <option value="bv">Blutonium Vinyls</option>
+              <option value="sv">Sonstige Vinyls</option>
+              <option value="bcd">Blutonium CDs</option>
+              <option value="scd">Sonstige CDs</option>
+              <option value="bhs">Blutonium Hardstyle Samples</option>
+              <option value="ss">Sonstiges & Specials</option>
+            </select>
+          </L>
 
-        <L label="Format">
-          <input name="format" className="input" placeholder="z. B. Vinyl 12''" value={format} onChange={(e) => setFormat(e.target.value)} />
-        </L>
-        <L label="Jahr">
-          <input name="year" type="number" className="input" />
-        </L>
+          <L label="Format">
+            <input name="format" className="input" placeholder="z. B. Vinyl 12''" value={format} onChange={(e) => setFormat(e.target.value)} />
+          </L>
+          <L label="Jahr">
+            <input name="year" type="number" className="input" />
+          </L>
 
-        <L label="UPC/EAN">
-          <div className="flex gap-2">
-            <input ref={upcRef} name="upcEan" className="input flex-1" />
-            <button
-              type="button"
-              className="px-3 rounded bg-cyan-600 hover:bg-cyan-500 text-black font-semibold"
-              onClick={() => setScannerOpen(true)}
+          <L label="UPC/EAN">
+            <div className="flex gap-2">
+              <input
+                ref={upcRef}
+                name="upcEan"
+                className="input flex-1"
+                placeholder="z. B. 4014239201234"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleManualBarcode();
+                  }
+                }}
+                onBlur={() => {
+                  // Optional: beim Verlassen automatisch prüfen, wenn plausibel lang
+                  const val = upcRef.current?.value?.trim() || "";
+                  if (val && (val.length >= 8)) handleManualBarcode();
+                }}
+              />
+              <button
+                type="button"
+                className="px-3 rounded bg-cyan-600 hover:bg-cyan-500 text-black font-semibold"
+                onClick={() => setScannerOpen(true)}
+                title="EAN scannen"
+              >
+                Scanner
+              </button>
+              <button
+                type="button"
+                className="px-3 rounded bg-white/10 hover:bg-white/20 disabled:opacity-60"
+                onClick={handleManualBarcode}
+                title="EAN per Hand übernehmen"
+                disabled={lookupBusy}
+              >
+                {lookupBusy ? "Prüfe …" : "Übernehmen"}
+              </button>
+            </div>
+          </L>
+
+          <L label="Katalognummer">
+            <input name="catalogNumber" className="input" />
+          </L>
+
+          <L label="Zustand*">
+            <select
+              name="condition"
+              className="input"
+              value={condition}
+              onChange={(e) => setCondition(e.target.value)}
+              required
             >
-              Scanner
-            </button>
-          </div>
-        </L>
+              <option value="" disabled>neu / gebraucht / …</option>
+              <option value="neu">Neu</option>
+              <option value="neuwertig">Neuwertig</option>
+              <option value="ok">Gebraucht – ok</option>
+              <option value="gebraucht">Gebraucht</option>
+              <option value="stark">Stark gebraucht</option>
+            </select>
+          </L>
 
-        <L label="Katalognummer">
-          <input name="catalogNumber" className="input" />
-        </L>
+          <L label="Gewicht (g)">
+            <input name="weightGrams" type="number" className="input" value={weight} onChange={(e) => setWeight(e.target.value)} />
+          </L>
+          <L label="SKU">
+            <input name="sku" className="input" />
+          </L>
+          <L label="Bestand (Stück)*">
+            <input
+              name="stock"
+              type="number"
+              min={0}
+              className="input"
+              value={stock}
+              onChange={(e) => setStock(e.target.value)}
+              placeholder="1"
+              required
+            />
+          </L>
+          <L label="Aktiv">
+            <input name="active" type="checkbox" defaultChecked />
+          </L>
+          <L label="Digital?">
+            <input name="isDigital" type="checkbox" />
+          </L>
 
-        <L label="Zustand*">
-          <select
-            name="condition"
-            className="input"
-            value={condition}
-            onChange={(e) => setCondition(e.target.value)}
-            required
+          {/* GENRE */}
+          <L label="Music Genre">
+            <select
+              name="genre"
+              className="input"
+              value={genre}
+              onChange={(e) => setGenre(e.target.value)}
+            >
+              <option value="">– auswählen –</option>
+              {GENRES.map((g) => (
+                <option key={g} value={g}>{g}</option>
+              ))}
+            </select>
+          </L>
+        </div>
+
+        {msg && <div className="text-sm">{msg}</div>
+
+        /* BOTTOM BAR */}
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="submit"
+            disabled={busy}
+            className="px-4 py-2 rounded bg-cyan-500 hover:bg-cyan-400 text-black font-semibold disabled:opacity-60"
           >
-            <option value="" disabled>neu / gebraucht / …</option>
-            <option value="neu">Neu</option>
-            <option value="neuwertig">Neuwertig</option>
-            <option value="ok">Gebraucht – ok</option>
-            <option value="gebraucht">Gebraucht</option>
-            <option value="stark">Stark gebraucht</option>
-          </select>
-        </L>
-
-        <L label="Gewicht (g)">
-          <input name="weightGrams" type="number" className="input" value={weight} onChange={(e) => setWeight(e.target.value)} />
-        </L>
-        <L label="SKU">
-          <input name="sku" className="input" />
-        </L>
-        <L label="Bestand (Stück)*">
-          <input
-            name="stock"
-            type="number"
-            min={0}
-            className="input"
-            value={stock}
-            onChange={(e) => setStock(e.target.value)}
-            placeholder="1"
-            required
-          />
-        </L>
-        <L label="Aktiv">
-          <input name="active" type="checkbox" defaultChecked />
-        </L>
-        <L label="Digital?">
-          <input name="isDigital" type="checkbox" />
-        </L>
-
-        {/* GENRE (Dropdown) */}
-        <L label="Music Genre">
-          <select
-            name="genre"
-            className="input"
-            value={genre}
-            onChange={(e) => setGenre(e.target.value)}
+            {busy ? "Speichere …" : "Speichern"}
+          </button>
+          <a href="/admin/products" className="px-4 py-2 rounded bg-white/10 hover:bg-white/20">
+            Zur Liste
+          </a>
+          <button
+            type="button"
+            onClick={() => setScannerOpen(true)}
+            className="px-3 py-2 rounded bg-white/10 hover:bg-white/20"
+            title="EAN scannen"
           >
-            <option value="">– auswählen –</option>
-            {GENRES.map((g) => (
-              <option key={g} value={g}>{g}</option>
-            ))}
-          </select>
-        </L>
-      </div>
+            Scanner
+          </button>
+          <button
+            type="button"
+            onClick={handleManualBarcode}
+            className="px-3 py-2 rounded bg-white/10 hover:bg-white/20 disabled:opacity-60"
+            title="EAN per Hand übernehmen"
+            disabled={lookupBusy}
+          >
+            {lookupBusy ? "Prüfe …" : "EAN übernehmen"}
+          </button>
+        </div>
 
-      {msg && <div className="text-sm">{msg}</div>}
-
-      <div className="flex gap-2">
-        <button
-          type="submit"
-          disabled={busy}
-          className="px-4 py-2 rounded bg-cyan-500 hover:bg-cyan-400 text-black font-semibold disabled:opacity-60"
-        >
-          {busy ? "Speichere …" : "Speichern"}
-        </button>
-        <a
-          href="/admin/products"
-          className="px-4 py-2 rounded bg-white/10 hover:bg-white/20"
-        >
-          Zur Liste
-        </a>
-      </div>
+        <style jsx>{`
+          .input {
+            width: 100%;
+            border-radius: 0.5rem;
+            padding: 0.5rem 0.75rem;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.12);
+          }
+        `}</style>
+      </form>
 
       {scannerOpen && (
         <BarcodeScanner
@@ -420,17 +538,7 @@ export default function AdminProductForm() {
           formats={["ean_13", "ean_8", "upc_a", "upc_e", "code_128"]}
         />
       )}
-
-      <style jsx>{`
-        .input {
-          width: 100%;
-          border-radius: 0.5rem;
-          padding: 0.5rem 0.75rem;
-          background: rgba(255,255,255,0.05);
-          border: 1px solid rgba(255,255,255,0.12);
-        }
-      `}</style>
-    </form>
+    </div>
   );
 }
 

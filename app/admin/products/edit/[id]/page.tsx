@@ -32,6 +32,7 @@ type Product = {
   image: string;
   images: string[];
   genre?: string | null;
+  stock?: number | null; // ⬅️ NEU: Bestand
 };
 
 export default function AdminEditProductPage({ params }: { params: { id: string } }) {
@@ -122,6 +123,7 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
         image: images[0] || "",
         images,
         genre: strOrNull(fd.get("genre")),
+        stock: numOrNull(fd.get("stock")), // ⬅️ NEU: Bestand mitsenden
       };
 
       const r = await fetch(`/api/admin/products/${id}`, {
@@ -134,7 +136,8 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
       let j: any; try { j = JSON.parse(t); } catch { j = { error: t || "Serverfehler" }; }
       if (!r.ok) throw new Error(j?.error || "Speichern fehlgeschlagen");
 
-      setMsg("Gespeichert ✔");
+      // Direkt zur Liste zurück
+      window.location.href = "/admin/products?updated=1";
     } catch (e: any) {
       setMsg(e?.message || "Fehler");
     } finally {
@@ -181,7 +184,7 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
         process.env.NEXT_PUBLIC_ADMIN_TOKEN ||
         "";
 
-    const r = await fetch(`/api/admin/products/${id}`, {
+      const r = await fetch(`/api/admin/products/${id}`, {
         method: "DELETE",
         headers: { "x-admin-key": adminKey },
       });
@@ -206,7 +209,7 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
         <div className="flex flex-wrap items-center gap-2">
           <a href="/admin/products" className="px-3 py-2 rounded bg-white/10 hover:bg-white/20">Zur Liste</a>
 
-          {/* NEU: Speichern oben */}
+          {/* Speichern oben (kein Scanner im Edit!) */}
           <button
             type="button"
             onClick={submitForm}
@@ -215,15 +218,6 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
           >
             Speichern
           </button>
-
-          {/* NEU: EAN-Scan oben */}
-          <a
-            href="/admin/scanner-test"
-            className="px-3 py-2 rounded bg-white/10 hover:bg-white/20"
-            title="EAN-Code scannen"
-          >
-            EAN scannen
-          </a>
 
           <button
             type="button"
@@ -325,18 +319,30 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
                 ))}
               </select>
             </L>
+
+            {/* ⬅️ NEU: Bestand */}
+            <L label="Bestand (Stück)">
+              <input
+                name="stock"
+                type="number"
+                min={0}
+                defaultValue={p.stock ?? 1}
+                className="input"
+              />
+            </L>
           </div>
 
           {msg && <div className="text-sm">{msg}</div>}
 
-          {/* Untere Buttonleiste */}
+          {/* Untere Buttonleiste (ohne Scanner) */}
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="submit"
               disabled={saving}
               className="px-4 py-2 rounded bg-cyan-500 hover:bg-cyan-400 text-black font-semibold disabled:opacity-60"
+              title="Speichern"
             >
-              {saving ? "Speichere …" : "Speichern"}
+              {saving ? "Speichere …" : "Speichern & Zur Liste"}
             </button>
 
             <a
@@ -345,14 +351,6 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
               title="Zurück zur Liste"
             >
               Zurück zur Liste
-            </a>
-
-            <a
-              href="/admin/scanner-test"
-              className="px-3 py-2 rounded bg-white/10 hover:bg-white/20"
-              title="EAN-Code scannen"
-            >
-              EAN scannen
             </a>
           </div>
 

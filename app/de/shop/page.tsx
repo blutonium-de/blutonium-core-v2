@@ -75,7 +75,7 @@ export default async function ShopPage({
       images: true,
       stock: true,
       genre: true,
-      format: true, // ⬅️ WICHTIG: Format für Card mitliefern
+      format: true, // ⬅️ wichtig für die Card
     },
   });
 
@@ -115,7 +115,7 @@ export default async function ShopPage({
 
           {/* Inhalt */}
           <div className="relative px-4 pt-4 pb-5 md:pt-6 md:pb-8">
-            {/* Logos – auf Mobile oben klein, auf Desktop ausgeblendet (wir zeigen dort die breite Fläche) */}
+            {/* Logos – nur Mobile */}
             <div className="flex items-center justify-between mb-2 md:hidden">
               <img
                 src="/logos/blutonium-records.png"
@@ -176,7 +176,6 @@ export default async function ShopPage({
       </header>
       {/* ======= /RESPONSIVER HERO ======= */}
 
-      {/* (Optional) Bedingter SEO-Block bei Disco/Italo Disco */}
       {(genre === "Disco" || genre === "Italo Disco") && (
         <section className="mb-4 text-center max-w-3xl mx-auto">
           <h2 className="text-2xl md:text-3xl font-extrabold mb-2">
@@ -260,8 +259,14 @@ export default async function ShopPage({
         </a>
       </div>
 
-      {/* Grid */}
-      <div className="mt-5 grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-x-1 gap-y-4 place-items-center">
+      {/* Grid: Handy 2 Spalten, ab sm: dein Auto-Fill-Grid */}
+      <div
+        className="
+          mt-5 grid grid-cols-2 gap-x-2 gap-y-4 place-items-stretch
+          sm:[grid-template-columns:repeat(auto-fill,minmax(200px,1fr))]
+          sm:gap-x-1 sm:place-items-center
+        "
+      >
         {products.map((p) => (
           <ProductCard key={p.id} p={p as any} />
         ))}
