@@ -16,22 +16,18 @@ function format2(n: number) {
 
 function Buttons({ total }: { total: number }) {
   const [{ isPending }] = usePayPalScriptReducer();
-  const value = useMemo(() => format2(total), [total]);
+
+  // ⚡️ Fix: Immer 9.00 EUR für Test
+  const value = useMemo(() => format2(9), [total]);
 
   return (
     <>
       {isPending && <div className="text-sm opacity-70">PayPal lädt…</div>}
 
       <PayPalButtons
-        // Nur der gelbe PayPal-Button (kein „Pay Later“, keine Karten)
         fundingSource={FUNDING.PAYPAL}
-        // etwas robusteres Styling
         style={{ layout: 'horizontal', label: 'paypal', shape: 'rect', height: 45 }}
-
-        // PayPal soll rerendern, wenn Betrag/Currency wechselt
         forceReRender={[value, 'EUR']}
-
-        // 1) Order auf UNSEREM Server erstellen (stabiler, besseres Logging)
         createOrder={async () => {
           try {
             const r = await fetch('/api/paypal/create-order', {
@@ -40,7 +36,7 @@ function Buttons({ total }: { total: number }) {
               cache: 'no-store',
               body: JSON.stringify({
                 amountEUR: Number(value),
-                description: 'Blutonium Records Bestellung',
+                description: 'Blutonium Records Testbestellung',
               }),
             });
             const j = await r.json().catch(() => ({}));
@@ -52,8 +48,6 @@ function Buttons({ total }: { total: number }) {
             throw err;
           }
         }}
-
-        // 2) Order auf UNSEREM Server capturen
         onApprove={async (data) => {
           try {
             const orderID = data.orderID!;
@@ -64,7 +58,6 @@ function Buttons({ total }: { total: number }) {
             const j = await r.json().catch(() => ({}));
             if (!r.ok) throw new Error(j?.error || 'capture-order fehlgeschlagen');
 
-            // Warenkorb leeren & Success
             try { localStorage.removeItem('cart'); } catch {}
             window.location.href = '/de/checkout/success?paypal=1';
           } catch (err: any) {
@@ -72,17 +65,10 @@ function Buttons({ total }: { total: number }) {
             alert(err?.message || 'PayPal Capture fehlgeschlagen.');
           }
         }}
-
-        onCancel={() => {
-          // optional: zurück zur Checkout-Seite (bereits der Fall)
-        }}
-
         onError={(err) => {
           console.error('PayPal onError', err);
           alert('PayPal-Zahlung konnte nicht gestartet werden. Bitte erneut versuchen.');
         }}
-
-        // Schutz: bei 0€ deaktivieren
         disabled={Number(value) <= 0}
       />
     </>
@@ -91,19 +77,30 @@ function Buttons({ total }: { total: number }) {
 
 export default function PayPalCheckout({ total }: { total: number }) {
   const clientId = (process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID || '').trim();
+  const disabled = (process.env.NEXT_PUBLIC_PAYPAL_DISABLED || '') === '1';
+
+  // Wenn kein Client ID vorhanden → gar nichts rendern
   if (!clientId) return null;
+
+  // Temporär deaktiviert: Hinweis statt Button
+  if (disabled) {
+    return (
+      <div className="mt-3 text-sm opacity-70">
+        PayPal-Zahlung ist vorübergehend deaktiviert.
+      </div>
+    );
+  }
 
   return (
     <PayPalScriptProvider
       options={{
         clientId,
         currency: 'EUR',
-        intent: 'capture',                      // klein schreiben
-        commit: true,                           // „Jetzt zahlen“ Fluss
-        components: 'buttons',                  // explizit nur Buttons laden
-        'disable-funding': 'card,paylater,venmo', // nur PayPal zulassen
+        intent: 'capture',
+        commit: true,
+        components: 'buttons',
+        'disable-funding': 'card,paylater,venmo',
         'data-sdk-integration-source': 'react-paypal-js',
-        // unbekannte Felder werden vom SDK ignoriert – daher kein "debug" hier
       } as any}
     >
       <Buttons total={total} />
