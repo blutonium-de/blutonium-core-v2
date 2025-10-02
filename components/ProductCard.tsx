@@ -52,6 +52,9 @@ export default function ProductCard({ p }: { p: Product }) {
   const addedTimer = useRef<number | null>(null);
   const [slide, setSlide] = useState(0);
 
+  // Share-Menü
+  const [menuOpen, setMenuOpen] = useState(false);
+
   const title =
     p.productName ||
     [p.artist, p.trackTitle].filter(Boolean).join(" – ") ||
@@ -64,17 +67,57 @@ export default function ProductCard({ p }: { p: Product }) {
     return arr.filter(Boolean);
   }, [p.images, p.image]);
 
+  function productUrl() {
+    const base =
+      (typeof window !== "undefined" ? window.location.origin : "") ||
+      (process.env.NEXT_PUBLIC_BASE_URL || "");
+    return `${base}/de/shop/${p.slug}`;
+  }
+
+  async function shareSystem() {
+    const url = productUrl();
+    const text = `Schau dir das mal an: ${title} – ${url}`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title, text, url });
+      } else {
+        await copyLink();
+      }
+    } catch {
+      // abgebrochen/Fehler ignorieren
+    } finally {
+      setMenuOpen(false);
+    }
+  }
+
+  async function copyLink() {
+    const url = productUrl();
+    try {
+      await navigator.clipboard.writeText(url);
+      alert("Link kopiert ✅");
+    } catch {
+      prompt("Link kopieren:", url);
+    } finally {
+      setMenuOpen(false);
+    }
+  }
+
+  function shareWhatsApp() {
+    const url = productUrl();
+    const text = `Schau dir das mal an: ${title} – ${url}`;
+    const href = `https://wa.me/?text=${encodeURIComponent(text)}`;
+    window.open(href, "_blank", "noopener,noreferrer");
+    setMenuOpen(false);
+  }
+
   function addToCart() {
     if (soldOut) return;
-
     const max = Math.max(0, p.stock ?? 1);
     const cart = readCart();
     const cur = Math.max(0, Number(cart[p.id]?.qty || 0));
     const nextQty = Math.min(max, cur + 1);
-
     cart[p.id] = { ...(cart[p.id] || {}), qty: nextQty, price: p.priceEUR };
     writeCart(cart);
-
     setAdded(true);
     if (addedTimer.current) window.clearTimeout(addedTimer.current);
     addedTimer.current = window.setTimeout(() => setAdded(false), 1500);
@@ -106,8 +149,19 @@ export default function ProductCard({ p }: { p: Product }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, gallery.length]);
 
+  // Close Share-Menü bei Klick außerhalb
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = (e: MouseEvent) => {
+      const el = e.target as HTMLElement;
+      if (!el.closest?.("[data-share-root]")) setMenuOpen(false);
+    };
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, [menuOpen]);
+
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.06] hover:bg-white/[0.08] transition p-3 w-full sm:w-[200px]">
+    <div className="rounded-2xl border border-white/10 bg-white/[0.06] hover:bg-white/[0.08] transition p-3 w-full sm:w-[200px] relative">
       <div className="sr-only" aria-live="polite">
         {added ? `${title} zum Warenkorb hinzugefügt` : ""}
       </div>
@@ -191,17 +245,68 @@ export default function ProductCard({ p }: { p: Product }) {
           {soldOut ? "Nicht verfügbar" : added ? "Hinzugefügt ✓" : "In den Warenkorb"}
         </button>
 
-        {!soldOut && added && (
-          <div className="mt-2 text-[11px]">
-            <Link href="/de/cart" className="underline underline-offset-2 opacity-90 hover:opacity-100">
-              Zum Warenkorb →
-            </Link>
-          </div>
-        )}
+        {/* Lagerbestand links – Share-Menü rechts */}
+        <div className="mt-1 flex items-center justify-between text-[11px]">
+          {!soldOut && typeof p.stock === "number" ? (
+            <div className="opacity-70">Lagerbestand: {p.stock}</div>
+          ) : <span />}
+          {/* Share Trigger (Pfeil-Icon) */}
+          <div className="relative" data-share-root>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); }}
+              className="inline-flex items-center gap-2 rounded px-2 py-1 bg-white/10 hover:bg-white/20"
+              title="Teilen"
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+            >
+              {/* Pfeil-Teilen Icon (YouTube-Style) */}
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                className="shrink-0"
+                aria-hidden="true"
+              >
+                <path
+                  d="M13 5l6 6-6 6v-4H9a6 6 0 0 1-6-6V6h2v1a4 4 0 0 0 4 4h4V5z"
+                  fill="currentColor"
+                />
+              </svg>
+              <span className="hidden sm:inline">Teilen</span>
+            </button>
 
-        {!soldOut && typeof p.stock === "number" && (
-          <div className="mt-1 text-[11px] opacity-70">Lagerbestand: {p.stock}</div>
-        )}
+            {menuOpen && (
+              <div
+                role="menu"
+                className="absolute right-0 bottom-7 z-20 w-44 rounded-xl border border-white/10 bg-black/90 shadow-lg backdrop-blur p-1"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  role="menuitem"
+                  className="w-full text-left px-3 py-2 rounded hover:bg-white/10 text-sm"
+                  onClick={shareSystem}
+                >
+                  System-Teilen …
+                </button>
+                <button
+                  role="menuitem"
+                  className="w-full text-left px-3 py-2 rounded hover:bg-white/10 text-sm"
+                  onClick={shareWhatsApp}
+                >
+                  WhatsApp
+                </button>
+                <button
+                  role="menuitem"
+                  className="w-full text-left px-3 py-2 rounded hover:bg-white/10 text-sm"
+                  onClick={copyLink}
+                >
+                  Link kopieren
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {open && (

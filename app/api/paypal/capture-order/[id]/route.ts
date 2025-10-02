@@ -1,41 +1,24 @@
-// app/api/paypal/capture-order/[id]/route.ts
 import { NextResponse } from "next/server";
-import { paypalApi } from "@/lib/paypal"; // <-- FIX: vier ../
+import { paypalApi } from "@/lib/paypal";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function POST(
-  _req: Request,
-  { params }: { params: { id: string } }
-) {
+export async function POST(_req: Request, { params }: { params: { id: string } }) {
   try {
-    const orderId = params?.id;
-    if (!orderId || typeof orderId !== "string") {
-      return NextResponse.json({ error: "missing or invalid id" }, { status: 400 });
-    }
+    const id = params?.id;
+    if (!id) return NextResponse.json({ error: "missing id" }, { status: 400 });
+    console.log("[PP][capture]", id); // ← ADD
 
-    // PayPal Capture Request
-    const capture = await paypalApi(`/v2/checkout/orders/${orderId}/capture`, {
-      method: "POST",
-      body: JSON.stringify({}),
-    });
+    const capture = await paypalApi(`/v2/checkout/orders/${id}/capture`, { method: "POST", body: JSON.stringify({}) });
 
-    // Wichtig: Hier solltest du noch persistieren:
-    // - Bestellung speichern
-    // - Lagerbestand reduzieren
-    // - E-Mail-Bestätigung an Käufer senden
-    // ähnlich wie beim Stripe-Webhook
+    const pu = capture?.purchase_units?.[0];
+    const cap = pu?.payments?.captures?.[0];
+    console.log("[PP][capture] response", { status: capture?.status, captureStatus: cap?.status, capId: cap?.id, details: cap?.status_details || capture?.details }); // ← ADD
 
-    return NextResponse.json(
-      { ok: true, id: orderId, capture },
-      { status: 200 }
-    );
+    return NextResponse.json({ ok: true, capture }, { status: 200 });
   } catch (e: any) {
-    console.error("[paypal capture-order]", e);
-    return NextResponse.json(
-      { error: e?.message || "server error" },
-      { status: 500 }
-    );
+    console.error("[PP][capture] ERROR", e?.message || e, e?.stack); // ← ADD
+    return NextResponse.json({ error: e?.message || "server error" }, { status: 500 });
   }
 }

@@ -91,6 +91,19 @@ export default function AdminProductForm() {
     await lookupByBarcode(code);
   }
 
+  // ⬇️ NEW: Defaults aus Query-Params (z. B. /admin/new?category=dvd&format=DVD)
+  useEffect(() => {
+    try {
+      const sp = new URLSearchParams(window.location.search);
+      const cat = (sp.get("category") || "").trim().toLowerCase();
+      const fmt = (sp.get("format") || "").trim();
+      if (cat && ["bv","sv","bcd","scd","bhs","ss","dvd","bd"].includes(cat)) {
+        setCategory(cat);
+      }
+      if (fmt) setFormat(fmt);
+    } catch {}
+  }, []);
+
   // Cmd/Ctrl+S = Speichern
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -280,6 +293,9 @@ export default function AdminProductForm() {
     <div className="space-y-6">
       {/* TOP BAR (fixiert) */}
       <div className="sticky top-16 z-30 bg-black/70 backdrop-blur border border-white/10 rounded-xl px-3 py-2 flex flex-wrap items-center gap-2">
+        <a href="/admin" className="px-3 py-2 rounded bg-white/10 hover:bg-white/20">
+          Zum Admin
+        </a>
         <a href="/admin/products" className="px-3 py-2 rounded bg-white/10 hover:bg-white/20">
           Zur Liste
         </a>
@@ -376,11 +392,20 @@ export default function AdminProductForm() {
               <option value="scd">Sonstige CDs</option>
               <option value="bhs">Blutonium Hardstyle Samples</option>
               <option value="ss">Sonstiges & Specials</option>
+              {/* ⬇️ NEW */}
+              <option value="dvd">DVDs</option>
+              <option value="bd">Blu-ray</option>
             </select>
           </L>
 
           <L label="Format">
-            <input name="format" className="input" placeholder="z. B. Vinyl 12''" value={format} onChange={(e) => setFormat(e.target.value)} />
+            <input
+              name="format"
+              className="input"
+              placeholder="z. B. DVD, Blu-ray oder Vinyl 12''"
+              value={format}
+              onChange={(e) => setFormat(e.target.value)}
+            />
           </L>
           <L label="Jahr">
             <input name="year" type="number" className="input" />
@@ -400,7 +425,6 @@ export default function AdminProductForm() {
                   }
                 }}
                 onBlur={() => {
-                  // Optional: beim Verlassen automatisch prüfen, wenn plausibel lang
                   const val = upcRef.current?.value?.trim() || "";
                   if (val && (val.length >= 8)) handleManualBarcode();
                 }}
@@ -487,10 +511,16 @@ export default function AdminProductForm() {
           </L>
         </div>
 
-        {msg && <div className="text-sm">{msg}</div>
+        {msg && <div className="text-sm">{msg}</div>}
 
-        /* BOTTOM BAR */}
+        {/* BOTTOM BAR */}
         <div className="flex flex-wrap items-center gap-2">
+          <a href="/admin" className="px-4 py-2 rounded bg-white/10 hover:bg-white/20">
+            Zum Admin
+          </a>
+          <a href="/admin/products" className="px-4 py-2 rounded bg-white/10 hover:bg-white/20">
+            Zur Liste
+          </a>
           <button
             type="submit"
             disabled={busy}
@@ -498,9 +528,6 @@ export default function AdminProductForm() {
           >
             {busy ? "Speichere …" : "Speichern"}
           </button>
-          <a href="/admin/products" className="px-4 py-2 rounded bg-white/10 hover:bg-white/20">
-            Zur Liste
-          </a>
           <button
             type="button"
             onClick={() => setScannerOpen(true)}

@@ -21,6 +21,7 @@ export default function NavBar({ children }: Props) {
     { href: `${base}/releases`, label: "Releases" },
     { href: `${base}/artists`,  label: "Artists & Booking" },
     { href: `${base}/shop`,     label: "Shop" },
+    { href: `${base}/shop/dvds`, label: "Gebrauchte DVDs" },   // 👈 NEU
     { href: `${base}/videos`,   label: "Videos" },
   ]
 

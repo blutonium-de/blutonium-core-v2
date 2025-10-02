@@ -1,6 +1,6 @@
 // app/api/paypal/create-order/route.ts
 import { NextResponse } from "next/server";
-import { paypalApi } from "@/lib/paypal"; // <-- FIX: vier ../
+import { paypalApi } from "@/lib/paypal";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,7 +13,6 @@ type CreateOrderBody = {
 function sanitizeAmount(v: unknown): number | null {
   const n = Number(v);
   if (!Number.isFinite(n) || n <= 0) return null;
-  // Runde auf 2 Nachkommastellen (PayPal erwartet Dezimalstring mit Punkt)
   return Math.round(n * 100) / 100;
 }
 
@@ -34,7 +33,6 @@ export async function POST(req: Request) {
     const desc =
       (typeof payload.description === "string" ? payload.description : "Order").slice(0, 127);
 
-    // Optionale Felder für ein etwas schöneres PayPal-UI
     const brand = process.env.NEXT_PUBLIC_SITE_NAME || "Blutonium Records";
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "";
 
@@ -42,7 +40,7 @@ export async function POST(req: Request) {
       intent: "CAPTURE",
       purchase_units: [
         {
-          reference_id: `PU-${Date.now()}`, // optional, für spätere Nachverfolgung
+          reference_id: `PU-${Date.now()}`,
           amount: { currency_code: "EUR", value: amount.toFixed(2) },
           description: desc,
         },
@@ -51,24 +49,35 @@ export async function POST(req: Request) {
         brand_name: brand,
         locale: "de-DE",
         user_action: "PAY_NOW",
-        // Diese URLs sind nur relevant, wenn du den Approval-Flow via Redirect nutzt (nicht rein im Popup),
-        // schaden aber nicht:
         return_url: `${baseUrl}/de/checkout/success?paypal=1`,
         cancel_url: `${baseUrl}/de/checkout?paypal_cancel=1`,
       },
     };
 
+    // wichtig: vollständige Repräsentation anfordern
     const json = await paypalApi("/v2/checkout/orders", {
       method: "POST",
+      headers: {
+        Prefer: "return=representation",
+        "PayPal-Request-Id": `ord-${Date.now()}`, // idempotent (optional, hilfreich beim Debuggen)
+      },
       body: JSON.stringify(body),
     });
 
-    const approveUrl =
-      (Array.isArray(json?.links) ? json.links : []).find((l: any) => l?.rel === "approve")?.href;
+    const approveUrl = Array.isArray(json?.links)
+      ? json.links.find((l: any) => l?.rel === "approve")?.href
+      : undefined;
 
-    return NextResponse.json({ id: json?.id, approveUrl }, { status: 200 });
+    if (!json?.id) {
+      // Wenn PayPal ok, aber ohne Body geliefert hat → als Fehler behandeln
+      return NextResponse.json(
+        { error: "Missing order id in PayPal response", raw: json },
+        { status: 502 }
+      );
+    }
+
+    return NextResponse.json({ id: json.id, approveUrl }, { status: 200 });
   } catch (e: any) {
-    // paypalApi wirft bereits mit detailierter Message; wir reichen sie nur durch
     console.error("[paypal create-order]", e);
     return NextResponse.json({ error: e?.message || "server error" }, { status: 500 });
   }

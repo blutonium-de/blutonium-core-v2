@@ -1,58 +1,70 @@
 // next.config.mjs
 /** @type {import('next').NextConfig} */
+const isProd = process.env.NODE_ENV === "production";
+
+const PAYPAL_FRAMES = [
+  "https://www.paypal.com",
+  "https://*.paypal.com",
+];
+const PAYPAL_SCRIPTS = [
+  "https://www.paypal.com",
+  "https://*.paypal.com",
+  "https://*.paypalobjects.com",
+];
+const PAYPAL_CONNECT = [
+  "https://api-m.paypal.com",
+  "https://*.paypal.com",
+  "https://*.paypalobjects.com",
+];
+
+// In Dev zusätzlich Sandbox zulassen
+if (!isProd) {
+  PAYPAL_FRAMES.push("https://www.sandbox.paypal.com");
+  PAYPAL_SCRIPTS.push("https://www.sandbox.paypal.com");
+  PAYPAL_CONNECT.push("https://api-m.sandbox.paypal.com");
+}
+
 const nextConfig = {
-  // ⬅️ WICHTIG: zwingt Server-Build, verhindert Static Export (der die Errors erzeugt)
-  output: "standalone",
-
-  // optional, schadet nicht – verhindert, dass ESLint einen CI-Build abbricht
+  output: "standalone",       // ok; auf Vercel wird es ignoriert, schadet aber nicht
   eslint: { ignoreDuringBuilds: true },
-
-  // good default
   reactStrictMode: true,
 
   async redirects() {
     return [
-      // ► Einsprachig: Alles auf DE
       { source: "/", destination: "/de", permanent: true },
       { source: "/en", destination: "/de", permanent: true },
       { source: "/en/:path*", destination: "/de/:path*", permanent: true },
-
-      // Einheitliche DE-Pfade
       { source: "/releases", destination: "/de/releases", permanent: true },
       { source: "/videos",   destination: "/de/videos",   permanent: true },
-
-      // Shop-Routen (alt -> neu)
       { source: "/merchandise",    destination: "/de/shop", permanent: true },
       { source: "/shop",           destination: "/de/shop", permanent: true },
       { source: "/de/merchandise", destination: "/de/shop", permanent: true },
-
-      // Samples-Altlinks → Shop
       { source: "/samples",    destination: "/de/shop", permanent: true },
       { source: "/de/samples", destination: "/de/shop", permanent: true },
-
-      // Admin
       { source: "/de/admin", destination: "/admin", permanent: true },
     ];
   },
 
   async headers() {
-    const csp = [
+    const cspParts = [
       "default-src 'self'",
       "base-uri 'self'",
       "object-src 'none'",
       "frame-ancestors 'self'",
 
-      // Scripts (Next, Tailwind, PayPal, Stripe)
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.paypal.com https://*.paypalobjects.com https://js.stripe.com",
-      "script-src-elem 'self' 'unsafe-inline' 'unsafe-eval' https://*.paypal.com https://*.paypalobjects.com https://js.stripe.com",
+      // Scripts (Next, PayPal, Stripe)
+      `script-src 'self' 'unsafe-inline' 'unsafe-eval' ${PAYPAL_SCRIPTS.join(" ")} https://js.stripe.com`,
+      `script-src-elem 'self' 'unsafe-inline' 'unsafe-eval' ${PAYPAL_SCRIPTS.join(" ")} https://js.stripe.com`,
 
-      // Frames (PayPal, Stripe, optional YouTube)
-      "frame-src 'self' https://*.paypal.com https://js.stripe.com https://checkout.stripe.com https://hooks.stripe.com https://www.youtube.com https://www.youtube-nocookie.com",
+      // Frames (PayPal, Stripe, YouTube)
+      `frame-src 'self' ${PAYPAL_FRAMES.join(" ")} https://js.stripe.com https://checkout.stripe.com https://hooks.stripe.com https://www.youtube.com https://www.youtube-nocookie.com`,
+      // Optionaler Compat-Alias
+      `child-src 'self' ${PAYPAL_FRAMES.join(" ")} https://js.stripe.com https://checkout.stripe.com https://hooks.stripe.com https://www.youtube.com https://www.youtube-nocookie.com`,
 
       // XHR/fetch
-      "connect-src 'self' https://*.paypal.com https://*.paypalobjects.com https://api.stripe.com",
+      `connect-src 'self' ${PAYPAL_CONNECT.join(" ")} https://api.stripe.com`,
 
-      // Images (local, data, Spotify, PayPal, YouTube thumbs)
+      // Images
       "img-src 'self' data: blob: https://i.scdn.co https://*.paypalobjects.com https://i.ytimg.com https://img.youtube.com https://yt3.ggpht.com",
 
       // Styles/Fonts
@@ -61,7 +73,9 @@ const nextConfig = {
 
       // Workers
       "worker-src 'self' blob:",
-    ].join("; ");
+    ];
+
+    const csp = cspParts.join("; ");
 
     return [
       {
