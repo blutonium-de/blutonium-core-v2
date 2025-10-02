@@ -16,11 +16,11 @@ type ProductPayload = {
   slug: string;
   productName?: string;
   subtitle?: string;
-  artist?: string;          // hier nutzen wir „Regie“ als Artist-Feld
-  trackTitle?: string;      // optional: kann leer bleiben
+  artist?: string;          // Regie wird im artist-Feld gespeichert
+  trackTitle?: string;      // bei DVDs leer
   priceEUR: number;
   currency?: string;
-  categoryCode: string;     // "dvd" | "bd" | …
+  categoryCode: string;     // "dvd" | "bray"
   format?: string;
   year?: number;
   upcEan?: string;
@@ -47,9 +47,9 @@ export default function AdminDvdForm() {
 
   const [productName, setProductName] = useState("");      // Filmtitel
   const [director, setDirector] = useState("");            // als artist speichern
-  const [category, setCategory] = useState("dvd");         // Default: DVDs
+  const [category, setCategory] = useState<"dvd"|"bray">("dvd"); // final: dvd | bray
   const [format, setFormat] = useState("DVD");
-  const [weight, setWeight] = useState<string>("90");      // typische Hülle ~90g
+  const [weight, setWeight] = useState<string>("90");      // typische DVD-Hülle ~90g
   const [condition, setCondition] = useState<string>("");
   const [stock, setStock] = useState<string>("1");
   const [genre, setGenre] = useState<string>("");
@@ -89,15 +89,17 @@ export default function AdminDvdForm() {
     if (productName && !slugInput.value) slugInput.value = toSlug(productName);
   }, [productName, slugTouched]);
 
-  // Barcode-Lookup (DVD)
+  // --- DVD/BR Lookup --------------------------------------------------------
+  const isBlu = (v?: string | null) => !!v && /blu[- ]?ray/i.test(v);
+
   async function lookupByBarcode(code: string) {
     if (!code || lookupBusy) return;
     setLookupBusy(true);
-    setMsg(null);
+    setMsg("Suche Metadaten …");
     try {
       const r = await fetch(`/api/utils/lookup-dvd?barcode=${encodeURIComponent(code)}`, { cache: "no-store" });
       const text = await r.text();
-      let j: any; try { j = JSON.parse(text); } catch { j = { error: text || "Lookup Antwort ungültig" }; }
+      let j: any; try { j = JSON.parse(text); } catch { j = { error: text || "Lookup-Antwort ungültig" }; }
 
       if (!r.ok) {
         setMsg(j?.error || "Kein Treffer");
@@ -106,7 +108,12 @@ export default function AdminDvdForm() {
 
       if (j.title) setProductName(j.title);
       if (j.director) setDirector(j.director);
-      if (j.format) setFormat(j.format);
+
+      if (j.format) {
+        setFormat(j.format);
+        setCategory(isBlu(j.format) ? "bray" : "dvd"); // auto-set Kategorie
+      }
+
       if (j.year) {
         const y = document.querySelector<HTMLInputElement>('input[name="year"]');
         if (y) y.value = String(j.year);
@@ -119,14 +126,14 @@ export default function AdminDvdForm() {
       if (j.cover && images.length === 0) setImages([j.cover]);
 
       const slugInput = document.querySelector<HTMLInputElement>('input[name="slug"]');
-      if (slugInput && !slugTouched && j.title) {
-        const base = `${j.title} ${j.year || ""}`.trim();
+      if (slugInput && !slugTouched && (j.title || j.year)) {
+        const base = `${j.title || ""} ${j.year || ""}`.trim();
         if (!slugInput.value && base) slugInput.value = toSlug(base);
       }
 
       setMsg(`Gefunden (${j.source || "lookup"}) ✔`);
     } catch (e: any) {
-      setMsg(e?.message || "Lookup Fehler");
+      setMsg(e?.message || "Lookup-Fehler");
     } finally {
       setLookupBusy(false);
     }
@@ -138,7 +145,7 @@ export default function AdminDvdForm() {
     lookupByBarcode(code);
   }
 
-  // Submit
+  // --- Submit ---------------------------------------------------------------
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setMsg(null);
@@ -146,14 +153,14 @@ export default function AdminDvdForm() {
     const fd = new FormData(e.currentTarget);
     const payload: ProductPayload = {
       slug: String(fd.get("slug") || "").trim(),
-      productName: productName.trim() || undefined,       // Filmtitel
-      subtitle: strOrNull(fd.get("subtitle")),            // z.B. „Steelbook“, „Extended Cut“
-      artist: director.trim() || undefined,               // als „Artist“ speichern
-      trackTitle: undefined,                               // leer bei DVDs
+      productName: productName.trim() || undefined,
+      subtitle: strOrNull(fd.get("subtitle")),
+      artist: director.trim() || undefined,
+      trackTitle: undefined,
       priceEUR: Number(fd.get("priceEUR") || 0),
       currency: String(fd.get("currency") || "EUR"),
       categoryCode: String(fd.get("categoryCode") || category),
-      format: format.trim() || undefined,                 // „DVD“, „Blu-ray“
+      format: format.trim() || undefined,
       year: numOrNull(fd.get("year")),
       upcEan: strOrNull(fd.get("upcEan")),
       catalogNumber: strOrNull(fd.get("catalogNumber")),
@@ -163,8 +170,8 @@ export default function AdminDvdForm() {
       sku: strOrNull(fd.get("sku")),
       stock: Math.max(0, Number(stock) || 1),
       active: fd.get("active") === "on",
-      image: images[0] || String(fd.get("image") || ""),
-      images: images.length ? images : safeJsonArray(String(fd.get("imagesJson") || "[]")),
+      image: images[0] || "",
+      images,
       genre: genre || undefined,
     };
 
@@ -211,9 +218,18 @@ export default function AdminDvdForm() {
       <div className="sticky top-16 z-30 bg-black/70 backdrop-blur border border-white/10 rounded-xl px-3 py-2 flex flex-wrap items-center gap-2">
         <a href="/admin" className="px-3 py-2 rounded bg-white/10 hover:bg-white/20">Zum Admin</a>
         <a href="/admin/dvds" className="px-3 py-2 rounded bg-white/10 hover:bg-white/20">DVD-Liste</a>
-        <button type="button" onClick={requestSave} className="px-3 py-2 rounded bg-cyan-500 hover:bg-cyan-400 text-black font-semibold" title="Speichern (⌘/Ctrl+S)">Speichern</button>
-        <button type="button" onClick={() => setScannerOpen(true)} className="px-3 py-2 rounded bg-white/10 hover:bg-white/20">Scanner</button>
-        <button type="button" onClick={() => { const code = upcRef.current?.value?.trim(); if (code) lookupByBarcode(code); }} className="px-3 py-2 rounded bg-white/10 hover:bg-white/20 disabled:opacity-60" disabled={lookupBusy}>
+        <button type="button" onClick={requestSave}
+          className="px-3 py-2 rounded bg-cyan-500 hover:bg-cyan-400 text-black font-semibold" title="Speichern (⌘/Ctrl+S)">
+          Speichern
+        </button>
+        <button type="button" onClick={() => setScannerOpen(true)}
+          className="px-3 py-2 rounded bg-white/10 hover:bg-white/20">
+          Scanner
+        </button>
+        <button type="button"
+          onClick={() => { const code = upcRef.current?.value?.trim(); if (code) lookupByBarcode(code); }}
+          className="px-3 py-2 rounded bg-white/10 hover:bg-white/20 disabled:opacity-60"
+          disabled={lookupBusy}>
           {lookupBusy ? "Prüfe …" : "EAN übernehmen"}
         </button>
         {msg && <span className="ml-auto text-sm opacity-80">{msg}</span>}
@@ -223,10 +239,7 @@ export default function AdminDvdForm() {
         <ImageDrop
           max={5}
           initial={[]}
-          onChange={(arr, names) => {
-            setImages(arr);
-            setFilenames(names || []);
-          }}
+          onChange={(arr, names) => { setImages(arr); setFilenames(names || []); }}
         />
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -251,9 +264,9 @@ export default function AdminDvdForm() {
           </L>
 
           <L label="Kategorie*">
-            <select name="categoryCode" className="input" value={category} onChange={(e) => setCategory(e.target.value)} required>
+            <select name="categoryCode" className="input" value={category} onChange={(e) => setCategory(e.target.value as "dvd"|"bray")} required>
               <option value="dvd">DVD</option>
-              <option value="bd">Blu-ray</option>
+              <option value="bray">Blu-ray</option>
             </select>
           </L>
 

@@ -132,5 +132,6 @@ model DvdMeta {
   format    String?  // "DVD" | "Blu-ray" | ...
   edition   String?
   cover     String?
+  createdAt DateTime @default(now())   // neu ⬅️
   updatedAt DateTime @updatedAt
 }
