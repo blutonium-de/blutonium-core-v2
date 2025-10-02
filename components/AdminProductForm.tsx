@@ -1,4 +1,3 @@
-// components/AdminProductForm.tsx
 "use client";
 
 import { useEffect, useRef, useState } from "react";
@@ -6,10 +5,16 @@ import { useRouter } from "next/navigation";
 import ImageDrop from "./ImageDrop";
 import BarcodeScanner from "./BarcodeScanner";
 
-const GENRES = [
+const MUSIC_GENRES = [
   "Hardstyle","Techno","Trance","House","Reggae","Pop","Film",
   "Dance","Hörspiel","Jazz","Klassik","Country",
   "Italo Disco","Disco","EDM","Hip Hop",
+] as const;
+
+const MOVIE_GENRES = [
+  "Action","Abenteuer","Animation","Biografie","Dokumentation","Drama","Fantasy",
+  "Historie","Horror","Komödie","Krimi","Mystery","Romanze","Sci-Fi",
+  "Sport","Thriller","Western","Kriegsfilm","Familie",
 ] as const;
 
 type ProductPayload = {
@@ -36,7 +41,12 @@ type ProductPayload = {
   genre?: string | null;
 };
 
-export default function AdminProductForm() {
+type Props = {
+  /** music = Discogs-Flow, dvd = OMDb/TMDb-Flow */
+  media?: "music" | "dvd";
+};
+
+export default function AdminProductForm({ media = "music" }: Props) {
   const router = useRouter();
 
   const [busy, setBusy] = useState(false);
@@ -48,8 +58,8 @@ export default function AdminProductForm() {
   const [productName, setProductName] = useState("");
   const [artist, setArtist] = useState("");
   const [trackTitle, setTrackTitle] = useState("");
-  const [category, setCategory] = useState("sv"); // Default
-  const [format, setFormat] = useState("");
+  const [category, setCategory] = useState(media === "dvd" ? "dvd" : "sv");
+  const [format, setFormat] = useState(media === "dvd" ? "DVD" : "");
   const [weight, setWeight] = useState<string>("");
   const [condition, setCondition] = useState<string>("");
   const [stock, setStock] = useState<string>("1");
@@ -91,19 +101,6 @@ export default function AdminProductForm() {
     await lookupByBarcode(code);
   }
 
-  // ⬇️ NEW: Defaults aus Query-Params (z. B. /admin/new?category=dvd&format=DVD)
-  useEffect(() => {
-    try {
-      const sp = new URLSearchParams(window.location.search);
-      const cat = (sp.get("category") || "").trim().toLowerCase();
-      const fmt = (sp.get("format") || "").trim();
-      if (cat && ["bv","sv","bcd","scd","bhs","ss","dvd","bd"].includes(cat)) {
-        setCategory(cat);
-      }
-      if (fmt) setFormat(fmt);
-    } catch {}
-  }, []);
-
   // Cmd/Ctrl+S = Speichern
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -117,8 +114,9 @@ export default function AdminProductForm() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // Produktname → Artist/Track splitten (nur wenn leer)
+  // Produktname → Artist/Track splitten (nur für Musik sinnvoll)
   useEffect(() => {
+    if (media !== "music") return;
     if (!productName || artist || trackTitle) return;
     const parts = productName.split(/\s[-–—]\s|[-–—]/);
     if (parts.length >= 2) {
@@ -129,12 +127,14 @@ export default function AdminProductForm() {
         setTrackTitle(t);
       }
     }
-  }, [productName, artist, trackTitle]);
+  }, [productName, artist, trackTitle, media]);
 
-  // Vinyl → Gewicht auto
+  // Auto-Gewicht: Vinyl 150g, DVD/BD 90g
   useEffect(() => {
     const isVinyl = category === "bv" || category === "sv" || /vinyl|lp/i.test(format);
+    const isDisc  = category === "dvd" || category === "bd" || /blu[-\s]?ray|dvd/i.test(format);
     if (isVinyl && !weight) setWeight("150");
+    if (isDisc  && !weight) setWeight("90");
   }, [category, format, weight]);
 
   // Slug automatisch vorbelegen
@@ -144,15 +144,15 @@ export default function AdminProductForm() {
 
     const baseName =
       productName ||
-      (artist && trackTitle ? `${artist} – ${trackTitle}` : "") ||
+      (media === "music" && artist && trackTitle ? `${artist} – ${trackTitle}` : "") ||
       "";
 
     if (baseName && !slugInput.value) {
       slugInput.value = toSlug(baseName);
     }
-  }, [artist, trackTitle, productName, slugTouched]);
+  }, [artist, trackTitle, productName, slugTouched, media]);
 
-  // Gebraucht-Vinyl & kein Preis → 9.90
+  // Gebraucht-Vinyl & kein Preis → 9.90 (bleibt)
   useEffect(() => {
     const isVinyl = category === "bv" || category === "sv" || /vinyl|lp/i.test(format);
     const usedConditions = ["ok", "gebraucht", "stark"];
@@ -169,7 +169,8 @@ export default function AdminProductForm() {
     setLookupBusy(true);
     setMsg(null);
     try {
-      const r = await fetch(`/api/utils/lookup?barcode=${encodeURIComponent(code)}`, { cache: "no-store" });
+      // Medien-Hint für dein Backend: music | dvd
+      const r = await fetch(`/api/utils/lookup?barcode=${encodeURIComponent(code)}&media=${media}`, { cache: "no-store" });
       const text = await r.text();
       let j: any; try { j = JSON.parse(text); } catch { j = { error: text || "Lookup Antwort ungültig" }; }
 
@@ -178,27 +179,34 @@ export default function AdminProductForm() {
         return;
       }
 
-      if (j.artist) setArtist(j.artist);
-      if (j.title) {
-        setTrackTitle(j.title);
-        if (!productName) setProductName(`${j.artist ? j.artist + " – " : ""}${j.title}`);
+      if (media === "music") {
+        if (j.artist) setArtist(j.artist);
+        if (j.title) {
+          setTrackTitle(j.title);
+          if (!productName) setProductName(`${j.artist ? j.artist + " – " : ""}${j.title}`);
+        }
+        if (j.format) setFormat(j.format);
+      } else {
+        // DVD/BD: Felder typischer Movie-APIs (Beispiele: Title, Year, Genre, Director, Poster)
+        if (j.title && !productName) setProductName(j.title);
+        if (j.genre && !genre) setGenre(String(j.genre).split(",")[0]?.trim() || "");
+        if (j.year) {
+          const y = document.querySelector<HTMLInputElement>('input[name="year"]');
+          if (y) y.value = String(j.year);
+        }
+        if (j.format) setFormat(j.format); // z.B. "DVD" / "Blu-ray"
       }
-      if (j.format) setFormat(j.format);
 
       if (j.catno) {
         const cat = document.querySelector<HTMLInputElement>('input[name="catalogNumber"]');
         if (cat) cat.value = j.catno;
-      }
-      if (j.year) {
-        const y = document.querySelector<HTMLInputElement>('input[name="year"]');
-        if (y) y.value = String(j.year);
       }
 
       if (j.cover && images.length === 0) setImages([j.cover]);
 
       const slugInput = document.querySelector<HTMLInputElement>('input[name="slug"]');
       if (slugInput && !slugTouched && (j.artist || j.title)) {
-        const base = `${j.artist || ""} ${j.title || ""} ${j.year || ""}`.trim();
+        const base = `${j.title || ""} ${j.year || ""}`.trim();
         const slug = base
           .toLowerCase()
           .normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
@@ -207,7 +215,7 @@ export default function AdminProductForm() {
         if (!slugInput.value && slug) slugInput.value = slug;
       }
 
-      setMsg(`Gefunden (${j.source}) ✔`);
+      setMsg(`Gefunden (${j.source || (media === "dvd" ? "MovieDB" : "Discogs")}) ✔`);
     } catch (e: any) {
       setMsg(e?.message || "Lookup Fehler");
     } finally {
@@ -233,11 +241,11 @@ export default function AdminProductForm() {
       slug: String(fd.get("slug") || "").trim(),
       productName: productName.trim() || undefined,
       subtitle: strOrNull(fd.get("subtitle")),
-      artist: artist.trim() || undefined,
-      trackTitle: trackTitle.trim() || undefined,
+      artist: media === "music" ? (artist.trim() || undefined) : undefined,
+      trackTitle: media === "music" ? (trackTitle.trim() || undefined) : undefined,
       priceEUR: Number(fd.get("priceEUR") || 0),
       currency: String(fd.get("currency") || "EUR"),
-      categoryCode: category,
+      categoryCode: String(fd.get("categoryCode") || (media === "dvd" ? "dvd" : "ss")),
       format: format.trim() || undefined,
       year: numOrNull(fd.get("year")),
       upcEan: strOrNull(fd.get("upcEan")),
@@ -246,11 +254,11 @@ export default function AdminProductForm() {
       weightGrams: weight ? Number(weight) : undefined,
       isDigital: fd.get("isDigital") === "on",
       sku: strOrNull(fd.get("sku")),
-      stock: Math.max(0, Number(stock) || 1),
+      stock: Math.max(0, Number(fd.get("stock") || stock) || 1),
       active: fd.get("active") === "on",
       image: images[0] || String(fd.get("image") || ""),
       images: images.length ? images : safeJsonArray(String(fd.get("imagesJson") || "[]")),
-      genre: genre || undefined,
+      genre: genre || strOrNull(fd.get("genre")) || undefined,
     };
 
     if (!payload.slug) return setMsg("Slug ist Pflicht.");
@@ -276,18 +284,22 @@ export default function AdminProductForm() {
       try { formRef.current?.reset(); } catch {}
       setImages([]); setFilenames([]);
       setProductName(""); setArtist(""); setTrackTitle("");
-      setCategory("sv"); setFormat(""); setWeight("");
-      setCondition(""); setSlugTouched(false); setStock("1");
+      setCategory(media === "dvd" ? "dvd" : "sv"); setFormat(media === "dvd" ? "DVD" : "");
+      setWeight(""); setCondition(""); setSlugTouched(false); setStock("1");
       setGenre(""); if (priceRef.current) priceRef.current.value = "";
 
       setMsg("Gespeichert ✔");
-      router.push("/admin/products");
+      // zurück in die passende Liste
+      if (media === "dvd") router.push("/admin/dvds");
+      else router.push("/admin/products");
     } catch (err: any) {
       setMsg(err?.message || "Fehler");
     } finally {
       setBusy(false);
     }
   }
+
+  const GENRES = media === "dvd" ? MOVIE_GENRES : MUSIC_GENRES;
 
   return (
     <div className="space-y-6">
@@ -296,7 +308,7 @@ export default function AdminProductForm() {
         <a href="/admin" className="px-3 py-2 rounded bg-white/10 hover:bg-white/20">
           Zum Admin
         </a>
-        <a href="/admin/products" className="px-3 py-2 rounded bg-white/10 hover:bg-white/20">
+        <a href={media === "dvd" ? "/admin/dvds" : "/admin/products"} className="px-3 py-2 rounded bg-white/10 hover:bg-white/20">
           Zur Liste
         </a>
         <button
@@ -338,7 +350,7 @@ export default function AdminProductForm() {
             if ((!artist && !trackTitle && !productName) && names && names[0]) {
               const base = names[0].replace(/\.[a-z0-9]+$/i, "").trim();
               const generic = /^photo[-_]\d+$/i.test(base) || /^\d+$/.test(base);
-              if (!generic) {
+              if (!generic && media === "music") {
                 const parts = base.split(/\s[-–—]\s|[-–—]/);
                 if (parts.length >= 2) {
                   const a = parts[0]?.trim();
@@ -349,6 +361,8 @@ export default function AdminProductForm() {
                     setProductName(`${a} – ${t}`);
                   }
                 }
+              } else if (!generic && media === "dvd") {
+                setProductName(base);
               }
             }
           }}
@@ -359,23 +373,34 @@ export default function AdminProductForm() {
             <input
               name="slug"
               className="input"
-              placeholder="z. B. artist-title-2024"
+              placeholder={media === "dvd" ? "z. B. film-titel-2003" : "z. B. artist-title-2024"}
               onInput={() => setSlugTouched(true)}
               required
             />
           </L>
-          <L label="Produktname (optional)">
-            <input className="input" value={productName} onChange={(e) => setProductName(e.target.value)} placeholder="Artist – Titel" />
+          <L label={media === "dvd" ? "Filmtitel" : "Produktname (optional)"}>
+            <input
+              className="input"
+              value={productName}
+              onChange={(e) => setProductName(e.target.value)}
+              placeholder={media === "dvd" ? "z. B. The Matrix" : "Artist – Titel"}
+            />
           </L>
+
           <L label="Subtitle">
-            <input name="subtitle" className="input" placeholder="zusätzliche Info" />
+            <input name="subtitle" className="input" placeholder={media === "dvd" ? "Edition / Regisseur / FSK" : "zusätzliche Info"} />
           </L>
-          <L label="Artist">
-            <input className="input" value={artist} onChange={(e) => setArtist(e.target.value)} />
-          </L>
-          <L label="TrackTitle">
-            <input className="input" value={trackTitle} onChange={(e) => setTrackTitle(e.target.value)} />
-          </L>
+
+          {media === "music" && (
+            <>
+              <L label="Artist">
+                <input className="input" value={artist} onChange={(e) => setArtist(e.target.value)} />
+              </L>
+              <L label="TrackTitle">
+                <input className="input" value={trackTitle} onChange={(e) => setTrackTitle(e.target.value)} />
+              </L>
+            </>
+          )}
 
           <L label="Preis (EUR)*">
             <input ref={priceRef} name="priceEUR" type="number" step="0.01" min="0" className="input" required />
@@ -385,15 +410,22 @@ export default function AdminProductForm() {
           </L>
 
           <L label="Kategorie-Code*">
-            <select name="categoryCode" className="input" value={category} onChange={(e) => setCategory(e.target.value)} required>
+            <select
+              name="categoryCode"
+              className="input"
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              required
+            >
+              {/* Musik */}
               <option value="bv">Blutonium Vinyls</option>
               <option value="sv">Sonstige Vinyls</option>
               <option value="bcd">Blutonium CDs</option>
               <option value="scd">Sonstige CDs</option>
               <option value="bhs">Blutonium Hardstyle Samples</option>
               <option value="ss">Sonstiges & Specials</option>
-              {/* ⬇️ NEW */}
-              <option value="dvd">DVDs</option>
+              {/* Filme */}
+              <option value="dvd">DVD</option>
               <option value="bd">Blu-ray</option>
             </select>
           </L>
@@ -402,7 +434,7 @@ export default function AdminProductForm() {
             <input
               name="format"
               className="input"
-              placeholder="z. B. DVD, Blu-ray oder Vinyl 12''"
+              placeholder={media === "dvd" ? "z. B. DVD / Blu-ray" : "z. B. Vinyl 12''"}
               value={format}
               onChange={(e) => setFormat(e.target.value)}
             />
@@ -496,7 +528,7 @@ export default function AdminProductForm() {
           </L>
 
           {/* GENRE */}
-          <L label="Music Genre">
+          <L label={media === "dvd" ? "Film-Genre" : "Music Genre"}>
             <select
               name="genre"
               className="input"
@@ -518,7 +550,7 @@ export default function AdminProductForm() {
           <a href="/admin" className="px-4 py-2 rounded bg-white/10 hover:bg-white/20">
             Zum Admin
           </a>
-          <a href="/admin/products" className="px-4 py-2 rounded bg-white/10 hover:bg-white/20">
+          <a href={media === "dvd" ? "/admin/dvds" : "/admin/products"} className="px-4 py-2 rounded bg-white/10 hover:bg-white/20">
             Zur Liste
           </a>
           <button

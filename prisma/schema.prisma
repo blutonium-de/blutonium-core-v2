@@ -16,7 +16,7 @@ model Product {
 
   productName   String?
   subtitle      String?
-  artist        String?
+  artist        String?               // bei DVDs: Regie
   trackTitle    String?
 
   priceEUR      Float
@@ -26,12 +26,12 @@ model Product {
   images        Json     @default(dbgenerated("'[]'::jsonb")) // ← default []
 
   // NEU ⤵︎
-  genre         String?  @db.VarChar(50)   // z.B. "Hardstyle", "Techno", ...
+  genre         String?  @db.VarChar(50)   // z.B. "Hardstyle", "Techno", ... / bei DVDs: "Action", ...
 
-  categoryCode  String
+  categoryCode  String                 // z.B. "bv","sv","bcd","scd","bhs","ss","dvd","bd"
   format        String?
   year          Int?
-  upcEan        String?
+  upcEan        String?                // EAN/UPC (bei DVDs wichtig fürs Lookup)
   catalogNumber String?
   condition     String?
 
@@ -49,6 +49,9 @@ model Product {
   // 🔎 hilfreiche Indizes für Shop-Listen/Filter
   @@index([active, stock, categoryCode, createdAt])
   @@index([categoryCode, createdAt])
+
+  // 🔎 NEU: schneller Barcode-Lookup (nicht unique, falls Varianten gleichen EAN nutzen)
+  @@index([upcEan])
 }
 
 model Order {
@@ -114,4 +117,20 @@ model PageView {
   @@index([path, createdAt])
   @@index([createdAt])
   @@index([ipHash, createdAt])
+}
+
+/**
+ * Optional: Cache-Tabelle für DVD/BR-Barcode-Metadaten
+ * Wird vom /api/utils/lookup-dvd zuerst abgefragt.
+ */
+model DvdMeta {
+  ean       String   @id
+  title     String?
+  year      Int?
+  director  String?
+  genre     String?
+  format    String?  // "DVD" | "Blu-ray" | ...
+  edition   String?
+  cover     String?
+  updatedAt DateTime @updatedAt
 }

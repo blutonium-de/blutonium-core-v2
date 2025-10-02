@@ -44,6 +44,23 @@ export default function AdminHome() {
           </div>
         </Link>
 
+        {/* NEU: DVDs / Blu-rays */}
+        <Link
+          href="/admin/dvds"
+          className="group rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition-colors p-6 block"
+        >
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold">DVDs / Blu-rays</h2>
+            <span className="text-2xl">🎬</span>
+          </div>
+          <p className="mt-2 opacity-70">
+            Eigene Liste und schneller Barcode-Import speziell für Filme.
+          </p>
+          <div className="mt-4 inline-flex items-center gap-2 text-cyan-400 group-hover:underline">
+            Öffnen <span>→</span>
+          </div>
+        </Link>
+
         {/* NEU: Analytics */}
         <Link
           href="/admin/analytics"
