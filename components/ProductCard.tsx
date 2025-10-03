@@ -19,6 +19,7 @@ type Product = {
   stock?: number;
   genre?: string | null;
   format?: string | null;
+  fsk?: string | null; // ← NEU
 };
 
 type CartMap = Record<string, { qty: number; price?: number }>;
@@ -66,6 +67,13 @@ export default function ProductCard({ p }: { p: Product }) {
     const arr = Array.isArray(p.images) && p.images.length > 0 ? p.images : [p.image];
     return arr.filter(Boolean);
   }, [p.images, p.image]);
+
+  // FSK "16" aus "FSK 16" extrahieren
+  const fskNum = useMemo(() => {
+    const s = (p.fsk || "").toString();
+    const m = s.match(/\d{1,2}/);
+    return m ? m[0] : null;
+  }, [p.fsk]);
 
   function productUrl() {
     const base =
@@ -188,7 +196,8 @@ export default function ProductCard({ p }: { p: Product }) {
               Ausverkauft
             </div>
           )}
-          <div className="pointer-events-none absolute right-2 top-2 rounded-full bg-black/60 px-1.5 py-0.5 text-[10px]">
+          {/* ❌ FSK im Bild entfernt */}
+          <div className="pointer-events-none absolute right-2 bottom-2 rounded-full bg-black/60 px-1.5 py-0.5 text-[10px]">
             Vergrößern
           </div>
         </div>
@@ -224,8 +233,17 @@ export default function ProductCard({ p }: { p: Product }) {
           Format: {p.format?.trim() || "—"}
         </div>
 
+        {/* 💶 Preis links — FSK rechts (direkt über dem Button) */}
         <div className="mt-2 flex items-center justify-between gap-2">
           <div className="font-semibold text-sm">{p.priceEUR.toFixed(2)} €</div>
+          {fskNum && (
+            <img
+              src={`/fsk/fsk-${fskNum}.png`}
+              alt={`FSK ${fskNum}`}
+              className="h-6 w-6 rounded-sm"
+              loading="lazy"
+            />
+          )}
         </div>
 
         <button
@@ -250,7 +268,6 @@ export default function ProductCard({ p }: { p: Product }) {
           {!soldOut && typeof p.stock === "number" ? (
             <div className="opacity-70">Lagerbestand: {p.stock}</div>
           ) : <span />}
-          {/* Share Trigger (Pfeil-Icon) */}
           <div className="relative" data-share-root>
             <button
               type="button"
@@ -260,18 +277,8 @@ export default function ProductCard({ p }: { p: Product }) {
               aria-haspopup="menu"
               aria-expanded={menuOpen}
             >
-              {/* Pfeil-Teilen Icon (YouTube-Style) */}
-              <svg
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                className="shrink-0"
-                aria-hidden="true"
-              >
-                <path
-                  d="M13 5l6 6-6 6v-4H9a6 6 0 0 1-6-6V6h2v1a4 4 0 0 0 4 4h4V5z"
-                  fill="currentColor"
-                />
+              <svg width="18" height="18" viewBox="0 0 24 24" className="shrink-0" aria-hidden="true">
+                <path d="M13 5l6 6-6 6v-4H9a6 6 0 0 1-6-6V6h2v1a4 4 0 0 0 4 4h4V5z" fill="currentColor"/>
               </svg>
               <span className="hidden sm:inline">Teilen</span>
             </button>
@@ -282,25 +289,13 @@ export default function ProductCard({ p }: { p: Product }) {
                 className="absolute right-0 bottom-7 z-20 w-44 rounded-xl border border-white/10 bg-black/90 shadow-lg backdrop-blur p-1"
                 onClick={(e) => e.stopPropagation()}
               >
-                <button
-                  role="menuitem"
-                  className="w-full text-left px-3 py-2 rounded hover:bg-white/10 text-sm"
-                  onClick={shareSystem}
-                >
+                <button role="menuitem" className="w-full text-left px-3 py-2 rounded hover:bg-white/10 text-sm" onClick={shareSystem}>
                   System-Teilen …
                 </button>
-                <button
-                  role="menuitem"
-                  className="w-full text-left px-3 py-2 rounded hover:bg-white/10 text-sm"
-                  onClick={shareWhatsApp}
-                >
+                <button role="menuitem" className="w-full text-left px-3 py-2 rounded hover:bg-white/10 text-sm" onClick={shareWhatsApp}>
                   WhatsApp
                 </button>
-                <button
-                  role="menuitem"
-                  className="w-full text-left px-3 py-2 rounded hover:bg-white/10 text-sm"
-                  onClick={copyLink}
-                >
+                <button role="menuitem" className="w-full text-left px-3 py-2 rounded hover:bg-white/10 text-sm" onClick={copyLink}>
                   Link kopieren
                 </button>
               </div>
@@ -330,41 +325,18 @@ export default function ProductCard({ p }: { p: Product }) {
 
             {gallery.length > 1 && (
               <>
-                <button
-                  type="button"
-                  onClick={prev}
-                  className="absolute left-2 top-1/2 -translate-y-1/2 rounded bg-white/80 hover:bg-white text-black px-2 py-1"
-                  aria-label="Vorheriges Bild"
-                >
-                  ‹
-                </button>
-                <button
-                  type="button"
-                  onClick={next}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded bg-white/80 hover:bg-white text-black px-2 py-1"
-                  aria-label="Nächstes Bild"
-                >
-                  ›
-                </button>
-
+                <button type="button" onClick={prev} className="absolute left-2 top-1/2 -translate-y-1/2 rounded bg-white/80 hover:bg-white text-black px-2 py-1" aria-label="Vorheriges Bild">‹</button>
+                <button type="button" onClick={next} className="absolute right-2 top-1/2 -translate-y-1/2 rounded bg-white/80 hover:bg-white text-black px-2 py-1" aria-label="Nächstes Bild">›</button>
                 <div className="mt-3 flex items-center justify-center gap-2">
                   {gallery.map((src, i) => (
                     <button
                       key={`${src}-${i}`}
                       type="button"
                       onClick={() => setSlide(i)}
-                      className={`h-12 w-12 rounded overflow-hidden border ${
-                        i === slide ? "border-cyan-400" : "border-white/20"
-                      }`}
+                      className={`h-12 w-12 rounded overflow-hidden border ${i === slide ? "border-cyan-400" : "border-white/20"}`}
                       title={`Bild ${i + 1}`}
                     >
-                      <img
-                        src={src}
-                        alt={`Thumb ${i + 1}`}
-                        className="h-full w-full object-cover"
-                        height={48}
-                        width={48}
-                      />
+                      <img src={src} alt={`Thumb ${i + 1}`} className="h-full w-full object-cover" height={48} width={48}/>
                     </button>
                   ))}
                 </div>

@@ -1,4 +1,4 @@
-// components/MoviesGridClient.tsx
+// components/ShopGridClient.tsx
 "use client";
 
 import { useEffect, useState } from "react";
@@ -9,51 +9,54 @@ const PAGE_SIZE = 50 as const;
 type Prod = {
   id: string;
   slug: string;
-  productName?: string | null;
   artist?: string | null;
   trackTitle?: string | null;
+  productName?: string | null;
+  subtitle?: string | null;
+  categoryCode: string;
+  condition?: string | null;
   priceEUR: number;
   image: string;
   images?: string[];
   stock?: number | null;
   genre?: string | null;
   format?: string | null;
-  categoryCode: string;
-  fsk?: string | null;
 };
 
-export default function MoviesGridClient({
+export default function ShopGridClient({
   initial,
   q,
   genre,
-  type,
+  cat,
 }: {
   initial: Prod[];
   q: string;
   genre: string;
-  type: "all" | "dvd" | "bd";  // ⬅️ "bd" statt "bray"
+  cat: string; // "", "bv", ...
 }) {
-  const [items, setItems] = useState<Prod[]>(initial || []);
+  // --- State ---
+  const [items, setItems]   = useState<Prod[]>(initial || []);
   const [offset, setOffset] = useState<number>(initial.length || 0);
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState<boolean>((initial?.length || 0) < PAGE_SIZE);
 
-  // ✅ State-Reset bei Filterwechsel (kein manuelles Reload mehr nötig)
+  // ✅ Reset bei Filterwechsel (kein Refresh nötig)
   useEffect(() => {
     setItems(initial || []);
-    setOffset(initial.length || 0);
+    setOffset(initial?.length || 0);
     setDone((initial?.length || 0) < PAGE_SIZE);
-  }, [initial, q, genre, type]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q, genre, cat, JSON.stringify(initial?.map?.((p) => p.id))]);
 
   async function loadMore() {
     if (loading || done) return;
     setLoading(true);
     try {
       const qs = new URLSearchParams();
-      const cat = type === "dvd" ? "dvd" : type === "bd" ? "bray" : "dvd,bray"; // ⬅️ map "bd" → "bray"
+      // Vinyl/CD only – wenn cat leer => alle 6 Shop-Kategorien
+      qs.set("cat", cat ? cat : "bv,sv,bcd,scd,bhs,ss");
       qs.set("limit", String(PAGE_SIZE));
       qs.set("offset", String(offset));
-      qs.set("cat", cat);
       if (q) qs.set("q", q);
       if (genre) qs.set("genre", genre);
 
@@ -61,24 +64,26 @@ export default function MoviesGridClient({
       const t = await r.text();
       let j: any; try { j = JSON.parse(t); } catch { j = t; }
       if (!r.ok) throw new Error((j && j.error) || "Fehler beim Laden");
+      const next: Prod[] = Array.isArray(j?.items) ? j.items : [];
 
-      const next: Prod[] = Array.isArray(j) ? j : Array.isArray(j?.items) ? j.items : [];
       setItems((prev) => [...prev, ...next]);
       setOffset((o) => o + next.length);
       if (next.length < PAGE_SIZE) setDone(true);
+    } catch {
+      // optional: Fehlermeldung
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="mt-8">
-      {/* Abstand wie Vinyl/CD Seite */}
+    <div className="mt-6">
+      {/* Enges Grid – wie auf der Vinyl-Seite */}
       <div
         className="
-          grid grid-cols-2 gap-x-2 gap-y-4 place-items-stretch
-          sm:[grid-template-columns:repeat(auto-fill,minmax(200px,1fr))]
-          sm:gap-x-1 sm:place-items-center
+          grid grid-cols-2 gap-x-2 gap-y-3
+          sm:[grid-template-columns:repeat(auto-fill,minmax(180px,1fr))]
+          sm:gap-x-2 sm:gap-y-3
         "
       >
         {items.map((p) => (

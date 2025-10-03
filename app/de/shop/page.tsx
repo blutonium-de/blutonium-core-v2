@@ -1,9 +1,34 @@
 // app/de/shop/page.tsx
-import ProductCard from "../../../components/ProductCard";
-import { prisma } from "../../../lib/db";
-import type { CSSProperties } from "react";
+import Image from "next/image";
+import Link from "next/link";
+import ProductCard from "@/components/ProductCard";
+import { FREE_SHIPPING_EUR } from "@/lib/shop-config";
+import ShopGridClient from "@/components/ShopGridClient";
 
 export const dynamic = "force-dynamic";
+
+type Prod = {
+  id: string;
+  slug: string;
+  artist?: string | null;
+  trackTitle?: string | null;
+  productName?: string | null;
+  subtitle?: string | null;
+  categoryCode: string;
+  condition?: string | null;
+  priceEUR: number;
+  image: string;
+  images?: string[];
+  stock?: number | null;
+  genre?: string | null;
+  format?: string | null;
+};
+
+const GENRES = [
+  "Hardstyle","Techno","Trance","House","Reggae","Pop","Film",
+  "Dance","Hörspiel","Jazz","Klassik","Country",
+  "Italo Disco","Disco","EDM","Hip Hop",
+] as const;
 
 const CATS = [
   { code: "",    label: "Alle" },
@@ -15,285 +40,155 @@ const CATS = [
   { code: "ss",  label: "Sonstiges & Specials" },
 ];
 
-const GENRES = [
-  "Hardstyle","Techno","Trance","House","Reggae","Pop","Film",
-  "Dance","Hörspiel","Jazz","Klassik","Country",
-  "Italo Disco","Disco","EDM","Hip Hop",
-] as const;
+function abs(path: string) {
+  const base = (process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000").replace(/\/+$/, "");
+  return new URL(path, base + "/").toString();
+}
 
-const PAGE_SIZE = 60;
+function buildQuery(next: Record<string, string | undefined>, cur: URLSearchParams) {
+  const s = new URLSearchParams(cur);
+  Object.entries(next).forEach(([k, v]) => {
+    if (v == null || v === "") s.delete(k);
+    else s.set(k, v);
+  });
+  return `?${s.toString()}`;
+}
+
+async function fetchInitial(params: { q?: string; genre?: string; cat?: string }) {
+  const qs = new URLSearchParams();
+  // Vinyl/CD only – KEINE dvd/bray
+  qs.set("cat", params.cat ? params.cat : "bv,sv,bcd,scd,bhs,ss");
+  qs.set("limit", "50");
+  qs.set("offset", "0");
+  if (params.q) qs.set("q", params.q);
+  if (params.genre) qs.set("genre", params.genre);
+
+  const res = await fetch(abs(`/api/public/products?${qs.toString()}`), { cache: "no-store" });
+  const text = await res.text();
+  let j: any; try { j = JSON.parse(text); } catch { j = text; }
+  if (!res.ok) throw new Error((j && j.error) || "Fehler beim Laden");
+  const items: Prod[] = Array.isArray(j?.items) ? j.items : [];
+  return items;
+}
 
 export default async function ShopPage({
   searchParams,
 }: {
-  searchParams?: { cat?: string; q?: string; genre?: string; page?: string };
+  searchParams?: { q?: string; genre?: string; cat?: string };
 }) {
-  const cat   = (searchParams?.cat || "").toLowerCase();
   const q     = (searchParams?.q || "").trim();
   const genre = (searchParams?.genre || "").trim();
-  const page  = Math.max(1, parseInt(searchParams?.page || "1", 10) || 1);
+  const cat   = (searchParams?.cat || "").trim(); // leer = Alle
 
-  const where: any = {
-    active: true,
-    stock: { gt: 0 },
-    ...(cat ? { categoryCode: cat } : {}),
-    ...(genre ? { genre } : {}),
-  };
+  const cur = new URLSearchParams();
+  if (q) cur.set("q", q);
+  if (genre) cur.set("genre", genre);
+  if (cat) cur.set("cat", cat);
 
-  if (q) {
-    where.OR = [
-      { slug:          { contains: q, mode: "insensitive" } },
-      { productName:   { contains: q, mode: "insensitive" } },
-      { artist:        { contains: q, mode: "insensitive" } },
-      { trackTitle:    { contains: q, mode: "insensitive" } },
-      { subtitle:      { contains: q, mode: "insensitive" } },
-      { upcEan:        { contains: q, mode: "insensitive" } },
-      { catalogNumber: { contains: q, mode: "insensitive" } },
-      { sku:           { contains: q, mode: "insensitive" } },
-    ];
-  }
-
-  const total = await prisma.product.count({ where });
-
-  const products = await prisma.product.findMany({
-    where,
-    orderBy: { createdAt: "desc" },
-    take: PAGE_SIZE,
-    skip: (page - 1) * PAGE_SIZE,
-    select: {
-      id: true,
-      slug: true,
-      artist: true,
-      trackTitle: true,
-      productName: true,
-      subtitle: true,
-      categoryCode: true,
-      condition: true,
-      year: true,
-      priceEUR: true,
-      image: true,
-      images: true,
-      stock: true,
-      genre: true,
-      format: true, // ⬅️ wichtig für die Card
-    },
-  });
-
-  const hasMore = page * PAGE_SIZE < total;
-
-  const linkWith = (patch: Partial<{ cat: string; q: string; genre: string; page: number }>) => {
-    const params = new URLSearchParams();
-    const next = { cat, q, genre, page, ...patch };
-    if (next.cat) params.set("cat", next.cat);
-    if (next.q) params.set("q", next.q);
-    if (next.genre) params.set("genre", next.genre);
-    if (next.page && next.page > 1) params.set("page", String(next.page));
-    const qs = params.toString();
-    return qs ? `?${qs}` : "/de/shop";
-  };
-
-  const tapFix: CSSProperties = {
-    WebkitTapHighlightColor: "transparent",
-    WebkitTouchCallout: "none",
-    backgroundImage: "none",
-  };
+  const initial = await fetchInitial({ q, genre, cat });
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-2">
-      {/* ======= RESPONSIVER HERO ======= */}
-      <header className="mb-4 text-center -mt-3 md:-mt-4">
-        <div className="relative mx-auto max-w-7xl overflow-hidden rounded-2xl">
-          {/* Hintergrund */}
-          <div
-            className="absolute inset-0 bg-cover bg-no-repeat"
-            style={{
-              backgroundImage: "url(/shop/shophero.png)",
-              backgroundPosition: "center 0.5cm",
-            }}
-          />
-          <div className="absolute inset-0 bg-black/35" />
+    <div className="max-w-7xl mx-auto px-4 py-10">
+      {/* Hero – im Stil der DVD-Seite */}
+      <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04]">
+        <div className="grid grid-cols-1 md:grid-cols-[2fr_1fr] gap-4 md:gap-6 items-center">
+          <div className="p-6 md:p-8">
+            <h1 className="text-3xl sm:text-4xl font-extrabold">Blutonium Records Online Shop</h1>
+            <p className="mt-2 text-white/80">
+              Gebrauchte Vinyls! 12&quot; Maxi Singles, Compilations, Alben, Maxi CDs und div. Specials zum fairen Preis.
+            </p>
 
-          {/* Inhalt */}
-          <div className="relative px-4 pt-4 pb-5 md:pt-6 md:pb-8">
-            {/* Logos – nur Mobile */}
-            <div className="flex items-center justify-between mb-2 md:hidden">
-              <img
-                src="/logos/blutonium-records.png"
-                alt="Blutonium Records"
-                className="h-12 w-auto invert"
-              />
-              <img
-                src="/logos/blutonium-media.png"
-                alt="Blutonium Media"
-                className="h-12 w-auto invert"
-              />
+            <div className="mt-3 inline-flex items-center gap-2 rounded-lg border border-emerald-400/50 bg-emerald-400/10 px-3 py-1.5 text-emerald-200 text-sm">
+              <span aria-hidden>🚚</span>
+              <span>
+                <strong>Versandkostenfrei ab {FREE_SHIPPING_EUR.toFixed(0)} €</strong> (AT & EU) – wird im Checkout automatisch berücksichtigt.
+              </span>
             </div>
 
-            {/* Headline */}
-            <h1 className="text-[28px] sm:text-[32px] md:text-[44px] font-extrabold tracking-tight text-white drop-shadow-lg">
-              Blutonium Records Shop
-            </h1>
-
             {/* Suche */}
-            <form className="w-full max-w-xl mx-auto mt-2 flex gap-2">
-              {cat ? <input type="hidden" name="cat" value={cat} /> : null}
-              {genre ? <input type="hidden" name="genre" value={genre} /> : null}
-              {page > 1 ? <input type="hidden" name="page" value="1" /> : null}
+            <form className="mt-5 flex gap-2" action="">
               <input
+                type="search"
                 name="q"
+                placeholder="Suchen (Artist, Titel, EAN, Katalog …)"
                 defaultValue={q}
-                placeholder="Suche nach Artist, Titel, EAN, Katalognummer …"
-                className="flex-1 rounded-lg px-3 py-2 bg-white/90 text-black border border-white/20 text-sm"
+                className="flex-1 rounded-lg px-3 py-2 bg-white/5 border border-white/10"
               />
+              <input type="hidden" name="genre" value={genre} />
+              <input type="hidden" name="cat" value={cat} />
               <button
-                className="px-4 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-black font-semibold text-sm"
                 type="submit"
+                className="px-4 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-black font-semibold"
               >
                 Suchen
               </button>
             </form>
 
-            {/* Subline */}
-            <div className="mt-3 md:mt-4">
-              <h2 className="text-base sm:text-lg md:text-2xl font-bold text-white drop-shadow text-center">
-                Herzlich Willkommen in unserem Online Shop!
-              </h2>
-              <p className="mt-1 text-[12px] sm:text-[13px] md:text-[15px] max-w-3xl mx-auto text-white/90 text-center leading-snug">
-                <span className="font-semibold">
-                  Hier findest Du absolute Raritäten • Neu &amp; Gebraucht
-                </span>
-                <br className="hidden sm:block" />
-                <span className="sm:inline block">
-                  12&quot; Vinyl DJ Maxi Singles • CD Maxis • CD Compilations • CD Alben • Vinyl Alben
-                </span>
-                <br className="hidden sm:block" />
-                und natürlich seltene Blutonium Records CDs &amp; Vinyls, die dir
-                noch in deiner Sammlung vielleicht fehlen!
-              </p>
+            <div className="mt-3 text-[13px] text-white/70">
+              Tipp: Nutze die Genre-Buttons, um schneller zu filtern.
             </div>
           </div>
+
+          {/* rechtes Logo */}
+          <div className="relative h-56 md:h-72 lg:h-80 grid place-items-center p-6">
+            <img
+              src="/blutonium-records-shop-logo.png"
+              alt="Blutonium Records Shop"
+              className="max-h-64 w-auto object-contain"
+              loading="eager"
+            />
+          </div>
         </div>
-      </header>
-      {/* ======= /RESPONSIVER HERO ======= */}
+      </div>
 
-      {(genre === "Disco" || genre === "Italo Disco") && (
-        <section className="mb-4 text-center max-w-3xl mx-auto">
-          <h2 className="text-2xl md:text-3xl font-extrabold mb-2">
-            Disco 12&quot; Maxi Vinyls (1980–2010) – gebraucht &amp; selten
-          </h2>
-          <p className="text-sm md:text-base text-white/80 leading-relaxed">
-            Willkommen bei Blutonium Records – deinem Shop für originale{" "}
-            <strong>12&quot; Disco Maxi-Singles aus den Jahren 1980 bis 2010</strong>.
-            Klassiker aus <strong>Disco, Italo Disco, Funk und Eurodance</strong>,
-            gebraucht &amp; geprüft in top Qualität. <br />
-            <span className="font-semibold">✔ Weltweiter Versand ✔ Sammlerstücke ✔ Raritäten für DJs</span>
-          </p>
-        </section>
-      )}
-
-      {/* Genres */}
-      <div className="mb-5 flex items-center justify-center gap-2 overflow-x-auto whitespace-nowrap px-1">
-        <a
-          href={linkWith({ genre: "", page: 1 })}
-          style={tapFix}
-          className={`px-3 py-1 rounded-full text-xs border transition select-none ${
-            !genre
-              ? "bg-white text-black border-white"
-              : "bg-white/10 border-white/20 hover:bg-white/20"
+      {/* Genre-Filter (ohne „Genre:“ Label, DVD-Stil) */}
+      <div className="mt-6 flex flex-wrap items-center gap-2">
+        <Link
+          href={buildQuery({ genre: undefined }, cur)}
+          className={`px-2.5 py-1 rounded border text-xs ${
+            !genre ? "border-cyan-400 text-cyan-200 bg-cyan-400/10" : "border-white/15 hover:bg-white/10"
           }`}
         >
           Alle Genres
-        </a>
+        </Link>
         {GENRES.map((g) => (
-          <a
+          <Link
             key={g}
-            href={linkWith({ genre: g, page: 1 })}
-            style={tapFix}
-            className={`px-3 py-1 rounded-full text-xs border transition select-none ${
-              genre === g
-                ? "bg-white text-black border-white"
-                : "bg-white/10 border-white/20 hover:bg-white/20"
+            href={buildQuery({ genre: g }, cur)}
+            className={`px-2.5 py-1 rounded border text-xs ${
+              genre === g ? "border-cyan-400 text-cyan-200 bg-cyan-400/10" : "border-white/15 hover:bg-white/10"
             }`}
-            title={`Genre: ${g}`}
           >
             {g}
-          </a>
+          </Link>
         ))}
       </div>
 
-      {/* Kategorien */}
-      <div className="flex flex-wrap gap-2 justify-center">
-        {CATS.map((c) => {
-          const href = linkWith({ cat: c.code, page: 1 });
-          const active = c.code === (cat || "");
-          return (
-            <a
-              key={c.code || "all"}
-              href={href}
-              style={tapFix}
-              className={`px-3 py-1 rounded-lg border transition text-sm select-none ${
-                active
-                  ? "bg-[rgba(255,140,0,0.9)] text-black border-[rgba(255,140,0,0.9)]"
-                  : "bg-[rgba(255,140,0,0.12)] border-[rgba(255,140,0,0.25)] hover:bg-[rgba(255,140,0,0.2)]"
-              }`}
-            >
-              {c.label}
-            </a>
-          );
-        })}
-      </div>
-
-      {/* Grid: Handy 2 Spalten, ab sm: dein Auto-Fill-Grid */}
-      <div
-        className="
-          mt-5 grid grid-cols-2 gap-x-2 gap-y-4 place-items-stretch
-          sm:[grid-template-columns:repeat(auto-fill,minmax(200px,1fr))]
-          sm:gap-x-1 sm:place-items-center
-        "
-      >
-        {products.map((p) => (
-          <ProductCard key={p.id} p={p as any} />
-        ))}
-      </div>
-
-      {products.length === 0 && (
-        <p className="text-center mt-8 opacity-70 text-sm">
-          Keine Produkte gefunden
-          {q ? ` für „${q}“` : ""}{genre ? ` im Genre „${genre}“` : ""}.
-        </p>
-      )}
-
-      {hasMore && (
-        <div className="flex justify-center mt-8">
-          <a
-            href={linkWith({ page: page + 1 })}
-            style={tapFix}
-            className="px-4 py-2 rounded bg-white/10 hover:bg-white/20 border border-white/15 text-sm select-none"
+      {/* Kategorien (DVD-Stil) */}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        {CATS.map((c) => (
+          <Link
+            key={c.code || "all"}
+            href={buildQuery({ cat: c.code || undefined }, cur)}
+            className={`px-3 py-1.5 rounded-lg border text-sm transition ${
+              (c.code || "") === (cat || "")
+                ? "border-cyan-400 bg-cyan-400/10 text-cyan-200"
+                : "border-white/15 bg-white/5 hover:bg-white/10"
+            }`}
           >
-            Weitere {PAGE_SIZE} Produkte laden
-          </a>
-        </div>
-      )}
-
-      <div className="mt-6 text-center text-xs opacity-60">
-        Seite {page} · {Math.min(page * PAGE_SIZE, total)} / {total} Artikel
+            {c.label}
+          </Link>
+        ))}
       </div>
 
-      {/* Themen-/Landing-Links GANZ UNTEN (SEO, unaufdringlich) */}
-      <div className="mt-10 mb-4 flex flex-wrap justify-center gap-2 text-xs opacity-70">
-        <a href="/de/shop/disco-12-maxi-vinyl-1980-2010" className="px-3 py-1 rounded bg-white/8 hover:bg-white/15 border border-white/15">
-          Disco 12&quot; Maxi (1980–2010)
-        </a>
-        <a href="/de/shop/italo-disco-12-maxi-vinyl" className="px-3 py-1 rounded bg-white/8 hover:bg-white/15 border border-white/15">
-          Italo Disco 12&quot; Singles (1983–1992)
-        </a>
-        <a href="/de/shop/techno-12-maxi-90s" className="px-3 py-1 rounded bg-white/8 hover:bg-white/15 border border-white/15">
-          Techno 12&quot; Maxis (90s)
-        </a>
-        <a href="/de/shop/hardstyle-12-maxi-2000s" className="px-3 py-1 rounded bg-white/8 hover:bg-white/15 border border-white/15">
-          Hardstyle 12&quot; Maxis (2000er)
-        </a>
-      </div>
+      {/* Grid + „Weitere 50 laden“ (Client) – enge Abstände wie bei DVDs */}
+      <ShopGridClient
+        key={`${q}|${genre}|${cat}`}   // ✅ Remount bei Filterwechsel
+        initial={initial}
+        q={q}
+        genre={genre}
+        cat={cat}
+      />
     </div>
   );
 }

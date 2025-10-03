@@ -1,56 +1,100 @@
 // app/api/public/products/route.ts
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "../../../../lib/db";
 
-// GET /api/public/products?ids=abc,def,ghi
-export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url);
-  const idsParam = searchParams.get("ids")?.trim() || "";
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-  if (!idsParam) {
-    return NextResponse.json({ items: [] }, { status: 200 });
-  }
-
-  const ids = idsParam
+// Mappt Aliasse auf bray und validiert Kategorien
+function normalizeCats(input: string | undefined) {
+  if (!input) return undefined;
+  const raw = input
     .split(",")
-    .map((s) => s.trim())
+    .map(s => s.trim().toLowerCase())
     .filter(Boolean);
 
-  if (ids.length === 0) {
-    return NextResponse.json({ items: [] }, { status: 200 });
-  }
+  const mapped = raw.map(c => {
+    if (c === "bd" || c === "blu-ray" || c === "bluray" || c === "blue" || c === "blu") return "bray";
+    return c;
+  });
 
+  const allowed = new Set(["bv","sv","bcd","scd","bhs","ss","dvd","bray"]);
+  const cats = mapped.filter(c => allowed.has(c));
+  return cats.length ? cats : undefined;
+}
+
+export async function GET(req: NextRequest) {
   try {
+    const sp = req.nextUrl.searchParams;
+
+    const q      = (sp.get("q") || "").trim();
+    const genre  = (sp.get("genre") || "").trim();
+    const catRaw = (sp.get("cat") || "").trim();
+
+    const limit  = Math.min(100, Math.max(1, Number(sp.get("limit")  || 60)));
+    const offset = Math.max(0, Number(sp.get("offset") || 0));
+
+    const where: any = {
+      active: true,
+      stock: { gt: 0 },
+    };
+
+    // Kategorien anwenden
+    const cats = normalizeCats(catRaw || undefined);
+    if (cats && cats.length === 1) where.categoryCode = cats[0];
+    else if (cats && cats.length > 1) where.categoryCode = { in: cats };
+    else {
+      // Kein cat übergeben ⇒ Standard: KEINE Filme im Public-Listing
+      where.categoryCode = { in: ["bv","sv","bcd","scd","bhs","ss"] };
+    }
+
+    if (q) {
+      where.OR = [
+        { slug:          { contains: q, mode: "insensitive" } },
+        { productName:   { contains: q, mode: "insensitive" } },
+        { artist:        { contains: q, mode: "insensitive" } },
+        { trackTitle:    { contains: q, mode: "insensitive" } },
+        { subtitle:      { contains: q, mode: "insensitive" } },
+        { upcEan:        { contains: q, mode: "insensitive" } },
+        { sku:           { contains: q, mode: "insensitive" } },
+        { catalogNumber: { contains: q, mode: "insensitive" } },
+      ];
+    }
+
+    if (genre) {
+      // exakt (case-insensitive), passend zu deinen Genre-Buttons
+      where.genre = { equals: genre, mode: "insensitive" };
+    }
+
     const items = await prisma.product.findMany({
-      where: { id: { in: ids } },
+      where,
+      orderBy: { createdAt: "desc" },
+      take: limit,
+      skip: offset,
       select: {
         id: true,
         slug: true,
         productName: true,
         artist: true,
         trackTitle: true,
+        subtitle: true,
+        categoryCode: true,
+        condition: true,
+        year: true,
         priceEUR: true,
         image: true,
-        weightGrams: true,
-        isDigital: true,
-        active: true,
-        stock: true,           // << NEU: Bestand mitgeben
-        genre: true,           // << NEU: Genre mitgeben
+        images: true,
+        stock: true,
+        genre: true,
+        format: true,
+        // ⬇️  FSK MIT AUSLIEFERN
+        fsk: true,
       },
     });
 
-    // In derselben Reihenfolge wie angefragt zurückgeben
-    const byId = new Map(items.map((it) => [it.id, it]));
-    const ordered = ids
-      .map((id) => byId.get(id))
-      .filter(Boolean);
-
-    return NextResponse.json({ items: ordered }, { status: 200 });
+    return NextResponse.json({ items, limit, offset });
   } catch (e: any) {
-    console.error("/api/public/products error:", e);
-    return NextResponse.json({ error: "server error" }, { status: 500 });
+    console.error("[public products GET]", e);
+    return NextResponse.json({ error: e?.message || "server error" }, { status: 500 });
   }
 }
-
-export const dynamic = "force-dynamic";
-export const runtime = "nodejs";
