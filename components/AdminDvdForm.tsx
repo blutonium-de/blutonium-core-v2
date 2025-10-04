@@ -4,7 +4,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import ImageDrop from "./ImageDrop";
-import BarcodeScanner from "./BarcodeScanner";
+import dynamic from "next/dynamic";
+const BarcodeScanner = dynamic(() => import("./BarcodeScanner"), { ssr: false });
 
 const MOVIE_GENRES = [
   "Action","Abenteuer","Animation","Dokumentation","Drama","Familie",
