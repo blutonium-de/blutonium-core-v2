@@ -1,6 +1,6 @@
 // app/de/shop/dvds/landing/page.tsx
 import { Metadata } from "next";
-import { landingRoutes } from "./config";
+import dvdLandingPresets from "./config";
 
 export const dynamic = "force-static";
 
@@ -11,19 +11,17 @@ export const metadata: Metadata = {
 };
 
 export default function DvdLandingIndexPage() {
-  // reine „Index“-Seite, die nicht verlinkt wird – nur Build-Sicherheit
+  // reine Index-/Platzhalterseite, damit der Ordner existiert
   return (
     <main className="max-w-3xl mx-auto px-4 py-10">
       <h1 className="text-2xl font-bold">DVD Landing (intern)</h1>
       <p className="opacity-70 mt-2">
-        Diese Seite ist nur ein Platzhalter, damit der Ordner existiert.
-        Die eigentlichen SEO-Seiten sind unter <code>/de/shop/dvds/landing/[slug]</code> erreichbar.
+        Diese Seite ist nur ein Platzhalter. Die eigentlichen SEO-Seiten liegen unter
+        <code> /de/shop/dvds/landing/[slug]</code>.
       </p>
       <ul className="list-disc ml-5 mt-4 opacity-70 text-sm">
-        {landingRoutes.map((r) => (
-          <li key={r.slug}>
-            /de/shop/dvds/landing/{r.slug}
-          </li>
+        {dvdLandingPresets.map((r) => (
+          <li key={r.slug}>/de/shop/dvds/landing/{r.slug}</li>
         ))}
       </ul>
     </main>
