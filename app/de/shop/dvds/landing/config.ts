@@ -1,77 +1,55 @@
-// app/dvds/landing/config.ts
-export type DvdLandingPreset = {
+// app/de/shop/dvds/landing/config.ts
+
+export type LandingRoute = {
   slug: string;
   title: string;
-  description?: string;
-  where: any; // Prisma-Where (leichtgewichtig gehalten)
+  description: string;
+  h1?: string;
+  keywords?: string[];
 };
 
-export const dvdLandingPresets: DvdLandingPreset[] = [
+export const landingRoutes: LandingRoute[] = [
   {
-    slug: "horror-dvd-gebraucht",
-    title: "Gebrauchte Horror-DVDs",
+    slug: "action",
+    title: "Action DVDs gebraucht kaufen | Blutonium Records",
     description:
-      "Entdecke gebrauchte Horror-DVDs: Klassiker, Kult- und Indie-Titel – geprüft & schnell versendet.",
-    where: {
-      categoryCode: { in: ["dvd", "bray"] },
-      genre: "Horror",
-      active: true,
-      stock: { gt: 0 },
-    },
+      "Gebrauchte Action-DVDs günstig kaufen: Klassiker, Blockbuster & Raritäten – geprüft und mit schneller Lieferung.",
+    h1: "Gebrauchte Action-DVDs",
+    keywords: ["Action DVDs", "gebrauchte DVDs", "Film Klassiker", "Blu-ray Alternativen"],
   },
   {
-    slug: "action-dvd-gebraucht",
-    title: "Gebrauchte Action-DVDs",
+    slug: "horror",
+    title: "Horror DVDs gebraucht kaufen | Blutonium Records",
     description:
-      "Action auf DVD & Blu-ray gebraucht kaufen – von Klassikern bis Neuzeit-Blockbustern.",
-    where: {
-      categoryCode: { in: ["dvd", "bray"] },
-      genre: "Action",
-      active: true,
-      stock: { gt: 0 },
-    },
+      "Horror, Thriller & Kult-Schocker als gebrauchte DVDs – von Klassikern bis versteckten Perlen.",
+    h1: "Horror & Thriller – gebraucht",
+    keywords: ["Horror DVDs", "Thriller", "Kultfilme", "FSK 18"],
   },
   {
-    slug: "fsk-18-dvd",
-    title: "FSK 18 – DVDs & Blu-rays gebraucht",
+    slug: "komoedie",
+    title: "Komödien auf DVD gebraucht | Blutonium Records",
     description:
-      "FSK 18 Filme gebraucht: geprüfte Qualität, sichere Verpackung, schneller Versand.",
-    where: {
-      categoryCode: { in: ["dvd", "bray"] },
-      fsk: "FSK 18",
-      active: true,
-      stock: { gt: 0 },
-    },
+      "Lachen garantiert: gebrauchte Komödien-DVDs, RomComs & Familienfilme – günstig & geprüft.",
+    h1: "Komödien auf DVD – gebraucht",
+    keywords: ["Komödie", "RomCom", "Familienfilm", "DVD gebraucht"],
   },
   {
-    slug: "fsk-16-dvd",
-    title: "FSK 16 – DVDs & Blu-rays gebraucht",
-    description: "Gebrauchte FSK 16 Filme – geprüft, günstig & schnell geliefert.",
-    where: {
-      categoryCode: { in: ["dvd", "bray"] },
-      fsk: "FSK 16",
-      active: true,
-      stock: { gt: 0 },
-    },
+    slug: "scifi",
+    title: "Science-Fiction DVDs gebraucht | Blutonium Records",
+    description:
+      "Sci-Fi-Klassiker, Space-Operas & Cyberpunk als gebrauchte DVDs. Finde seltene Ausgaben und Kult-Filme.",
+    h1: "Science-Fiction auf DVD",
+    keywords: ["Science Fiction", "Sci-Fi", "Cyberpunk", "Space Opera"],
   },
   {
-    slug: "blu-ray-gebraucht",
-    title: "Gebrauchte Blu-rays",
-    description: "Blu-rays gebraucht kaufen: Top-Zustand, fairer Preis, schnelle Lieferung.",
-    where: {
-      categoryCode: "bray",
-      active: true,
-      stock: { gt: 0 },
-    },
-  },
-  {
-    slug: "dvd-gebraucht",
-    title: "Gebrauchte DVDs",
-    description: "Große Auswahl gebrauchter DVDs – getestet & sicher verpackt.",
-    where: {
-      categoryCode: "dvd",
-      active: true,
-      stock: { gt: 0 },
-    },
+    slug: "western",
+    title: "Western DVDs gebraucht | Blutonium Records",
+    description:
+      "Italo-Western, Klassiker & moderne Western als gebrauchte DVDs – Sammlerfunde inklusive.",
+    h1: "Western – gebraucht kaufen",
+    keywords: ["Western", "Italo-Western", "Klassiker", "DVD Shop"],
   },
 ];
+
+// optional, falls du woanders einen Default brauchst
+export default landingRoutes;
