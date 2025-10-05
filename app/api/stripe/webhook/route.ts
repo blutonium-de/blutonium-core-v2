@@ -1,83 +1,84 @@
 // app/api/stripe/webhook/route.ts
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { stripe } from "../../../../lib/stripe";
-import { finalizeOrderPaid } from "@/lib/orders";
+import { prisma } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
-export const runtime = "nodejs"; // wichtig für raw body (Webhooks)
+export const runtime = "nodejs"; // wichtig für raw body
 
-export async function POST(req: Request) {
-  const sig = req.headers.get("stripe-signature") ?? "";
-  let event: Stripe.Event;
-
-  // Rohdaten lesen (kein JSON parsen!)
-  const payload = await req.text();
-
+export async function POST(req: NextRequest) {
   try {
-    const secret = process.env.STRIPE_WEBHOOK_SECRET!;
-    event = stripe.webhooks.constructEvent(payload, sig, secret);
-  } catch (err: any) {
-    console.error("❌ Webhook Verify Error:", err.message);
-    return new NextResponse(`Webhook Error: ${err.message}`, { status: 400 });
-  }
+    const sig = req.headers.get("stripe-signature");
+    const secret = process.env.STRIPE_WEBHOOK_SECRET;
+    if (!sig || !secret) {
+      return NextResponse.json({ error: "missing webhook config" }, { status: 500 });
+    }
 
-  try {
+    // Raw-Body lesen (KEIN req.json()!)
+    const raw = await req.text();
+
+    let event: Stripe.Event;
+    try {
+      event = stripe.webhooks.constructEvent(raw, sig, secret);
+    } catch (err: any) {
+      return NextResponse.json({ error: `invalid signature: ${err?.message || String(err)}` }, { status: 400 });
+    }
+
+    // Helper: Order als bezahlt markieren
+    async function markPaid(orderId?: string | null, txnId?: string | null) {
+      if (!orderId) return;
+      const data: any = {
+        status: "paid",
+        paidAt: new Date(),
+        paymentProvider: "stripe",
+        paymentMethod: "stripe",
+        transactionId: txnId || undefined,
+      };
+      try {
+        await prisma.order.update({ where: { id: orderId }, data });
+      } catch {
+        // falls Order noch nicht existiert o.ä. -> nicht abstürzen
+      }
+    }
+
     switch (event.type) {
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
+        const orderId =
+          (session.metadata && (session.metadata as any).orderId) ||
+          session.client_reference_id ||
+          null;
 
-        // optional: Line Items nachladen (max. 100) – rein fürs Logging
-        const lineItems = await stripe.checkout.sessions.listLineItems(session.id, { limit: 100 });
+        const txnId =
+          (typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id) ||
+          session.id;
 
-        console.log("✅ Zahlung abgeschlossen:", {
-          sessionId: session.id,
-          amount_total: session.amount_total,
-          currency: session.currency,
-          email: session.customer_details?.email,
-          name: session.customer_details?.name,
-          lineItems: lineItems.data.map((li) => ({
-            name: li.description,
-            qty: li.quantity,
-            amount_total: li.amount_total,
-          })),
-          metadata: session.metadata,
-        });
-
-        // 🔥 Lager & Order finalisieren (idempotent)
-        const orderId = session.metadata?.orderId || "";
-        if (orderId) {
-          const txnId =
-            (typeof session.payment_intent === "string" ? session.payment_intent : session.id) || session.id;
-
-          try {
-            await finalizeOrderPaid({
-              orderId,
-              provider: "stripe",
-              txnId,
-            });
-            console.log("🧾 finalizeOrderPaid OK", { orderId, provider: "stripe", txnId });
-          } catch (e: any) {
-            console.error("❌ finalizeOrderPaid error", e?.message || e);
-          }
-        } else {
-          console.warn("⚠️ checkout.session.completed ohne orderId in metadata");
-        }
+        await markPaid(orderId, txnId);
         break;
       }
 
-      case "checkout.session.async_payment_failed":
-      case "checkout.session.expired":
-        console.log("ℹ️ Session nicht erfolgreich:", event.type);
+      case "payment_intent.succeeded": {
+        const pi = event.data.object as Stripe.PaymentIntent;
+        const orderId = (pi.metadata && (pi.metadata as any).orderId) || null;
+        await markPaid(orderId, pi.id);
         break;
+      }
 
+      case "charge.succeeded": {
+        const charge = event.data.object as Stripe.Charge;
+        const orderId = (charge.metadata && (charge.metadata as any).orderId) || null;
+        await markPaid(orderId, charge.payment_intent?.toString() || charge.id);
+        break;
+      }
+
+      // Weitere Events ignorieren, aber 200 antworten
       default:
-        console.log("ℹ️ Unhandled event:", event.type);
+        break;
     }
 
-    return new NextResponse("ok", { status: 200 });
-  } catch (err: any) {
-    console.error("❌ Webhook Handler Error:", err);
-    return new NextResponse("handler error", { status: 500 });
+    return NextResponse.json({ received: true });
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message || "server_error" }, { status: 500 });
   }
 }
