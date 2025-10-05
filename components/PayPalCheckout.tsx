@@ -1,4 +1,3 @@
-// components/PayPalCheckout.tsx
 'use client';
 
 import {
@@ -14,18 +13,18 @@ function format2(n: number) {
   return x.toFixed(2);
 }
 
+type ShippingMini = { name: string; amountEUR: number; carrier?: string };
+
 type ButtonsProps = {
-  total: number;
+  total: number;                  // Anzeige – Server rechnet selbst
   orderId?: string;
   disabled?: boolean;
+  shipping?: ShippingMini | null; // Versand (Name + Betrag)
 };
 
-function Buttons({ total, orderId, disabled }: ButtonsProps) {
+function Buttons({ total, orderId, disabled, shipping }: ButtonsProps) {
   const [{ isPending }] = usePayPalScriptReducer();
-
-  // tatsächlicher Zahlbetrag
   const value = useMemo(() => format2(total), [total]);
-
   const blocked = disabled || !orderId || Number(value) <= 0;
 
   return (
@@ -35,22 +34,27 @@ function Buttons({ total, orderId, disabled }: ButtonsProps) {
       <PayPalButtons
         fundingSource={FUNDING.PAYPAL}
         style={{ layout: 'horizontal', label: 'paypal', shape: 'rect', height: 45 }}
-        forceReRender={[value, 'EUR', !!orderId, !!disabled]}
+        forceReRender={[value, 'EUR', !!orderId, !!disabled, shipping?.name, shipping?.amountEUR]}
         disabled={blocked}
         createOrder={async () => {
-          if (blocked) {
-            throw new Error('Bitte zuerst Bestellung anlegen.');
-          }
+          if (blocked) throw new Error('Bitte zuerst Bestellung anlegen.');
           try {
             const r = await fetch('/api/paypal/create-order', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               cache: 'no-store',
               body: JSON.stringify({
+                // Hinweis: amountEUR ist nur best effort; Backend prüft selbst.
                 amountEUR: Number(value),
                 description: `Blutonium Records Bestellung ${orderId || ''}`.trim(),
-                // Order-ID mitschicken, damit das Backend die Order referenzieren kann
                 orderId,
+                shipping: shipping
+                  ? {
+                      name: shipping.name,
+                      amountEUR: Number.isFinite(shipping.amountEUR) ? shipping.amountEUR : 0,
+                      carrier: shipping.carrier || '',
+                    }
+                  : null,
               }),
             });
             const j = await r.json().catch(() => ({}));
@@ -64,16 +68,14 @@ function Buttons({ total, orderId, disabled }: ButtonsProps) {
         }}
         onApprove={async (data) => {
           try {
-            const orderID = data.orderID!;
-            // 1) PayPal-Capture
-            const r = await fetch(`/api/paypal/capture-order/${orderID}`, {
-              method: 'POST',
-              cache: 'no-store',
-            });
+            const ppOrderId = data.orderID!;
+            // 👉 orderId beim Capture mitsenden, damit das Backend weiß, welche Order zu finalisieren ist
+            const url = `/api/paypal/capture-order/${ppOrderId}?orderId=${encodeURIComponent(orderId || '')}`;
+            const r = await fetch(url, { method: 'POST', cache: 'no-store' });
             const j = await r.json().catch(() => ({}));
-            if (!r.ok) throw new Error(j?.error || 'capture-order fehlgeschlagen');
+            if (!r.ok) throw new Error(j?.error || 'PayPal Capture fehlgeschlagen');
 
-            // 2) Rechnung/Mails auslösen (best effort)
+            // Rechnung/Mails (non-blocking)
             if (orderId) {
               try {
                 await fetch('/api/order/confirm', {
@@ -82,12 +84,10 @@ function Buttons({ total, orderId, disabled }: ButtonsProps) {
                   body: JSON.stringify({ orderId }),
                 });
               } catch (e) {
-                // nicht blockieren – zur Success-Seite weiter
                 console.warn('order/confirm failed (non-blocking)', e);
               }
             }
 
-            // 3) Warenkorb leeren & Success
             try { localStorage.removeItem('cart'); } catch {}
             window.location.href = `/de/checkout/success?paypal=1${orderId ? `&order_id=${encodeURIComponent(orderId)}` : ''}`;
           } catch (err: any) {
@@ -108,18 +108,17 @@ export default function PayPalCheckout({
   total,
   orderId,
   disabled,
+  shipping,
 }: {
   total: number;
   orderId?: string;
   disabled?: boolean;
+  shipping?: ShippingMini | null;
 }) {
   const clientId = (process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID || '').trim();
   const disabledByEnv = (process.env.NEXT_PUBLIC_PAYPAL_DISABLED || '') === '1';
 
-  // Kein Client ID -> gar nichts rendern
   if (!clientId) return null;
-
-  // Global deaktiviert -> Hinweis, aber Button nicht rendern
   if (disabledByEnv) {
     return (
       <div className="mt-3 text-sm opacity-70">
@@ -140,7 +139,7 @@ export default function PayPalCheckout({
         'data-sdk-integration-source': 'react-paypal-js',
       } as any}
     >
-      <Buttons total={total} orderId={orderId} disabled={disabled} />
+      <Buttons total={total} orderId={orderId} disabled={disabled} shipping={shipping} />
     </PayPalScriptProvider>
   );
 }

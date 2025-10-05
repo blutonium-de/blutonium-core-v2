@@ -390,10 +390,11 @@ export default function CheckoutPage() {
           {/* PayPal */}
           <div className={`mt-3 ${!orderId ? "opacity-60 pointer-events-none" : ""}`}>
             <PayPalCheckout
-              total={grandTotal}
-              orderId={orderId || undefined}
-              disabled={!orderId}
-            />
+  total={grandTotal}
+  orderId={orderId || undefined}
+  disabled={!orderId}
+  shipping={chosen ? { name: chosen.name, amountEUR: chosen.amountEUR, carrier: chosen.carrier } : null}
+/>
           </div>
 
           {!orderId && (

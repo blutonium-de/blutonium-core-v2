@@ -21,7 +21,7 @@ export default function AdminHome() {
           className="group rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition-colors p-6 block"
         >
           <div className="flex items-center justify-between">
-            <h2 className="text-xl font-bold">Produktliste</h2>
+            <h2 className="text-xl font-bold">Vinyls • CDs • Sonstiges</h2>
             <span className="text-2xl">📋</span>
           </div>
           <p className="mt-2 opacity-70">
@@ -38,7 +38,7 @@ export default function AdminHome() {
           className="group rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition-colors p-6 block"
         >
           <div className="flex items-center justify-between">
-            <h2 className="text-xl font-bold">Neues Produkt anlegen</h2>
+            <h2 className="text-xl font-bold">Neu Vinyl • CD anlegen</h2>
             <span className="text-2xl">➕</span>
           </div>
           <p className="mt-2 opacity-70">
@@ -55,7 +55,7 @@ export default function AdminHome() {
           className="group rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition-colors p-6 block"
         >
           <div className="flex items-center justify-between">
-            <h2 className="text-xl font-bold">Bestellungen</h2>
+            <h2 className="text-xl font-bold">Bestellungen • RGs</h2>
             <span className="text-2xl">🧾</span>
           </div>
           <p className="mt-2 opacity-70">
@@ -72,7 +72,7 @@ export default function AdminHome() {
           className="group rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition-colors p-6 block"
         >
           <div className="flex items-center justify-between">
-            <h2 className="text-xl font-bold">DVDs / Blu-rays</h2>
+            <h2 className="text-xl font-bold">DVDs • Blu-rays</h2>
             <span className="text-2xl">🎬</span>
           </div>
           <p className="mt-2 opacity-70">
@@ -82,6 +82,25 @@ export default function AdminHome() {
             Öffnen <span>→</span>
           </div>
         </Link>
+
+        {/* Verkauf & Offline */}
+<Link
+  href={process.env.NEXT_PUBLIC_ADMIN_TOKEN
+    ? `/admin/soldout?key=${encodeURIComponent(process.env.NEXT_PUBLIC_ADMIN_TOKEN)}`
+    : "/admin/soldout"}
+  className="group rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition-colors p-6 block"
+>
+  <div className="flex items-center justify-between">
+    <h2 className="text-xl font-bold">Verkauft & offline</h2>
+    <span className="text-2xl">📦</span>
+  </div>
+  <p className="mt-2 opacity-70">
+    Produkte mit Bestand 0 oder auf „inaktiv“. Reaktivieren, bearbeiten oder löschen.
+  </p>
+  <div className="mt-4 inline-flex items-center gap-2 text-cyan-400 group-hover:underline">
+    Öffnen <span>→</span>
+  </div>
+</Link>
 
         {/* Analytics */}
         <Link

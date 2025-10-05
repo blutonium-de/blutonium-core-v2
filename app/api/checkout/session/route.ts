@@ -1,7 +1,7 @@
 // app/api/checkout/session/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { stripe, appOriginFromHeaders } from "@/lib/stripe";
+import { stripe, appOriginFromHeaders, absFrom } from "@/lib/stripe";
 import type Stripe from "stripe";
 
 type RegionCode = "AT" | "EU";
@@ -15,11 +15,16 @@ type Body = {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** Absolute URL bauen (Stripe-Bilder brauchen absolute HTTPS-URLs) */
-function abs(path: string) {
-  const base = (process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000").replace(/\/+$/, "");
-  if (/^https?:\/\//i.test(path)) return path;
-  return new URL(path, base + "/").toString();
+/** Nur https-URLs an Stripe geben */
+function httpsOrNull(u: string | null): string | null {
+  if (!u) return null;
+  try {
+    const url = new URL(u);
+    if (url.protocol === "https:") return url.toString();
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 export async function POST(req: Request) {
@@ -63,7 +68,6 @@ export async function POST(req: Request) {
 
     const currency = (order.currency || "EUR").toLowerCase();
 
-    // ⬇️ Explizit typisieren – verhindert erneute TS-Fehler
     const line_items: Stripe.Checkout.SessionCreateParams.LineItem[] = order.items
       .filter((it) => it.product && it.qty > 0 && it.unitPrice > 0 && it.product.active !== false)
       .map((it) => {
@@ -73,18 +77,22 @@ export async function POST(req: Request) {
             ? p.productName
             : `${p.artist ?? ""}${p.artist && p.trackTitle ? " – " : ""}${p.trackTitle ?? p.slug}`;
 
-        const imgAbs = p.image ? abs(p.image) : null;
+        // unitPrice ist bei dir INT (Cent). Sicherstellen:
+        const unitAmount = Math.round(Number(it.unitPrice));
+        if (!Number.isFinite(unitAmount) || unitAmount < 1) {
+          throw new Error(`Invalid unit amount for product ${p.id}: ${it.unitPrice}`);
+        }
+
+        const imgAbs = httpsOrNull(absFrom(req, p.image || ""));
 
         return {
           quantity: it.qty,
           price_data: {
             currency,
-            // OrderItem.unitPrice bereits in Cent gespeichert
-            unit_amount: it.unitPrice,
+            unit_amount: unitAmount,
             product_data: {
               name,
-              // ⬅️ Immer ein Array liefern (Stripe typings verlangen string[])
-              images: imgAbs ? [imgAbs] : [],
+              images: imgAbs ? [imgAbs] : [], // nur https
               metadata: { productId: p.id, orderId: order.id },
             },
           },
@@ -93,19 +101,21 @@ export async function POST(req: Request) {
 
     // Versand als eigenes Line Item (nur wenn > 0 EUR)
     if (shipping && Number.isFinite(shipping.amountEUR) && shipping.amountEUR > 0) {
-      line_items.push({
-        quantity: 1,
-        price_data: {
-          currency,
-          unit_amount: Math.round(Number(shipping.amountEUR) * 100),
-          product_data: {
-            name: `Versand – ${shipping.name}`,
-            // ⬅️ WICHTIG: images IMMER da (leer oder Logo)
-            images: [abs("/blutonium-records-shop-logo.png")],
-            metadata: { productId: "shipping", orderId: order.id },
+      const shipAmount = Math.round(Number(shipping.amountEUR) * 100);
+      if (shipAmount > 0) {
+        line_items.push({
+          quantity: 1,
+          price_data: {
+            currency,
+            unit_amount: shipAmount,
+            product_data: {
+              name: `Versand – ${shipping.name}`,
+              images: [absFrom(req, "/blutonium-records-shop-logo.png")], // https
+              metadata: { productId: "shipping", orderId: order.id },
+            },
           },
-        },
-      });
+        });
+      }
     }
 
     if (line_items.length === 0)
@@ -117,18 +127,31 @@ export async function POST(req: Request) {
     )}`;
     const cancelUrl = `${origin}/de/cart`;
 
-    const session = await stripe.checkout.sessions.create({
-      mode: "payment",
-      success_url: successUrl,
-      cancel_url: cancelUrl,
-      line_items,
-      metadata: {
-        orderId: order.id,
-        region,
-        shipping_name: shipping?.name || "",
-        shipping_eur: String(shipping?.amountEUR ?? 0),
-      },
-    });
+    let session: Stripe.Checkout.Session;
+    try {
+      session = await stripe.checkout.sessions.create({
+        mode: "payment",
+        success_url: successUrl,
+        cancel_url: cancelUrl,
+        line_items,
+        // nice to have: Email mitgeben (falls vorhanden)
+        customer_email: order.email || undefined,
+        metadata: {
+          orderId: order.id,
+          region,
+          shipping_name: shipping?.name || "",
+          shipping_eur: String(shipping?.amountEUR ?? 0),
+        },
+        payment_intent_data: {
+          metadata: { orderId: order.id },
+        },
+      });
+    } catch (err: any) {
+      // Stripe-Fehler sauber nach vorne geben
+      const msg = err?.raw?.message || err?.message || "Stripe error";
+      console.error("[stripe.sessions.create] ", msg, err?.raw);
+      return NextResponse.json({ error: msg }, { status: 400 });
+    }
 
     return NextResponse.json({ ok: true, id: session.id, url: session.url }, { status: 200 });
   } catch (e: any) {
