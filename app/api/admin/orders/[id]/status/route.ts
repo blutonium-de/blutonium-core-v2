@@ -18,5 +18,4 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   });
 
   return NextResponse.json({ order });
-}
-``` ✅
+  }

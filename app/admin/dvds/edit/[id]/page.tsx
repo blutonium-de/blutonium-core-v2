@@ -29,7 +29,7 @@ type Product = {
   images: string[];
   genre?: string | null;
   stock?: number | null;
-  fsk?: string | null;          // NEU
+  fsk?: string | null;          // z.B. "FSK 16"
 };
 
 const MOVIE_GENRES = [
@@ -38,9 +38,23 @@ const MOVIE_GENRES = [
   "Romantik","Science Fiction","Sport","Thriller","Western"
 ] as const;
 
+// ---- Helper: FSK normalisieren ("16", "FSK16", "fsk-16" -> "FSK 16") ----
+function normalizeFsk(v?: string | null): string {
+  if (!v) return "";
+  const s = String(v).toLowerCase().replace(/\s+/g, "").replace(/-/g, "");
+  if (s.includes("18") || s === "18") return "FSK 18";
+  if (s.includes("16") || s === "16") return "FSK 16";
+  if (s.includes("12") || s === "12") return "FSK 12";
+  if (s.includes("6")  || s === "6")  return "FSK 6";
+  if (s.includes("0")  || s === "0")  return "FSK 0";
+  return "";
+}
+
 export default function AdminDvdEditPage({ params }: { params: { id: string } }) {
   const { id } = params;
 
+  const [adminKey, setAdminKey] = useState<string>(""); // leer = evtl. kein Key nötig
+  const [keyReady, setKeyReady] = useState(false);      // -> erst nach Ermittlung fetchen
   const [loading, setLoading] = useState(true);
   const [saving, setSaving]   = useState(false);
   const [msg, setMsg]         = useState<string | null>(null);
@@ -55,26 +69,38 @@ export default function AdminDvdEditPage({ params }: { params: { id: string } })
     formRef.current?.requestSubmit();
   }
 
+  // Key aus URL / localStorage / ENV lesen (nur einmal)
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    const sp = new URLSearchParams(window.location.search);
+    const fromUrl   = sp.get("key") ?? "";
+    const fromLocal = localStorage.getItem("admin_key") ?? "";
+    const fromEnv   = process.env.NEXT_PUBLIC_ADMIN_TOKEN ?? "";
+    const key = fromUrl || fromLocal || fromEnv || "";
+    setAdminKey(key);
+    setKeyReady(true); // jetzt darf geladen werden
+  }, []);
+
+  // Laden (genau EIN Fetch, nachdem der Key ermittelt wurde)
+  useEffect(() => {
+    if (!keyReady) return;
     (async () => {
       setLoading(true);
       setMsg(null);
       try {
-        const adminKey =
-          (typeof window !== "undefined" && localStorage.getItem("admin_key")) ||
-          process.env.NEXT_PUBLIC_ADMIN_TOKEN ||
-          "";
+        const url = adminKey
+          ? `/api/admin/products/${id}?key=${encodeURIComponent(adminKey)}`
+          : `/api/admin/products/${id}`;
 
-        // ⬅️ WICHTIG: Admin-Key mitsenden (Header ODER ?key= Query)
-        const r = await fetch(`/api/admin/products/${id}?key=${encodeURIComponent(adminKey)}`, {
-          cache: "no-store",
-          headers: { "x-admin-key": adminKey },
-        });
+        const r = await fetch(url, { cache: "no-store" });
         const t = await r.text();
         let j: any; try { j = JSON.parse(t); } catch { throw new Error(t || "Serverfehler"); }
         if (!r.ok) throw new Error(j?.error || "Produkt nicht gefunden");
 
         const prod: Product = j;
+        // FSK-Wert im Client normalisieren, damit defaultValue matcht
+        prod.fsk = normalizeFsk(prod.fsk);
+
         setP(prod);
         setActive(prod.active);
         setImages(prod.images?.length ? prod.images : (prod.image ? [prod.image] : []));
@@ -84,8 +110,9 @@ export default function AdminDvdEditPage({ params }: { params: { id: string } })
         setLoading(false);
       }
     })();
-  }, [id]);
+  }, [id, adminKey, keyReady]);
 
+  // Speichern
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!p) return;
@@ -94,11 +121,6 @@ export default function AdminDvdEditPage({ params }: { params: { id: string } })
     setMsg(null);
     try {
       const fd = new FormData(e.currentTarget);
-
-      const adminKey =
-        (typeof window !== "undefined" && localStorage.getItem("admin_key")) ||
-        process.env.NEXT_PUBLIC_ADMIN_TOKEN ||
-        "";
 
       const body = {
         slug: String(fd.get("slug") || "").trim(),
@@ -122,12 +144,17 @@ export default function AdminDvdEditPage({ params }: { params: { id: string } })
         images,
         genre: strOrNull(fd.get("genre")),
         stock: numOrNull(fd.get("stock")),
-        fsk: strOrNull(fd.get("fsk")),                    // NEU
+        // FSK: immer als normalisierte Standardform speichern
+        fsk: normalizeFsk(String(fd.get("fsk") || "")),
       };
 
-      const r = await fetch(`/api/admin/products/${id}`, {
+      const url = adminKey
+        ? `/api/admin/products/${id}?key=${encodeURIComponent(adminKey)}`
+        : `/api/admin/products/${id}`;
+
+      const r = await fetch(url, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", "x-admin-key": adminKey },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
 
@@ -135,7 +162,6 @@ export default function AdminDvdEditPage({ params }: { params: { id: string } })
       let j: any; try { j = JSON.parse(t); } catch { j = { error: t || "Serverfehler" }; }
       if (!r.ok) throw new Error(j?.error || "Speichern fehlgeschlagen");
 
-      // zurück zur DVD-Liste
       window.location.href = "/admin/dvds?updated=1";
     } catch (e: any) {
       setMsg(e?.message || "Fehler");
@@ -144,20 +170,20 @@ export default function AdminDvdEditPage({ params }: { params: { id: string } })
     }
   }
 
+  // Aktiv/Inactive
   async function toggleActive() {
     if (!p) return;
     const next = !active;
     setActive(next);
     setMsg(null);
     try {
-      const adminKey =
-        (typeof window !== "undefined" && localStorage.getItem("admin_key")) ||
-        process.env.NEXT_PUBLIC_ADMIN_TOKEN ||
-        "";
+      const url = adminKey
+        ? `/api/admin/products/${id}?key=${encodeURIComponent(adminKey)}`
+        : `/api/admin/products/${id}`;
 
-      const r = await fetch(`/api/admin/products/${id}`, {
+      const r = await fetch(url, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", "x-admin-key": adminKey },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ active: next }),
       });
       if (!r.ok) {
@@ -172,21 +198,17 @@ export default function AdminDvdEditPage({ params }: { params: { id: string } })
     }
   }
 
+  // Löschen
   async function handleDelete() {
     if (!p) return;
-    const really = window.confirm("Wirklich löschen? Dieser Vorgang kann nicht rückgängig gemacht werden.");
-    if (!really) return;
+    if (!window.confirm("Wirklich löschen? Dieser Vorgang kann nicht rückgängig gemacht werden.")) return;
 
     try {
-      const adminKey =
-        (typeof window !== "undefined" && localStorage.getItem("admin_key")) ||
-        process.env.NEXT_PUBLIC_ADMIN_TOKEN ||
-        "";
+      const url = adminKey
+        ? `/api/admin/products/${id}?key=${encodeURIComponent(adminKey)}`
+        : `/api/admin/products/${id}`;
 
-      const r = await fetch(`/api/admin/products/${id}`, {
-        method: "DELETE",
-        headers: { "x-admin-key": adminKey },
-      });
+      const r = await fetch(url, { method: "DELETE" });
       if (!r.ok) {
         const t = await r.text();
         let j: any; try { j = JSON.parse(t); } catch { j = { error: t || "Serverfehler" }; }
@@ -245,11 +267,7 @@ export default function AdminDvdEditPage({ params }: { params: { id: string } })
 
       <div className="mt-8">
         <form ref={formRef} onSubmit={onSubmit} className="space-y-6">
-          <ImageDrop
-            max={5}
-            initial={images}
-            onChange={(arr) => setImages(arr)}
-          />
+          <ImageDrop max={5} initial={images} onChange={(arr) => setImages(arr)} />
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <L label="Slug*">
@@ -329,7 +347,7 @@ export default function AdminDvdEditPage({ params }: { params: { id: string } })
 
             {/* FSK */}
             <L label="FSK">
-              <select name="fsk" defaultValue={p.fsk || ""} className="input">
+              <select name="fsk" defaultValue={normalizeFsk(p.fsk)} className="input">
                 <option value="">– auswählen –</option>
                 <option value="FSK 0">FSK 0</option>
                 <option value="FSK 6">FSK 6</option>
@@ -352,7 +370,11 @@ export default function AdminDvdEditPage({ params }: { params: { id: string } })
               {saving ? "Speichere …" : "Speichern & Zur Liste"}
             </button>
 
-            <a href="/admin/dvds" className="px-3 py-2 rounded bg-white/10 hover:bg-white/20" title="Zurück zur DVD-Liste">
+            <a
+              href="/admin/dvds"
+              className="px-3 py-2 rounded bg-white/10 hover:bg-white/20"
+              title="Zurück zur DVD-Liste"
+            >
               Zurück zur DVD-Liste
             </a>
           </div>

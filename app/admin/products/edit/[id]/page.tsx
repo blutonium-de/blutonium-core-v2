@@ -2,6 +2,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import ImageDrop from "../../../../../components/ImageDrop";
 
 const GENRES = [
@@ -32,11 +33,13 @@ type Product = {
   image: string;
   images: string[];
   genre?: string | null;
-  stock?: number | null; // ⬅️ NEU: Bestand
+  stock?: number | null; // Bestand
 };
 
 export default function AdminEditProductPage({ params }: { params: { id: string } }) {
   const { id } = params;
+  const searchParams = useSearchParams();
+  const adminKey = searchParams.get("key") ?? "";
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving]   = useState(false);
@@ -66,12 +69,13 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  // Produkt laden (mit ?key=...)
   useEffect(() => {
     (async () => {
       setLoading(true);
       setMsg(null);
       try {
-        const r = await fetch(`/api/admin/products/${id}`, { cache: "no-store" });
+        const r = await fetch(`/api/admin/products/${id}?key=${encodeURIComponent(adminKey)}`, { cache: "no-store" });
         const t = await r.text();
         let j: any; try { j = JSON.parse(t); } catch { throw new Error(t || "Serverfehler"); }
         if (!r.ok) throw new Error(j?.error || "Produkt nicht gefunden");
@@ -86,7 +90,7 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
         setLoading(false);
       }
     })();
-  }, [id]);
+  }, [id, adminKey]);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -96,11 +100,6 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
     setMsg(null);
     try {
       const fd = new FormData(e.currentTarget);
-
-      const adminKey =
-        (typeof window !== "undefined" && localStorage.getItem("admin_key")) ||
-        process.env.NEXT_PUBLIC_ADMIN_TOKEN ||
-        "";
 
       const body = {
         slug: String(fd.get("slug") || "").trim(),
@@ -123,12 +122,12 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
         image: images[0] || "",
         images,
         genre: strOrNull(fd.get("genre")),
-        stock: numOrNull(fd.get("stock")), // ⬅️ NEU: Bestand mitsenden
+        stock: numOrNull(fd.get("stock")), // Bestand mitsenden
       };
 
-      const r = await fetch(`/api/admin/products/${id}`, {
+      const r = await fetch(`/api/admin/products/${id}?key=${encodeURIComponent(adminKey)}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", "x-admin-key": adminKey },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
 
@@ -151,14 +150,9 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
     setActive(next);
     setMsg(null);
     try {
-      const adminKey =
-        (typeof window !== "undefined" && localStorage.getItem("admin_key")) ||
-        process.env.NEXT_PUBLIC_ADMIN_TOKEN ||
-        "";
-
-      const r = await fetch(`/api/admin/products/${id}`, {
+      const r = await fetch(`/api/admin/products/${id}?key=${encodeURIComponent(adminKey)}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", "x-admin-key": adminKey },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ active: next }),
       });
       if (!r.ok) {
@@ -179,14 +173,8 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
     if (!really) return;
 
     try {
-      const adminKey =
-        (typeof window !== "undefined" && localStorage.getItem("admin_key")) ||
-        process.env.NEXT_PUBLIC_ADMIN_TOKEN ||
-        "";
-
-      const r = await fetch(`/api/admin/products/${id}`, {
+      const r = await fetch(`/api/admin/products/${id}?key=${encodeURIComponent(adminKey)}`, {
         method: "DELETE",
-        headers: { "x-admin-key": adminKey },
       });
       if (!r.ok) {
         const t = await r.text();
@@ -320,7 +308,7 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
               </select>
             </L>
 
-            {/* ⬅️ NEU: Bestand */}
+            {/* Bestand */}
             <L label="Bestand (Stück)">
               <input
                 name="stock"
@@ -334,7 +322,7 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
 
           {msg && <div className="text-sm">{msg}</div>}
 
-          {/* Untere Buttonleiste (ohne Scanner) */}
+          {/* Untere Buttonleiste */}
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="submit"
