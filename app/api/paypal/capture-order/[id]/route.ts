@@ -1,6 +1,7 @@
+// app/api/paypal/capture-order/[id]/route.ts
 import { NextResponse } from "next/server";
 import { paypalApi } from "@/lib/paypal";
-import { finalizeOrderPaid } from "@/lib/orders";
+import { prisma } from "@/lib/db"; // <-- nur hinzugefügt
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,10 +35,20 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 
     // 2) Nur bei erfolgreichem Capture Lager/Order updaten
     if (status === "COMPLETED" || capStatus === "COMPLETED") {
-      await finalizeOrderPaid({
-        orderId,
-        provider: "paypal",
-        txnId: capId || id,
+      // Ersatz für finalizeOrderPaid – minimalinvasiv:
+      // status = paid, Paid-Infos für Rechnung, txnId
+      const data: any = {
+        status: "paid",
+        paidAt: new Date(),
+        paymentProvider: "paypal",
+        paymentMethod: "paypal",   // falls dein Template dieses Feld nutzt
+        paidWith: "paypal",        // alternativ genutztes Feld
+        transactionId: capId || id,
+      };
+
+      await prisma.order.update({
+        where: { id: orderId }, // <- interne Bestell-ID aus query
+        data,
       });
     } else {
       return NextResponse.json(
