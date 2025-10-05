@@ -1,0 +1,134 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Product {
+  id            String      @id @default(cuid())
+  slug          String      @unique
+  productName   String?
+  subtitle      String?
+  artist        String?
+  trackTitle    String?
+  priceEUR      Float
+  currency      String      @default("EUR")
+  image         String
+  images        Json        @default("[]")
+  categoryCode  String
+  format        String?
+  year          Int?
+  upcEan        String?
+  catalogNumber String?
+  condition     String?
+  weightGrams   Int?
+  isDigital     Boolean     @default(false)
+  sku           String?
+  active        Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+  stock         Int         @default(1)
+  genre         String?     @db.VarChar(50)
+  orderItems    OrderItem[]
+  fsk           Int?
+
+  @@index([active, stock, categoryCode, createdAt])
+  @@index([categoryCode, createdAt])
+  @@index([upcEan])
+}
+
+model Order {
+  id              String      @id @default(cuid())
+  stripeId        String?     @unique
+  email           String?
+  amountTotal     Int
+  currency        String
+  status          String
+  createdAt       DateTime    @default(now())
+  address         String?
+  city            String?
+  country         String?
+  firstName       String?
+  lastName        String?
+  zip             String?
+  invoiceNumber   String?
+  paymentId       String?
+  paymentProvider String?
+  phone           String?
+  items           OrderItem[]
+
+  @@index([createdAt])
+}
+
+model OrderItem {
+  id        String   @id @default(cuid())
+  orderId   String
+  productId String?
+  qty       Int
+  unitPrice Int
+  order     Order    @relation(fields: [orderId], references: [id])
+  product   Product? @relation(fields: [productId], references: [id])
+}
+
+model Release {
+  id          String   @id @default(cuid())
+  title       String
+  type        String?
+  year        Int?
+  artists     String?
+  label       String?
+  catalog     String?
+  cover       String?
+  spotifyUrl  String?
+  appleUrl    String?
+  beatportUrl String?
+  createdAt   DateTime @default(now())
+}
+
+model Artist {
+  id         String   @id @default(cuid())
+  name       String
+  bio        String?
+  photo      String?
+  spotifyUrl String?
+  instagram  String?
+  website    String?
+  createdAt  DateTime @default(now())
+}
+
+model PageView {
+  id        String   @id @default(cuid())
+  path      String
+  referrer  String?
+  ua        String?
+  ipHash    String?
+  sessionId String?
+  country   String?
+  createdAt DateTime @default(now())
+
+  @@index([path, createdAt])
+  @@index([createdAt])
+  @@index([ipHash, createdAt])
+}
+
+model DvdMeta {
+  ean       String   @id
+  title     String?
+  year      Int?
+  director  String?
+  genre     String?
+  format    String?
+  edition   String?
+  cover     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model InvoiceCounter {
+  id         String @id @default(cuid())
+  year       Int    @unique
+  lastNumber Int    @default(0)
+}

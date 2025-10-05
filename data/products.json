@@ -1,0 +1,150 @@
+[
+  {
+    "id": "blutonium-slipmates-1758732629934",
+    "slug": "blutonium-slipmates",
+    "title": "Blutonium Slipmates",
+    "subtitle": "Perfekt für deinen Plattenspieler (1 Paar)",
+    "priceEUR": 45,
+    "currency": "EUR",
+    "image": "/shop/placeholder-500.jpg",
+    "active": true,
+    "stripePriceId": null,
+    "weightGrams": 400,
+    "isDigital": false,
+    "sku": "A0003",
+    "categoryCode": "ss",
+    "condition": "Neu"
+  },
+  {
+    "id": "blutonium-slipmates-1758732012041",
+    "slug": "blutonium-slipmates",
+    "title": "Blutonium Slipmates",
+    "subtitle": "Perfekt für deinen Plattenspieler (1 Paar)",
+    "priceEUR": 45,
+    "currency": "EUR",
+    "image": "/shop/placeholder-500.jpg",
+    "active": true,
+    "stripePriceId": null,
+    "weightGrams": 350,
+    "isDigital": false,
+    "sku": "A0002",
+    "categoryCode": "ss",
+    "condition": "Neu"
+  },
+  {
+    "id": "blutonium-slipmates",
+    "slug": "blutonium-slipmates",
+    "title": "Blutonium Slipmates",
+    "subtitle": "pPerfekt für deinen Plattenspieler (1 Paar)",
+    "priceEUR": 45,
+    "currency": "EUR",
+    "image": "/shop/placeholder-500.jpg",
+    "active": true,
+    "stripePriceId": null,
+    "weightGrams": 350,
+    "isDigital": false,
+    "sku": "A0001",
+    "categoryCode": "ss",
+    "condition": "Neu"
+  },
+  {
+    "id": "hardstyle-samples-vol2",
+    "slug": "blutonium-hardstyle-samples",
+    "title": "Hardstyle Samples Vol.2",
+    "subtitle": "B-Boy Studio Sample Bibliothek",
+    "priceEUR": 79,
+    "currency": "EUR",
+    "image": "/shop/hardstyle-samples-vol2-01.jpg",
+    "tags": [
+      "sample cd",
+      "hardstyle-samples",
+      "merch"
+    ],
+    "active": true,
+    "stripePriceId": null,
+    "weight": 200
+  },
+  {
+    "id": "blutonium-boy-t-shirt",
+    "slug": "blutonium-t-shirt",
+    "title": "Blutonium Boy T-Shirt",
+    "subtitle": "Schwarz / Neongelb",
+    "priceEUR": 39,
+    "currency": "EUR",
+    "image": "/shop/bb-t-shirt-01.jpg",
+    "tags": [
+      "tshirt",
+      "blutonium-boy",
+      "merch"
+    ],
+    "active": true,
+    "stripePriceId": null,
+    "weight": 200
+  },
+  {
+    "id": "slipmates-classics",
+    "slug": "slipmates-blutonium-classics",
+    "title": "Plattenspieler Slipmates",
+    "subtitle": "Limited Edition",
+    "priceEUR": 49,
+    "currency": "EUR",
+    "image": "/shop/slipmate-01.jpg",
+    "tags": [
+      "slipmate",
+      "classics"
+    ],
+    "active": true,
+    "stripePriceId": null,
+    "weight": 150
+  },
+  {
+    "id": "vinyl-001",
+    "title": "Blutonium Records Vinyl #1",
+    "subtitle": "Limited Edition",
+    "image": "/images/products/vinyl-001.jpg",
+    "priceEUR": 19.99,
+    "slug": "blutonium-records-vinyl-1",
+    "weight": 350,
+    "active": true
+  },
+  {
+    "id": "vinyl-002",
+    "title": "Blutonium Records Vinyl #2",
+    "subtitle": "Classic Release",
+    "image": "/images/products/vinyl-002.jpg",
+    "priceEUR": 18.99,
+    "slug": "blutonium-records-vinyl-2",
+    "weight": 350,
+    "active": true
+  },
+  {
+    "id": "cd-001",
+    "title": "Blutonium Doppel-CD",
+    "subtitle": "Collector’s Edition",
+    "image": "/images/products/cd-001.jpg",
+    "priceEUR": 14.99,
+    "slug": "blutonium-doppel-cd",
+    "weight": 100,
+    "active": true
+  },
+  {
+    "id": "shirt-001",
+    "title": "Blutonium T-Shirt",
+    "subtitle": "Schwarz, Größe M",
+    "image": "/images/products/shirt-001.jpg",
+    "priceEUR": 24.99,
+    "slug": "blutonium-shirt-m",
+    "weight": 200,
+    "active": true
+  },
+  {
+    "id": "shirt-002",
+    "title": "Blutonium T-Shirt",
+    "subtitle": "Schwarz, Größe L",
+    "image": "/images/products/shirt-002.jpg",
+    "priceEUR": 24.99,
+    "slug": "blutonium-shirt-l",
+    "weight": 200,
+    "active": true
+  }
+]

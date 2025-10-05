@@ -1,0 +1,350 @@
+// components/ProductCard.tsx
+"use client";
+
+import { useState, useRef, useMemo, useEffect } from "react";
+import Link from "next/link";
+
+type Product = {
+  id: string;
+  slug: string;
+  artist?: string | null;
+  trackTitle?: string | null;
+  productName?: string | null;
+  subtitle?: string | null;
+  categoryCode: string;
+  condition?: string | null;
+  priceEUR: number;
+  image: string;
+  images?: string[];
+  stock?: number;
+  genre?: string | null;
+  format?: string | null;
+  fsk?: string | null; // ← NEU
+};
+
+type CartMap = Record<string, { qty: number; price?: number }>;
+
+function readCart(): CartMap {
+  try {
+    const raw = localStorage.getItem("cart");
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+function writeCart(next: CartMap) {
+  localStorage.setItem("cart", JSON.stringify(next));
+  window.dispatchEvent(new CustomEvent("cart:changed"));
+}
+
+function condClass(c?: string | null) {
+  const v = (c || "").toLowerCase();
+  if (v === "neu")        return "bg-yellow-400 text-black";
+  if (v === "neuwertig")  return "bg-emerald-400 text-black";
+  if (v === "ok")         return "bg-amber-400 text-black";
+  if (v === "gebraucht")  return "bg-orange-500 text-black";
+  if (v === "stark")      return "bg-red-500 text-black";
+  return "bg-white/20";
+}
+
+export default function ProductCard({ p }: { p: Product }) {
+  const [open, setOpen] = useState(false);
+  const [added, setAdded] = useState(false);
+  const addedTimer = useRef<number | null>(null);
+  const [slide, setSlide] = useState(0);
+
+  // Share-Menü
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const title =
+    p.productName ||
+    [p.artist, p.trackTitle].filter(Boolean).join(" – ") ||
+    p.slug;
+
+  const soldOut = (p.stock ?? 1) <= 0;
+
+  const gallery = useMemo(() => {
+    const arr = Array.isArray(p.images) && p.images.length > 0 ? p.images : [p.image];
+    return arr.filter(Boolean);
+  }, [p.images, p.image]);
+
+  // FSK "16" aus "FSK 16" extrahieren
+  const fskNum = useMemo(() => {
+    const s = (p.fsk || "").toString();
+    const m = s.match(/\d{1,2}/);
+    return m ? m[0] : null;
+  }, [p.fsk]);
+
+  function productUrl() {
+    const base =
+      (typeof window !== "undefined" ? window.location.origin : "") ||
+      (process.env.NEXT_PUBLIC_BASE_URL || "");
+    return `${base}/de/shop/${p.slug}`;
+  }
+
+  async function shareSystem() {
+    const url = productUrl();
+    const text = `Schau dir das mal an: ${title} – ${url}`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title, text, url });
+      } else {
+        await copyLink();
+      }
+    } catch {
+      // abgebrochen/Fehler ignorieren
+    } finally {
+      setMenuOpen(false);
+    }
+  }
+
+  async function copyLink() {
+    const url = productUrl();
+    try {
+      await navigator.clipboard.writeText(url);
+      alert("Link kopiert ✅");
+    } catch {
+      prompt("Link kopieren:", url);
+    } finally {
+      setMenuOpen(false);
+    }
+  }
+
+  function shareWhatsApp() {
+    const url = productUrl();
+    const text = `Schau dir das mal an: ${title} – ${url}`;
+    const href = `https://wa.me/?text=${encodeURIComponent(text)}`;
+    window.open(href, "_blank", "noopener,noreferrer");
+    setMenuOpen(false);
+  }
+
+  function addToCart() {
+    if (soldOut) return;
+    const max = Math.max(0, p.stock ?? 1);
+    const cart = readCart();
+    const cur = Math.max(0, Number(cart[p.id]?.qty || 0));
+    const nextQty = Math.min(max, cur + 1);
+    cart[p.id] = { ...(cart[p.id] || {}), qty: nextQty, price: p.priceEUR };
+    writeCart(cart);
+    setAdded(true);
+    if (addedTimer.current) window.clearTimeout(addedTimer.current);
+    addedTimer.current = window.setTimeout(() => setAdded(false), 1500);
+  }
+
+  function openModal() {
+    if (!gallery.length) return;
+    setSlide(0);
+    setOpen(true);
+  }
+  function prev() {
+    if (!gallery.length) return;
+    setSlide((i) => (i - 1 + gallery.length) % gallery.length);
+  }
+  function next() {
+    if (!gallery.length) return;
+    setSlide((i) => (i + 1) % gallery.length);
+  }
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "ArrowLeft") prev();
+      else if (e.key === "ArrowRight") next();
+      else if (e.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, gallery.length]);
+
+  // Close Share-Menü bei Klick außerhalb
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = (e: MouseEvent) => {
+      const el = e.target as HTMLElement;
+      if (!el.closest?.("[data-share-root]")) setMenuOpen(false);
+    };
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, [menuOpen]);
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.06] hover:bg-white/[0.08] transition p-3 w-full sm:w-[200px] relative">
+      <div className="sr-only" aria-live="polite">
+        {added ? `${title} zum Warenkorb hinzugefügt` : ""}
+      </div>
+
+      <button
+        type="button"
+        onClick={openModal}
+        className="relative block w-full"
+        aria-label="Bild vergrößern"
+        disabled={!gallery.length}
+      >
+        {/* Bildkachel: mobil vollbreit & quadratisch, ab sm: feste 180x180 */}
+        <div className="relative w-full aspect-square sm:h-[180px] sm:w-[180px] mx-auto overflow-hidden rounded-xl">
+          <img
+            src={gallery[0] || "/placeholder.png"}
+            alt={title}
+            className="absolute inset-0 h-full w-full object-cover"
+            height={180}
+            width={180}
+            loading="lazy"
+          />
+          {soldOut && (
+            <div className="absolute left-2 top-2 rounded bg-red-500 text-black text-[10px] font-bold px-1.5 py-0.5">
+              Ausverkauft
+            </div>
+          )}
+          {/* ❌ FSK im Bild entfernt */}
+          <div className="pointer-events-none absolute right-2 bottom-2 rounded-full bg-black/60 px-1.5 py-0.5 text-[10px]">
+            Vergrößern
+          </div>
+        </div>
+      </button>
+
+      <div className="mt-3">
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] uppercase opacity-70">{p.categoryCode.toUpperCase()}</span>
+          {p.condition ? (
+            <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${condClass(p.condition)}`}>
+              {p.condition}
+            </span>
+          ) : null}
+        </div>
+
+        {p.subtitle ? (
+          <div className="text-[10px] opacity-70 line-clamp-1">{p.subtitle}</div>
+        ) : (
+          <div className="text-[10px] opacity-0 select-none">.</div>
+        )}
+
+        <div className="mt-1 font-semibold leading-snug line-clamp-2 min-h-[2.8em]">
+          {title}
+        </div>
+
+        {/* Subline: Genre */}
+        <div className="text-[11px] opacity-70 mt-0.5">
+          Genre: {p.genre?.trim() || "—"}
+        </div>
+
+        {/* Format einzeilig mit Tooltip */}
+        <div className="text-[11px] opacity-70 mt-0.5 truncate" title={p.format?.trim() || "—"}>
+          Format: {p.format?.trim() || "—"}
+        </div>
+
+        {/* 💶 Preis links — FSK rechts (direkt über dem Button) */}
+        <div className="mt-2 flex items-center justify-between gap-2">
+          <div className="font-semibold text-sm">{p.priceEUR.toFixed(2)} €</div>
+          {fskNum && (
+            <img
+              src={`/fsk/fsk-${fskNum}.png`}
+              alt={`FSK ${fskNum}`}
+              className="h-6 w-6 rounded-sm"
+              loading="lazy"
+            />
+          )}
+        </div>
+
+        <button
+          type="button"
+          onClick={addToCart}
+          disabled={soldOut}
+          className={`mt-1 w-full px-2 py-1 rounded text-xs font-semibold transition
+            ${
+              soldOut
+                ? "bg-white/10 text-white/50 cursor-not-allowed"
+                : added
+                ? "bg-emerald-500 text-black"
+                : "bg-cyan-500 text-black hover:bg-cyan-400"
+            }`}
+          title={soldOut ? "Nicht verfügbar" : "In den Warenkorb"}
+        >
+          {soldOut ? "Nicht verfügbar" : added ? "Hinzugefügt ✓" : "In den Warenkorb"}
+        </button>
+
+        {/* Lagerbestand links – Share-Menü rechts */}
+        <div className="mt-1 flex items-center justify-between text-[11px]">
+          {!soldOut && typeof p.stock === "number" ? (
+            <div className="opacity-70">Lagerbestand: {p.stock}</div>
+          ) : <span />}
+          <div className="relative" data-share-root>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); }}
+              className="inline-flex items-center gap-2 rounded px-2 py-1 bg-white/10 hover:bg-white/20"
+              title="Teilen"
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" className="shrink-0" aria-hidden="true">
+                <path d="M13 5l6 6-6 6v-4H9a6 6 0 0 1-6-6V6h2v1a4 4 0 0 0 4 4h4V5z" fill="currentColor"/>
+              </svg>
+              <span className="hidden sm:inline">Teilen</span>
+            </button>
+
+            {menuOpen && (
+              <div
+                role="menu"
+                className="absolute right-0 bottom-7 z-20 w-44 rounded-xl border border-white/10 bg-black/90 shadow-lg backdrop-blur p-1"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button role="menuitem" className="w-full text-left px-3 py-2 rounded hover:bg-white/10 text-sm" onClick={shareSystem}>
+                  System-Teilen …
+                </button>
+                <button role="menuitem" className="w-full text-left px-3 py-2 rounded hover:bg-white/10 text-sm" onClick={shareWhatsApp}>
+                  WhatsApp
+                </button>
+                <button role="menuitem" className="w-full text-left px-3 py-2 rounded hover:bg-white/10 text-sm" onClick={copyLink}>
+                  Link kopieren
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {open && (
+        <div className="fixed inset-0 z-50 bg-black/80 grid place-items-center p-4">
+          <div className="relative">
+            <img
+              src={gallery[slide] || "/placeholder.png"}
+              alt={`${title} – Bild ${slide + 1}`}
+              width={500}
+              height={500}
+              className="h-[500px] w-[500px] object-contain rounded-xl bg-black cursor-pointer"
+              onClick={next}
+            />
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              className="absolute -right-3 -top-3 rounded-full bg-white text-black px-3 py-1 text-sm font-semibold shadow"
+            >
+              Schließen
+            </button>
+
+            {gallery.length > 1 && (
+              <>
+                <button type="button" onClick={prev} className="absolute left-2 top-1/2 -translate-y-1/2 rounded bg-white/80 hover:bg-white text-black px-2 py-1" aria-label="Vorheriges Bild">‹</button>
+                <button type="button" onClick={next} className="absolute right-2 top-1/2 -translate-y-1/2 rounded bg-white/80 hover:bg-white text-black px-2 py-1" aria-label="Nächstes Bild">›</button>
+                <div className="mt-3 flex items-center justify-center gap-2">
+                  {gallery.map((src, i) => (
+                    <button
+                      key={`${src}-${i}`}
+                      type="button"
+                      onClick={() => setSlide(i)}
+                      className={`h-12 w-12 rounded overflow-hidden border ${i === slide ? "border-cyan-400" : "border-white/20"}`}
+                      title={`Bild ${i + 1}`}
+                    >
+                      <img src={src} alt={`Thumb ${i + 1}`} className="h-full w-full object-cover" height={48} width={48}/>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
