@@ -1,18 +1,18 @@
 // lib/adminAuth.ts
 import { NextRequest, NextResponse } from "next/server";
 
-/**
- * Liest den Admin-Token aus Header oder Query (?key=...).
- */
+/** Liest Admin-Token aus Header, Query ODER Cookie (`admin_key`). */
 export function readAdminKey(req: NextRequest): string {
   const header = req.headers.get("x-admin-key") || "";
-  const query = req.nextUrl?.searchParams?.get("key") || "";
-  return header || query || "";
+  const query  = req.nextUrl?.searchParams?.get("key") || "";
+  // Cookie (httpOnly) → vom /api/admin/login gesetzt
+  const cookie = req.cookies.get("admin_key")?.value || "";
+  return header || query || cookie || "";
 }
 
 /**
  * Stellt sicher, dass der Aufrufer Admin ist.
- * Gibt bei Fehler eine NextResponse (401) zurück, sonst null.
+ * Gibt bei Fehler eine NextResponse (401/403/500) zurück, sonst null.
  */
 export function ensureAdmin(req: NextRequest): NextResponse | null {
   const clientKey = readAdminKey(req);
@@ -20,7 +20,6 @@ export function ensureAdmin(req: NextRequest): NextResponse | null {
     process.env.ADMIN_TOKEN || process.env.NEXT_PUBLIC_ADMIN_TOKEN || "";
 
   if (!serverKey) {
-    // Wenn kein Token gesetzt ist, blocken wir lieber hart.
     return NextResponse.json(
       { error: "Server misconfigured: ADMIN_TOKEN missing" },
       { status: 500 }
@@ -34,5 +33,5 @@ export function ensureAdmin(req: NextRequest): NextResponse | null {
     );
   }
 
-  return null; // passt
+  return null;
 }

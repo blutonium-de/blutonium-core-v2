@@ -1,3 +1,4 @@
+// app/api/admin/orders/[id]/invoice/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { generateInvoicePdf } from "@/lib/invoice";
@@ -12,10 +13,7 @@ function ok(keyFromUrl?: string) {
   return keyFromUrl === need;
 }
 
-export async function GET(
-  req: Request,
-  { params }: { params: { id: string } }
-) {
+export async function GET(req: Request, { params }: { params: { id: string } }) {
   try {
     const { searchParams } = new URL(req.url);
     const key = searchParams.get("key") || undefined;
@@ -47,32 +45,30 @@ export async function GET(
       return NextResponse.json({ error: "Order not found" }, { status: 404 });
     }
 
-    // Falls du in der DB (später) invoiceNumber speicherst: benutze die hier
-    // Für jetzt: “ENTWURF-<id-suffix>”
+    // Rechnungsnummer (falls du später ein Feld speicherst: das verwenden)
     const invoiceNumber =
-      // @ts-ignore (falls du das Feld später hinzufügst)
-      order.invoiceNumber?.toString() ||
-      `ENTWURF-${order.id.slice(-6).toUpperCase()}`;
+      // @ts-ignore
+      order.invoiceNumber?.toString() || `ENTWURF-${order.id.slice(-6).toUpperCase()}`;
 
-    // Form für generateInvoicePdf zusammenbauen
+    // Payload für PDF – inkl. paymentProvider & shipping*
     const orderForPdf = {
       id: order.id,
       email: order.email ?? null,
-      amountTotal: order.amountTotal,
+      amountTotal: order.amountTotal, // Cents
       currency: order.currency || "EUR",
       createdAt: order.createdAt,
-      firstName:
-        // wir unterstützen beide Varianten (street/zip vs address)
-        // (einige deiner früheren Schemas hatten address/zip statt street/postalCode)
-        (order as any).firstName ?? null,
+      firstName: (order as any).firstName ?? null,
       lastName: (order as any).lastName ?? null,
       address: (order as any).street ?? (order as any).address ?? null,
       zip: (order as any).postalCode ?? (order as any).zip ?? null,
       city: (order as any).city ?? null,
       country: (order as any).country ?? null,
+      paymentProvider: (order as any).paymentProvider ?? null, // ✔ für „Bezahlt mit“
+      shippingName: (order as any).shippingName ?? null,       // optional
+      shippingEUR: (order as any).shippingEUR ?? null,         // optional (EUR float)
       items: order.items.map((it) => ({
         qty: it.qty,
-        unitPrice: it.unitPrice, // bereits Cent
+        unitPrice: it.unitPrice, // Cents
         product: it.product
           ? {
               slug: it.product.slug,
@@ -97,9 +93,6 @@ export async function GET(
     });
   } catch (e: any) {
     console.error("admin/orders/:id/invoice error", e);
-    return NextResponse.json(
-      { error: e?.message || "server error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: e?.message || "server error" }, { status: 500 });
   }
 }

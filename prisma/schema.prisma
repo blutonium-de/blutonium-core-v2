@@ -46,7 +46,7 @@ model Order {
   email           String?
   amountTotal     Int
   currency        String
-  status          String
+  status          String      @default("open")
   createdAt       DateTime    @default(now())
   address         String?
   city            String?
