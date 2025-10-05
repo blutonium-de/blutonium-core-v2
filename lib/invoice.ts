@@ -6,7 +6,7 @@ import path from "path";
 type OrderWithItems = {
   id: string;
   email: string | null;
-  amountTotal: number; // cents
+  amountTotal: number; // cents (inkl. Versand)
   currency: string;
   createdAt: Date;
   firstName?: string | null;
@@ -15,6 +15,9 @@ type OrderWithItems = {
   zip?: string | null;         // alias: postalCode
   city?: string | null;
   country?: string | null;
+  paymentProvider?: string | null;   // ⬅️ NEU (Stripe/PayPal)
+  shippingName?: string | null;      // ⬅️ optional, falls gespeichert
+  shippingEUR?: number | null;       // ⬅️ optional (EUR); wird notfalls berechnet
   items: Array<{
     qty: number;
     unitPrice: number; // cents
@@ -59,16 +62,8 @@ function formatDate(d: Date) {
   }
 }
 
-/**
- * Sehr einfache Wortumbruch-Funktion für die Positionsspalte.
- * Bricht nach Leerzeichen, damit der Text in maxWidth passt.
- */
-function wrapText(
-  text: string,
-  font: any,
-  fontSize: number,
-  maxWidth: number
-): string[] {
+/** Einfacher Wortumbruch für die erste Spalte. */
+function wrapText(text: string, font: any, fontSize: number, maxWidth: number): string[] {
   const words = text.split(/\s+/g);
   const lines: string[] = [];
   let cur = "";
@@ -80,7 +75,6 @@ function wrapText(
       cur = test;
     } else {
       if (cur) lines.push(cur);
-      // falls einzelnes Wort länger als maxWidth → hart trennen
       if (font.widthOfTextAtSize(w, fontSize) > maxWidth) {
         let chunk = "";
         for (const ch of w.split("")) {
@@ -110,7 +104,7 @@ export async function generateInvoicePdf(order: OrderWithItems, invoiceNumber: s
   const fontRegular = await pdf.embedFont(StandardFonts.Helvetica);
   const fontBold = await pdf.embedFont(StandardFonts.HelveticaBold);
 
-  // Logo – etwas nach unten versetzen, damit es nicht angeschnitten wird
+  // Logo deutlich weiter nach unten → nichts wird abgeschnitten
   const logoBytes = await loadLogoBytes();
   if (logoBytes) {
     const img =
@@ -125,8 +119,8 @@ export async function generateInvoicePdf(order: OrderWithItems, invoiceNumber: s
     if (img) {
       const w = 150;
       const h = (img.height / img.width) * w;
-      // y bewusst niedriger als zuvor (ca. 700) → sicher sichtbar
-      page.drawImage(img, { x: width - w - 40, y: 700, width: w, height: h, opacity: 0.95 });
+      // vorher ~700 – jetzt ca. 610 (≈ 2 cm weiter unten)
+      page.drawImage(img, { x: width - w - 40, y: 610, width: w, height: h, opacity: 0.95 });
     }
   }
 
@@ -148,8 +142,17 @@ export async function generateInvoicePdf(order: OrderWithItems, invoiceNumber: s
   page.drawText(`Datum: ${formatDate(order.createdAt)}`, { x: 40, y: metaY - 16, size: 11, font: fontRegular });
   page.drawText(`Kunde: ${order.email || "—"}`, { x: 40, y: metaY - 32, size: 11, font: fontRegular });
 
+  // Zahlart (Stripe/PayPal)
+  const provider = (order.paymentProvider || "").toLowerCase();
+  const providerLabel =
+    provider === "stripe" ? "Stripe / Karte"
+    : provider === "paypal" ? "PayPal"
+    : provider ? provider.charAt(0).toUpperCase() + provider.slice(1)
+    : "—";
+  page.drawText(`Bezahlt mit: ${providerLabel}`, { x: 40, y: metaY - 48, size: 11, font: fontRegular });
+
   // Käuferadresse
-  const buyerY = metaY - 60;
+  const buyerY = metaY - 76;
   page.drawText("Rechnung an:", { x: 40, y: buyerY, size: 11, font: fontBold });
   const nameLine = [order.firstName, order.lastName].filter(Boolean).join(" ");
   if (nameLine) page.drawText(nameLine, { x: 40, y: buyerY - 14, size: 11, font: fontRegular });
@@ -176,9 +179,9 @@ export async function generateInvoicePdf(order: OrderWithItems, invoiceNumber: s
   const unitX = 400;
   const totalX = 495;
 
-  const firstColMaxWidth = qtyX - posX - 10; // Platz bis zur Menge-Spalte
+  const firstColMaxWidth = qtyX - posX - 10;
 
-  // Tabellen-Header (ohne Klammern, damit nichts überlappt)
+  // Header
   page.drawText("Position", { x: posX, y, size: fontSize, font: fontBold });
   page.drawText("Menge", { x: qtyX, y, size: fontSize, font: fontBold });
   page.drawText("Einzelpreis €", { x: unitX, y, size: fontSize, font: fontBold });
@@ -187,7 +190,10 @@ export async function generateInvoicePdf(order: OrderWithItems, invoiceNumber: s
   page.drawLine({ start: { x: 40, y }, end: { x: width - 40, y }, thickness: 0.7, color: rgb(0.8, 0.8, 0.85) });
   y -= 18;
 
-  // Zeilen mit Umbruch in der ersten Spalte
+  // Summe der Artikel-Positionen (ohne Versand)
+  const itemsTotalCents = order.items.reduce((s, it) => s + (it.unitPrice * it.qty), 0);
+
+  // Zeilen: Artikel
   for (const it of order.items) {
     const p = it.product;
     const title =
@@ -197,22 +203,47 @@ export async function generateInvoicePdf(order: OrderWithItems, invoiceNumber: s
       (p?.genre ? ` – ${p.genre}` : "");
 
     const wrapped = wrapText(title, fontRegular, fontSize, firstColMaxWidth);
-    const rowHeight = Math.max(18, wrapped.length * 14); // 14pt pro Zeile
+    const rowHeight = Math.max(18, wrapped.length * 14);
 
-    // Mehrzeilige Position
     let innerY = y;
     for (const line of wrapped) {
       page.drawText(line, { x: posX, y: innerY, size: fontSize, font: fontRegular });
       innerY -= 14;
     }
 
-    // Menge / Preise nur einmal pro Zeileblock, vertikal an erste Zeile ausrichten
     page.drawText(String(it.qty), { x: qtyX, y, size: fontSize, font: fontRegular });
     page.drawText(euro(it.unitPrice), { x: unitX, y, size: fontSize, font: fontRegular });
     page.drawText(euro(it.unitPrice * it.qty), { x: totalX, y, size: fontSize, font: fontRegular });
 
     y -= rowHeight;
-    if (y < 130) break; // einfache 1-Seiten-Variante
+    if (y < 130) break; // 1-Seiten-Variante
+  }
+
+  // Versandbetrag: entweder aus der Order, oder aus Total – Items
+  const shippingCentsRaw =
+    order.shippingEUR != null
+      ? Math.round(order.shippingEUR * 100)
+      : Math.max(0, (order.amountTotal ?? 0) - itemsTotalCents);
+  const shippingCents = Math.max(0, shippingCentsRaw);
+  const shippingName = (order.shippingName?.trim() || "Versand");
+
+  // Versand als zusätzliche Position
+  if (shippingCents > 0) {
+    const title = `Versand – ${shippingName}`;
+    const wrapped = wrapText(title, fontRegular, fontSize, firstColMaxWidth);
+    const rowHeight = Math.max(18, wrapped.length * 14);
+
+    let innerY = y;
+    for (const line of wrapped) {
+      page.drawText(line, { x: posX, y: innerY, size: fontSize, font: fontRegular });
+      innerY -= 14;
+    }
+
+    page.drawText("1", { x: qtyX, y, size: fontSize, font: fontRegular });
+    page.drawText(euro(shippingCents), { x: unitX, y, size: fontSize, font: fontRegular });
+    page.drawText(euro(shippingCents), { x: totalX, y, size: fontSize, font: fontRegular });
+
+    y -= rowHeight;
   }
 
   // Summe
@@ -220,12 +251,10 @@ export async function generateInvoicePdf(order: OrderWithItems, invoiceNumber: s
   page.drawLine({ start: { x: 380, y }, end: { x: width - 40, y }, thickness: 0.7, color: rgb(0.8, 0.8, 0.85) });
   y -= 20;
 
-  // „Gesamtsumme: 10,00 €“ rechtsbündig neben Total-Spalte
-  const sumLabel = "Gesamtsumme:";
-  page.drawText(sumLabel, { x: unitX, y, size: 12, font: fontBold });
+  page.drawText("Gesamtsumme:", { x: unitX, y, size: 12, font: fontBold });
   page.drawText(`${euro(order.amountTotal)} €`, { x: totalX, y, size: 12, font: fontBold });
 
-  // Absender unten links
+  // Absender
   page.drawText("Absender:", { x: 40, y: 96, size: 10, font: fontBold });
   page.drawText("Blutonium.de Online Shop", { x: 40, y: 82, size: 10, font: fontRegular });
   page.drawText("Bahnhofstr. 27", { x: 40, y: 70, size: 10, font: fontRegular });
