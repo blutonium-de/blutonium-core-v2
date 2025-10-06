@@ -1,21 +1,47 @@
 // app/api/admin/orders/[id]/status/route.ts
-import { NextResponse, NextRequest } from "next/server";
-import { prisma } from "../../../../../../lib/db";
-import { ensureAdmin } from "../../../../../../lib/adminAuth";
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/db";                 // ❤️ stabiler Alias-Import
+import { ensureAdmin } from "@/lib/adminAuth";
 
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
-  if (!ensureAdmin(req)) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-  const { status } = await req.json().catch(() => ({}));
-  const allowed = new Set(["open", "paid", "processing", "shipped", "canceled", "refunded"]);
-  if (!allowed.has(status)) {
-    return NextResponse.json({ error: "invalid status" }, { status: 400 });
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  // Wenn ensureAdmin eine Response zurückgibt → sofort zurückgeben
+  const deny = ensureAdmin(req);
+  if (deny) return deny;
+
+  try {
+    const body = await req.json().catch(() => ({}));
+    const status = body?.status;
+
+    const allowed = new Set([
+      "open",
+      "paid",
+      "processing",
+      "shipped",
+      "canceled",
+      "refunded",
+    ]);
+    if (!allowed.has(status)) {
+      return NextResponse.json({ error: "invalid status" }, { status: 400 });
+    }
+
+    const order = await prisma.order.update({
+      where: { id: params.id },
+      data: { status },
+    });
+
+    return NextResponse.json({ order }, { status: 200 });
+  } catch (err: any) {
+    const msg =
+      err?.message ||
+      (typeof err === "string" ? err : "route failed while updating status");
+    // Server-Log zur Diagnose
+    console.error("[orders status PATCH] error:", msg, err?.stack || "");
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
-
-  const order = await prisma.order.update({
-    where: { id: params.id },
-    data: { status },
-  });
-
-  return NextResponse.json({ order });
-  }
+}

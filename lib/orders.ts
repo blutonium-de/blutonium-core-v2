@@ -1,15 +1,13 @@
-// lib/orders.ts
 import { prisma } from "@/lib/db";
 
 /**
- * Markiert die Order als "paid", setzt Provider-Infos und reduziert Lagerbestände – atomar in einer TX.
- * Wird von Stripe-/PayPal-Flows aufgerufen.
+ * Markiert Order als "paid" (provider + IDs) und reduziert Bestände atomar.
  */
 export async function finalizeOrderAndInventory(opts: {
   orderId: string;
   provider: "stripe" | "paypal";
-  externalId?: string;        // z.B. Stripe Session ID / PayPal Order ID
-  totalCents?: number;        // optional Plausibilitätscheck
+  externalId?: string;        // z.B. Stripe PaymentIntent / Session ID oder PayPal Capture ID
+  totalCents?: number;
 }) {
   const { orderId, provider, externalId, totalCents } = opts;
 
@@ -21,24 +19,36 @@ export async function finalizeOrderAndInventory(opts: {
     if (!order) throw new Error("order not found");
     if (order.status === "paid") return order; // idempotent
 
-    // Optionaler Plausibilitätscheck (abweichungen loggen, aber nicht bremsen)
     if (typeof totalCents === "number" && totalCents > 0 && totalCents !== order.amountTotal) {
       console.warn("finalizeOrder: total mismatch", { order: order.amountTotal, reported: totalCents });
     }
 
-    // Bestände reduzieren
+    // Bestände reduzieren + ggf. deaktivieren
     for (const it of order.items) {
-      if (!it.productId) continue; // Versand/Service
+      if (!it.productId) continue;
+      const p = await tx.product.findUnique({
+        where: { id: it.productId },
+        select: { stock: true },
+      });
+      if (!p) continue;
+      const newStock = Math.max(0, (p.stock ?? 0) - (it.qty || 0));
       await tx.product.update({
         where: { id: it.productId },
-        data: { stock: { decrement: it.qty } },
+        data: {
+          stock: newStock,
+          ...(newStock <= 0 ? { active: false } : {}),
+        },
       });
     }
 
-    // Order auf "paid" setzen + Provider-Felder
-    const data: any = { status: "paid", paymentProvider: provider };
+    const data: any = {
+      status: "paid",
+      paymentProvider: provider,
+    };
+    // generische Transaktions-ID
+    if (externalId) data.paymentId = externalId;
+    // Stripe-spezifisch zusätzlich stripeId befüllen, wenn sinnvoll
     if (provider === "stripe" && externalId) data.stripeId = externalId;
-    if (provider === "paypal" && externalId) data["paypalId" as any] = externalId;
 
     const updated = await tx.order.update({
       where: { id: orderId },
