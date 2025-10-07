@@ -1,15 +1,26 @@
 // app/admin/products/edit/[id]/page.tsx
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import ImageDrop from "../../../../../components/ImageDrop";
 
+// ✅ Nur noch „Dance“ – ohne „Dance & Electronic“
 const GENRES = [
-  "Hardstyle","Techno","Trance","House","Reggae","Pop","Filmmusik",
-  "Dance & Electronic","Hörspiel","Jazz","Klassik","Country",
-  "Italo Disco","Disco","EDM Big Room",
+  "Hardstyle","Techno","Trance","House","Reggae","Pop","Filmmusik","Dance",
+  "Hörspiel","Jazz","Klassik","Country","Italo Disco","Disco","EDM Big Room","Telespiel","DJ Tools"
 ] as const;
+
+// Genre-Eingaben auf „Dance“ kanonisieren (fasst auch alte Varianten)
+function normalizeGenre(v?: string | null) {
+  const s = (v || "").trim();
+  if (!s) return undefined;
+  const canon = s.toLowerCase().replace(/&/g, "and").replace(/\//g, " and ").replace(/\s+/g, " ");
+  if (/(^|\s)dance(\s|$)/.test(canon)) return "Dance";
+  return s;
+}
 
 type Product = {
   id: string;
@@ -39,7 +50,12 @@ type Product = {
 export default function AdminEditProductPage({ params }: { params: { id: string } }) {
   const { id } = params;
   const searchParams = useSearchParams();
-  const adminKey = searchParams.get("key") ?? "";
+
+  // 🔑 Key robust ermitteln (URL → localStorage → ENV)
+  const urlKey = searchParams.get("key") ?? "";
+  const lsKey  = typeof window !== "undefined" ? (localStorage.getItem("admin_key") ?? "") : "";
+  const envKey = process.env.NEXT_PUBLIC_ADMIN_TOKEN ?? "";
+  const adminKey = urlKey || lsKey || envKey;
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving]   = useState(false);
@@ -69,18 +85,25 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // Produkt laden (mit ?key=...)
+  // Produkt laden
   useEffect(() => {
     (async () => {
       setLoading(true);
       setMsg(null);
       try {
-        const r = await fetch(`/api/admin/products/${id}?key=${encodeURIComponent(adminKey)}`, { cache: "no-store" });
+        const keyQuery = adminKey ? `?key=${encodeURIComponent(adminKey)}` : "";
+        const r = await fetch(`/api/admin/products/${id}${keyQuery}`, {
+          cache: "no-store",
+          headers: adminKey ? { "x-admin-key": adminKey } : {},
+        });
         const t = await r.text();
         let j: any; try { j = JSON.parse(t); } catch { throw new Error(t || "Serverfehler"); }
         if (!r.ok) throw new Error(j?.error || "Produkt nicht gefunden");
 
         const prod: Product = j;
+        // vorhandenes Genre direkt auf Kanon bringen, damit das Select passt
+        prod.genre = normalizeGenre(prod.genre) ?? null;
+
         setP(prod);
         setActive(prod.active);
         setImages(prod.images?.length ? prod.images : (prod.image ? [prod.image] : []));
@@ -121,13 +144,18 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
         active,
         image: images[0] || "",
         images,
-        genre: strOrNull(fd.get("genre")),
+        // ➜ Genre normalisieren
+        genre: normalizeGenre(String(fd.get("genre") || "")),
         stock: numOrNull(fd.get("stock")), // Bestand mitsenden
       };
 
-      const r = await fetch(`/api/admin/products/${id}?key=${encodeURIComponent(adminKey)}`, {
+      const keyQuery = adminKey ? `?key=${encodeURIComponent(adminKey)}` : "";
+      const r = await fetch(`/api/admin/products/${id}${keyQuery}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(adminKey ? { "x-admin-key": adminKey } : {}),
+        },
         body: JSON.stringify(body),
       });
 
@@ -150,9 +178,13 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
     setActive(next);
     setMsg(null);
     try {
-      const r = await fetch(`/api/admin/products/${id}?key=${encodeURIComponent(adminKey)}`, {
+      const keyQuery = adminKey ? `?key=${encodeURIComponent(adminKey)}` : "";
+      const r = await fetch(`/api/admin/products/${id}${keyQuery}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(adminKey ? { "x-admin-key": adminKey } : {}),
+        },
         body: JSON.stringify({ active: next }),
       });
       if (!r.ok) {
@@ -173,8 +205,10 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
     if (!really) return;
 
     try {
-      const r = await fetch(`/api/admin/products/${id}?key=${encodeURIComponent(adminKey)}`, {
+      const keyQuery = adminKey ? `?key=${encodeURIComponent(adminKey)}` : "";
+      const r = await fetch(`/api/admin/products/${id}${keyQuery}`, {
         method: "DELETE",
+        headers: adminKey ? { "x-admin-key": adminKey } : {},
       });
       if (!r.ok) {
         const t = await r.text();

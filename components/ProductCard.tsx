@@ -3,6 +3,7 @@
 
 import { useState, useRef, useMemo, useEffect } from "react";
 import Link from "next/link";
+import { fskIconPath } from "@/components/fsk";
 
 type Product = {
   id: string;
@@ -19,7 +20,7 @@ type Product = {
   stock?: number;
   genre?: string | null;
   format?: string | null;
-  fsk?: string | null; // ← NEU
+  fsk?: string | number | null;
 };
 
 type CartMap = Record<string, { qty: number; price?: number }>;
@@ -39,11 +40,11 @@ function writeCart(next: CartMap) {
 
 function condClass(c?: string | null) {
   const v = (c || "").toLowerCase();
-  if (v === "neu")        return "bg-yellow-400 text-black";
-  if (v === "neuwertig")  return "bg-emerald-400 text-black";
-  if (v === "ok")         return "bg-amber-400 text-black";
-  if (v === "gebraucht")  return "bg-orange-500 text-black";
-  if (v === "stark")      return "bg-red-500 text-black";
+  if (v === "neu") return "bg-yellow-400 text-black";
+  if (v === "neuwertig") return "bg-emerald-400 text-black";
+  if (v === "ok") return "bg-amber-400 text-black";
+  if (v === "gebraucht") return "bg-orange-500 text-black";
+  if (v === "stark") return "bg-red-500 text-black";
   return "bg-white/20";
 }
 
@@ -64,21 +65,19 @@ export default function ProductCard({ p }: { p: Product }) {
   const soldOut = (p.stock ?? 1) <= 0;
 
   const gallery = useMemo(() => {
-    const arr = Array.isArray(p.images) && p.images.length > 0 ? p.images : [p.image];
+    const arr =
+      Array.isArray(p.images) && p.images.length > 0 ? p.images : [p.image];
     return arr.filter(Boolean);
   }, [p.images, p.image]);
 
-  // FSK "16" aus "FSK 16" extrahieren
-  const fskNum = useMemo(() => {
-    const s = (p.fsk || "").toString();
-    const m = s.match(/\d{1,2}/);
-    return m ? m[0] : null;
-  }, [p.fsk]);
+  // FSK-Icon vorbereiten
+  const fskIcon = useMemo(() => fskIconPath(p.fsk), [p.fsk]);
 
   function productUrl() {
     const base =
       (typeof window !== "undefined" ? window.location.origin : "") ||
-      (process.env.NEXT_PUBLIC_BASE_URL || "");
+      process.env.NEXT_PUBLIC_BASE_URL ||
+      "";
     return `${base}/de/shop/${p.slug}`;
   }
 
@@ -181,7 +180,7 @@ export default function ProductCard({ p }: { p: Product }) {
         aria-label="Bild vergrößern"
         disabled={!gallery.length}
       >
-        {/* Bildkachel: mobil vollbreit & quadratisch, ab sm: feste 180x180 */}
+        {/* Bildkachel */}
         <div className="relative w-full aspect-square sm:h-[180px] sm:w-[180px] mx-auto overflow-hidden rounded-xl">
           <img
             src={gallery[0] || "/placeholder.png"}
@@ -196,7 +195,6 @@ export default function ProductCard({ p }: { p: Product }) {
               Ausverkauft
             </div>
           )}
-          {/* ❌ FSK im Bild entfernt */}
           <div className="pointer-events-none absolute right-2 bottom-2 rounded-full bg-black/60 px-1.5 py-0.5 text-[10px]">
             Vergrößern
           </div>
@@ -205,16 +203,24 @@ export default function ProductCard({ p }: { p: Product }) {
 
       <div className="mt-3">
         <div className="flex items-center gap-2">
-          <span className="text-[11px] uppercase opacity-70">{p.categoryCode.toUpperCase()}</span>
+          <span className="text-[11px] uppercase opacity-70">
+            {p.categoryCode.toUpperCase()}
+          </span>
           {p.condition ? (
-            <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${condClass(p.condition)}`}>
+            <span
+              className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${condClass(
+                p.condition
+              )}`}
+            >
               {p.condition}
             </span>
           ) : null}
         </div>
 
         {p.subtitle ? (
-          <div className="text-[10px] opacity-70 line-clamp-1">{p.subtitle}</div>
+          <div className="text-[10px] opacity-70 line-clamp-1">
+            {p.subtitle}
+          </div>
         ) : (
           <div className="text-[10px] opacity-0 select-none">.</div>
         )}
@@ -223,24 +229,27 @@ export default function ProductCard({ p }: { p: Product }) {
           {title}
         </div>
 
-        {/* Subline: Genre */}
         <div className="text-[11px] opacity-70 mt-0.5">
           Genre: {p.genre?.trim() || "—"}
         </div>
 
-        {/* Format einzeilig mit Tooltip */}
-        <div className="text-[11px] opacity-70 mt-0.5 truncate" title={p.format?.trim() || "—"}>
+        <div
+          className="text-[11px] opacity-70 mt-0.5 truncate"
+          title={p.format?.trim() || "—"}
+        >
           Format: {p.format?.trim() || "—"}
         </div>
 
-        {/* 💶 Preis links — FSK rechts (direkt über dem Button) */}
+        {/* 💶 Preis links — FSK rechts */}
         <div className="mt-2 flex items-center justify-between gap-2">
-          <div className="font-semibold text-sm">{p.priceEUR.toFixed(2)} €</div>
-          {fskNum && (
+          <div className="font-semibold text-sm">
+            {p.priceEUR.toFixed(2)} €
+          </div>
+          {fskIcon && (
             <img
-              src={`/fsk/fsk-${fskNum}.png`}
-              alt={`FSK ${fskNum}`}
-              className="h-6 w-6 rounded-sm"
+              src={fskIcon}
+              alt="FSK"
+              className="h-6 w-6 rounded-sm bg-white/80 p-[2px]"
               loading="lazy"
             />
           )}
@@ -263,22 +272,35 @@ export default function ProductCard({ p }: { p: Product }) {
           {soldOut ? "Nicht verfügbar" : added ? "Hinzugefügt ✓" : "In den Warenkorb"}
         </button>
 
-        {/* Lagerbestand links – Share-Menü rechts */}
         <div className="mt-1 flex items-center justify-between text-[11px]">
           {!soldOut && typeof p.stock === "number" ? (
             <div className="opacity-70">Lagerbestand: {p.stock}</div>
-          ) : <span />}
+          ) : (
+            <span />
+          )}
           <div className="relative" data-share-root>
             <button
               type="button"
-              onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                setMenuOpen((v) => !v);
+              }}
               className="inline-flex items-center gap-2 rounded px-2 py-1 bg-white/10 hover:bg-white/20"
               title="Teilen"
               aria-haspopup="menu"
               aria-expanded={menuOpen}
             >
-              <svg width="18" height="18" viewBox="0 0 24 24" className="shrink-0" aria-hidden="true">
-                <path d="M13 5l6 6-6 6v-4H9a6 6 0 0 1-6-6V6h2v1a4 4 0 0 0 4 4h4V5z" fill="currentColor"/>
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                className="shrink-0"
+                aria-hidden="true"
+              >
+                <path
+                  d="M13 5l6 6-6 6v-4H9a6 6 0 0 1-6-6V6h2v1a4 4 0 0 0 4 4h4V5z"
+                  fill="currentColor"
+                />
               </svg>
               <span className="hidden sm:inline">Teilen</span>
             </button>
@@ -289,13 +311,25 @@ export default function ProductCard({ p }: { p: Product }) {
                 className="absolute right-0 bottom-7 z-20 w-44 rounded-xl border border-white/10 bg-black/90 shadow-lg backdrop-blur p-1"
                 onClick={(e) => e.stopPropagation()}
               >
-                <button role="menuitem" className="w-full text-left px-3 py-2 rounded hover:bg-white/10 text-sm" onClick={shareSystem}>
+                <button
+                  role="menuitem"
+                  className="w-full text-left px-3 py-2 rounded hover:bg-white/10 text-sm"
+                  onClick={shareSystem}
+                >
                   System-Teilen …
                 </button>
-                <button role="menuitem" className="w-full text-left px-3 py-2 rounded hover:bg-white/10 text-sm" onClick={shareWhatsApp}>
+                <button
+                  role="menuitem"
+                  className="w-full text-left px-3 py-2 rounded hover:bg-white/10 text-sm"
+                  onClick={shareWhatsApp}
+                >
                   WhatsApp
                 </button>
-                <button role="menuitem" className="w-full text-left px-3 py-2 rounded hover:bg-white/10 text-sm" onClick={copyLink}>
+                <button
+                  role="menuitem"
+                  className="w-full text-left px-3 py-2 rounded hover:bg-white/10 text-sm"
+                  onClick={copyLink}
+                >
                   Link kopieren
                 </button>
               </div>
@@ -325,18 +359,42 @@ export default function ProductCard({ p }: { p: Product }) {
 
             {gallery.length > 1 && (
               <>
-                <button type="button" onClick={prev} className="absolute left-2 top-1/2 -translate-y-1/2 rounded bg-white/80 hover:bg-white text-black px-2 py-1" aria-label="Vorheriges Bild">‹</button>
-                <button type="button" onClick={next} className="absolute right-2 top-1/2 -translate-y-1/2 rounded bg-white/80 hover:bg-white text-black px-2 py-1" aria-label="Nächstes Bild">›</button>
+                <button
+                  type="button"
+                  onClick={prev}
+                  className="absolute left-2 top-1/2 -translate-y-1/2 rounded bg-white/80 hover:bg-white text-black px-2 py-1"
+                  aria-label="Vorheriges Bild"
+                >
+                  ‹
+                </button>
+                <button
+                  type="button"
+                  onClick={next}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded bg-white/80 hover:bg-white text-black px-2 py-1"
+                  aria-label="Nächstes Bild"
+                >
+                  ›
+                </button>
                 <div className="mt-3 flex items-center justify-center gap-2">
                   {gallery.map((src, i) => (
                     <button
                       key={`${src}-${i}`}
                       type="button"
                       onClick={() => setSlide(i)}
-                      className={`h-12 w-12 rounded overflow-hidden border ${i === slide ? "border-cyan-400" : "border-white/20"}`}
+                      className={`h-12 w-12 rounded overflow-hidden border ${
+                        i === slide
+                          ? "border-cyan-400"
+                          : "border-white/20"
+                      }`}
                       title={`Bild ${i + 1}`}
                     >
-                      <img src={src} alt={`Thumb ${i + 1}`} className="h-full w-full object-cover" height={48} width={48}/>
+                      <img
+                        src={src}
+                        alt={`Thumb ${i + 1}`}
+                        className="h-full w-full object-cover"
+                        height={48}
+                        width={48}
+                      />
                     </button>
                   ))}
                 </div>

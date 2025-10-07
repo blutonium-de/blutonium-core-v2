@@ -15,9 +15,9 @@ type OrderWithItems = {
   zip?: string | null;         // alias: postalCode
   city?: string | null;
   country?: string | null;
-  paymentProvider?: string | null;   // ⬅️ NEU (Stripe/PayPal)
-  shippingName?: string | null;      // ⬅️ optional, falls gespeichert
-  shippingEUR?: number | null;       // ⬅️ optional (EUR); wird notfalls berechnet
+  paymentProvider?: string | null;
+  shippingName?: string | null;
+  shippingEUR?: number | null;
   items: Array<{
     qty: number;
     unitPrice: number; // cents
@@ -27,12 +27,58 @@ type OrderWithItems = {
       subtitle?: string | null;
       format?: string | null;
       genre?: string | null;
-    } | null;
+    } | null; // ⬅️ Versand hat hier "null"
   }>;
 };
 
 function euro(cents: number) {
   return (cents / 100).toFixed(2);
+}
+
+/** Problematische Unicode-Zeichen in PDF-kompatible ASCII-Äquivalente umwandeln. */
+function sanitizePdfText(input?: string | null): string {
+  if (!input) return "";
+  let s = input;
+
+  // geschützte/seltsame Leerzeichen → normales Space
+  s = s.replace(/[\u00A0\u2000-\u200B\u202F\u205F\u3000]/g, " ");
+
+  // typografische Anführungen → gerade
+  s = s.replace(/[“”«»„‟]/g, '"').replace(/[‘’‚‛]/g, "'");
+
+  // Gedanken-/Viertelgeviert-/Minus-Varianten → normales Minus
+  s = s.replace(/[–—‐-‒﹘﹣]/g, "-");
+
+  // Ellipsis → drei Punkte
+  s = s.replace(/[…]/g, "...");
+
+  // Bruchzeichen → ASCII
+  s = s
+    .replace(/¼/g, "1/4")
+    .replace(/½/g, "1/2")
+    .replace(/¾/g, "3/4")
+    .replace(/⅐/g, "1/7")
+    .replace(/⅑/g, "1/9")
+    .replace(/⅒/g, "1/10")
+    .replace(/⅓/g, "1/3")
+    .replace(/⅔/g, "2/3")
+    .replace(/⅕/g, "1/5")
+    .replace(/⅖/g, "2/5")
+    .replace(/⅗/g, "3/5")
+    .replace(/⅘/g, "4/5")
+    .replace(/⅙/g, "1/6")
+    .replace(/⅚/g, "5/6")
+    .replace(/⅛/g, "1/8")
+    .replace(/⅜/g, "3/8")
+    .replace(/⅝/g, "5/8")
+    .replace(/⅞/g, "7/8");
+
+  // Steuerzeichen/Emoji u.ä. entfernen (alles außerhalb Latin-1 grob filtern – Umlaute bleiben)
+  s = s.normalize("NFKD").replace(/[^\u0009\u000A\u000D\u0020-\u00FF]/g, "");
+
+  // mehrfaches Space entschärfen
+  s = s.replace(/[ \t]{2,}/g, " ").trim();
+  return s;
 }
 
 async function loadLogoBytes(): Promise<Uint8Array | null> {
@@ -104,7 +150,6 @@ export async function generateInvoicePdf(order: OrderWithItems, invoiceNumber: s
   const fontRegular = await pdf.embedFont(StandardFonts.Helvetica);
   const fontBold = await pdf.embedFont(StandardFonts.HelveticaBold);
 
-  // Logo deutlich weiter nach unten → nichts wird abgeschnitten
   const logoBytes = await loadLogoBytes();
   if (logoBytes) {
     const img =
@@ -119,7 +164,6 @@ export async function generateInvoicePdf(order: OrderWithItems, invoiceNumber: s
     if (img) {
       const w = 150;
       const h = (img.height / img.width) * w;
-      // vorher ~700 – jetzt ca. 610 (≈ 2 cm weiter unten)
       page.drawImage(img, { x: width - w - 40, y: 610, width: w, height: h, opacity: 0.95 });
     }
   }
@@ -127,50 +171,62 @@ export async function generateInvoicePdf(order: OrderWithItems, invoiceNumber: s
   const shopName = process.env.SHOP_NAME || "Blutonium Records";
 
   // Header
-  page.drawText(shopName, { x: 40, y: 800, size: 18, font: fontBold, color: rgb(0.9, 0.9, 0.95) });
-  page.drawText("Quittung / Rechnung (Privatverkauf)", {
-    x: 40,
-    y: 780,
-    size: 12,
-    font: fontRegular,
-    color: rgb(0.85, 0.85, 0.9),
+  page.drawText(sanitizePdfText(shopName), { x: 40, y: 800, size: 18, font: fontBold, color: rgb(0.9, 0.9, 0.95) });
+  page.drawText(sanitizePdfText("Quittung / Rechnung (Privatverkauf)"), {
+    x: 40, y: 780, size: 12, font: fontRegular, color: rgb(0.85, 0.85, 0.9),
   });
 
   // Meta
   const metaY = 740;
-  page.drawText(`Rechnungs-Nr.: ${invoiceNumber}`, { x: 40, y: metaY, size: 11, font: fontRegular });
-  page.drawText(`Datum: ${formatDate(order.createdAt)}`, { x: 40, y: metaY - 16, size: 11, font: fontRegular });
-  page.drawText(`Kunde: ${order.email || "—"}`, { x: 40, y: metaY - 32, size: 11, font: fontRegular });
+  page.drawText(sanitizePdfText(`Rechnungs-Nr.: ${invoiceNumber}`), { x: 40, y: metaY, size: 11, font: fontRegular });
+  page.drawText(sanitizePdfText(`Datum: ${formatDate(order.createdAt)}`), { x: 40, y: metaY - 16, size: 11, font: fontRegular });
+  page.drawText(sanitizePdfText(`Kunde: ${order.email || "—"}`), { x: 40, y: metaY - 32, size: 11, font: fontRegular });
 
-  // Zahlart (Stripe/PayPal)
+  // Zahlart
   const provider = (order.paymentProvider || "").toLowerCase();
   const providerLabel =
     provider === "stripe" ? "Stripe / Karte"
     : provider === "paypal" ? "PayPal"
     : provider ? provider.charAt(0).toUpperCase() + provider.slice(1)
     : "—";
-  page.drawText(`Bezahlt mit: ${providerLabel}`, { x: 40, y: metaY - 48, size: 11, font: fontRegular });
+  page.drawText(sanitizePdfText(`Bezahlt mit: ${providerLabel}`), { x: 40, y: metaY - 48, size: 11, font: fontRegular });
 
   // Käuferadresse
   const buyerY = metaY - 76;
   page.drawText("Rechnung an:", { x: 40, y: buyerY, size: 11, font: fontBold });
-  const nameLine = [order.firstName, order.lastName].filter(Boolean).join(" ");
+  const nameLine = sanitizePdfText([order.firstName, order.lastName].filter(Boolean).join(" "));
   if (nameLine) page.drawText(nameLine, { x: 40, y: buyerY - 14, size: 11, font: fontRegular });
-  if (order.address) page.drawText(order.address, { x: 40, y: buyerY - 28, size: 11, font: fontRegular });
-  const zipCity = [order.zip, order.city].filter(Boolean).join(" ");
+  if (order.address) page.drawText(sanitizePdfText(order.address), { x: 40, y: buyerY - 28, size: 11, font: fontRegular });
+  const zipCity = sanitizePdfText([order.zip, order.city].filter(Boolean).join(" "));
   if (zipCity) page.drawText(zipCity, { x: 40, y: buyerY - 42, size: 11, font: fontRegular });
-  if (order.country) page.drawText(order.country, { x: 40, y: buyerY - 56, size: 11, font: fontRegular });
+  if (order.country) page.drawText(sanitizePdfText(order.country), { x: 40, y: buyerY - 56, size: 11, font: fontRegular });
 
-  // Hinweis Privatverkauf
-  page.drawText("Hinweis: Privatverkauf – kein Ausweis der MwSt. (§ 19 UStG / Differenzbesteuerung).", {
-    x: 40,
-    y: buyerY - 78,
-    size: 10,
-    font: fontRegular,
-    color: rgb(0.6, 0.6, 0.65),
+  // Hinweis
+  page.drawText(sanitizePdfText("Hinweis: Privatverkauf – kein Ausweis der MwSt. (§ 19 UStG / Differenzbesteuerung)."), {
+    x: 40, y: buyerY - 78, size: 10, font: fontRegular, color: rgb(0.6, 0.6, 0.65),
   });
 
-  // Tabellen-Koordinaten
+  // ——————————————————————————————————————————————————————————
+  // Positionen auftrennen: Produkte vs. Versand (product === null)
+  const productItems = order.items.filter(it => it.product != null);
+  const shippingItems = order.items.filter(it => it.product == null);
+
+  const productsTotalCents = productItems.reduce((s, it) => s + (it.unitPrice * it.qty), 0);
+  const shippingFromItemsCents = shippingItems.reduce((s, it) => s + (it.unitPrice * it.qty), 0);
+
+  // Versandbetrag priorisiert ermitteln
+  const shippingCentsRaw =
+    order.shippingEUR != null
+      ? Math.round(order.shippingEUR * 100)
+      : (shippingFromItemsCents > 0
+          ? shippingFromItemsCents
+          : Math.max(0, (order.amountTotal ?? 0) - productsTotalCents));
+
+  const shippingCents = Math.max(0, shippingCentsRaw);
+  const shippingName = sanitizePdfText(order.shippingName?.trim() || "Versand");
+  // ——————————————————————————————————————————————————————————
+
+  // Tabelle
   let y = buyerY - 110;
   const fontSize = 11;
 
@@ -178,10 +234,8 @@ export async function generateInvoicePdf(order: OrderWithItems, invoiceNumber: s
   const qtyX = 330;
   const unitX = 400;
   const totalX = 495;
-
   const firstColMaxWidth = qtyX - posX - 10;
 
-  // Header
   page.drawText("Position", { x: posX, y, size: fontSize, font: fontBold });
   page.drawText("Menge", { x: qtyX, y, size: fontSize, font: fontBold });
   page.drawText("Einzelpreis €", { x: unitX, y, size: fontSize, font: fontBold });
@@ -190,17 +244,15 @@ export async function generateInvoicePdf(order: OrderWithItems, invoiceNumber: s
   page.drawLine({ start: { x: 40, y }, end: { x: width - 40, y }, thickness: 0.7, color: rgb(0.8, 0.8, 0.85) });
   y -= 18;
 
-  // Summe der Artikel-Positionen (ohne Versand)
-  const itemsTotalCents = order.items.reduce((s, it) => s + (it.unitPrice * it.qty), 0);
-
-  // Zeilen: Artikel
-  for (const it of order.items) {
-    const p = it.product;
-    const title =
-      (p?.productName || p?.slug || "Artikel") +
-      (p?.subtitle ? ` · ${p.subtitle}` : "") +
-      (p?.format ? ` (${p.format})` : "") +
-      (p?.genre ? ` – ${p.genre}` : "");
+  // Artikelzeilen – NUR Produktpositionen (Versand NICHT hier rendern)
+  for (const it of productItems) {
+    const p = it.product!;
+    const titleRaw =
+      (p.productName || p.slug || "Artikel") +
+      (p.subtitle ? ` · ${p.subtitle}` : "") +
+      (p.format ? ` (${p.format})` : "") +
+      (p.genre ? ` – ${p.genre}` : "");
+    const title = sanitizePdfText(titleRaw);
 
     const wrapped = wrapText(title, fontRegular, fontSize, firstColMaxWidth);
     const rowHeight = Math.max(18, wrapped.length * 14);
@@ -216,20 +268,12 @@ export async function generateInvoicePdf(order: OrderWithItems, invoiceNumber: s
     page.drawText(euro(it.unitPrice * it.qty), { x: totalX, y, size: fontSize, font: fontRegular });
 
     y -= rowHeight;
-    if (y < 130) break; // 1-Seiten-Variante
+    if (y < 130) break;
   }
 
-  // Versandbetrag: entweder aus der Order, oder aus Total – Items
-  const shippingCentsRaw =
-    order.shippingEUR != null
-      ? Math.round(order.shippingEUR * 100)
-      : Math.max(0, (order.amountTotal ?? 0) - itemsTotalCents);
-  const shippingCents = Math.max(0, shippingCentsRaw);
-  const shippingName = (order.shippingName?.trim() || "Versand");
-
-  // Versand als zusätzliche Position
+  // Versand-Zeile (aggregiert)
   if (shippingCents > 0) {
-    const title = `Versand – ${shippingName}`;
+    const title = sanitizePdfText(`Versand – ${shippingName}`);
     const wrapped = wrapText(title, fontRegular, fontSize, firstColMaxWidth);
     const rowHeight = Math.max(18, wrapped.length * 14);
 
@@ -261,13 +305,8 @@ export async function generateInvoicePdf(order: OrderWithItems, invoiceNumber: s
   page.drawText("A-4650 Lambach", { x: 40, y: 58, size: 10, font: fontRegular });
   page.drawText("Austria", { x: 40, y: 46, size: 10, font: fontRegular });
 
-  // Fußzeile
-  page.drawText(`${shopName} – Vielen Dank für Ihren Einkauf!`, {
-    x: 40,
-    y: 30,
-    size: 10,
-    font: fontRegular,
-    color: rgb(0.55, 0.55, 0.6),
+  page.drawText(sanitizePdfText(`${shopName} – Vielen Dank für Ihren Einkauf!`), {
+    x: 40, y: 30, size: 10, font: fontRegular, color: rgb(0.55, 0.55, 0.6),
   });
 
   const pdfBytes = await pdf.save();

@@ -65,14 +65,25 @@ export default async function OrdersPage({ searchParams }: Props) {
     }),
   ]);
 
+  const maxPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const hasPrev = currentPage > 1;
-  const hasNext = skip + orders.length < total;
+  const hasNext = currentPage < maxPage;
+
+  const linkTo = (p: number) =>
+    `/admin/orders?key=${encodeURIComponent(token ?? "")}&page=${Math.min(
+      Math.max(1, p),
+      maxPage
+    )}`;
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-10">
+      {/* Kopf */}
       <div className="mb-6 flex items-center justify-between gap-3">
         <h1 className="text-3xl font-extrabold">Admin / Bestellungen</h1>
         <div className="flex items-center gap-2">
+          <Link href="/admin" className="px-3 py-1.5 rounded bg-white/10 hover:bg-white/20">
+            ← Admin Hauptmenü
+          </Link>
           <a
             href={`/api/admin/orders/export?key=${encodeURIComponent(token ?? "")}`}
             className="px-3 py-1.5 rounded bg-white/10 hover:bg-white/20"
@@ -88,38 +99,52 @@ export default async function OrdersPage({ searchParams }: Props) {
         </div>
       </div>
 
-      {/* Kopfzeile: Info + Pagination */}
+      {/* Info + Pagination (oben) */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3 text-sm opacity-80">
         <div>
-          Gesamt: <span className="font-semibold">{total}</span> Bestellungen ·
-          Seite <span className="font-semibold">{currentPage}</span>{" "}
-          ({orders.length} Einträge)
+          Gesamt: <span className="font-semibold">{total}</span> Bestellungen · Seite{" "}
+          <span className="font-semibold">{currentPage}</span> / {maxPage} ({orders.length} Einträge)
         </div>
         <div className="flex items-center gap-2">
           <Link
-            href={`/admin/orders?key=${encodeURIComponent(token ?? "")}&page=${Math.max(
-              1,
-              currentPage - 1
-            )}`}
+            href={linkTo(1)}
             aria-disabled={!hasPrev}
             className={`px-3 py-1.5 rounded border border-white/10 ${
-              hasPrev
-                ? "bg-white/5 hover:bg-white/10"
-                : "bg-white/5 opacity-50 cursor-not-allowed"
+              hasPrev ? "bg-white/5 hover:bg-white/10" : "bg-white/5 opacity-50 cursor-not-allowed"
             }`}
+            title="Erste Seite"
           >
-            ← Neuere 25
+            |&lt;
           </Link>
           <Link
-            href={`/admin/orders?key=${encodeURIComponent(token ?? "")}&page=${hasNext ? currentPage + 1 : currentPage}`}
+            href={linkTo(currentPage - 1)}
+            aria-disabled={!hasPrev}
+            className={`px-3 py-1.5 rounded border border-white/10 ${
+              hasPrev ? "bg-white/5 hover:bg-white/10" : "bg-white/5 opacity-50 cursor-not-allowed"
+            }`}
+            title="Zurück"
+          >
+            ‹
+          </Link>
+          <Link
+            href={linkTo(currentPage + 1)}
             aria-disabled={!hasNext}
             className={`px-3 py-1.5 rounded border border-white/10 ${
-              hasNext
-                ? "bg-white/5 hover:bg-white/10"
-                : "bg-white/5 opacity-50 cursor-not-allowed"
+              hasNext ? "bg-white/5 hover:bg-white/10" : "bg-white/5 opacity-50 cursor-not-allowed"
             }`}
+            title="Weiter"
           >
-            Ältere 25 →
+            ›
+          </Link>
+          <Link
+            href={linkTo(maxPage)}
+            aria-disabled={!hasNext}
+            className={`px-3 py-1.5 rounded border border-white/10 ${
+              hasNext ? "bg-white/5 hover:bg-white/10" : "bg-white/5 opacity-50 cursor-not-allowed"
+            }`}
+            title="Letzte Seite"
+          >
+            &gt;|
           </Link>
         </div>
       </div>
@@ -130,43 +155,29 @@ export default async function OrdersPage({ searchParams }: Props) {
 
       <div className="space-y-6">
         {orders.map((o) => {
-          const itemsTotal = o.items.reduce(
-            (sum, it) => sum + it.qty * it.unitPrice,
-            0
-          );
+          const itemsTotal = o.items.reduce((sum, it) => sum + it.qty * it.unitPrice, 0);
           const sessionId = o.stripeId || ""; // wird für /api/checkout/confirm genutzt
 
           const name = [o.firstName, o.lastName].filter(Boolean).join(" ");
           const line1 = (o as any).address || (o as any).street || "";
-          const line2 = [(o as any).postalCode || (o as any).zip, o.city]
-            .filter(Boolean)
-            .join(" ");
+          const line2 = [(o as any).postalCode || (o as any).zip, o.city].filter(Boolean).join(" ");
           const invoiceNumber = (o as any).invoiceNumber || "—";
           const paymentProvider = (o as any).paymentProvider || "—";
 
           return (
-            <article
-              key={o.id}
-              className="rounded-xl border border-white/10 bg-white/5 p-4"
-            >
+            <article key={o.id} className="rounded-xl border border-white/10 bg-white/5 p-4">
               {/* Kopf: Status + Datum + PDF */}
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="font-semibold flex items-center gap-3">
                   <span className="opacity-60">#{o.id.slice(-6)}</span>
-                  <OrderStatusControl
-                    orderId={o.id}
-                    current={o.status}
-                    adminKey={token}
-                  />
+                  <OrderStatusControl orderId={o.id} current={o.status} adminKey={token} />
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="text-sm opacity-70">
                     {new Date(o.createdAt).toLocaleString("de-AT")}
                   </div>
                   <a
-                    href={`/admin/orders/${o.id}/invoice?key=${encodeURIComponent(
-                      token ?? ""
-                    )}`}
+                    href={`/admin/orders/${o.id}/invoice?key=${encodeURIComponent(token ?? "")}`}
                     target="_blank"
                     className="px-3 py-1.5 rounded bg-cyan-500 hover:bg-cyan-400 text-black font-semibold"
                     title="Rechnung als PDF öffnen"
@@ -180,24 +191,17 @@ export default async function OrdersPage({ searchParams }: Props) {
               <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm">
                 <div className="min-w-0">
                   <div className="opacity-60">Stripe Session</div>
-                  <div className="font-mono text-xs break-all">
-                    {sessionId || "—"}
-                  </div>
+                  <div className="font-mono text-xs break-all">{sessionId || "—"}</div>
                 </div>
                 <div className="shrink-0">
                   {sessionId ? (
                     <form
-                      action={`/api/checkout/confirm?session_id=${encodeURIComponent(
-                        sessionId
-                      )}`}
+                      action={`/api/checkout/confirm?session_id=${encodeURIComponent(sessionId)}`}
                       method="post"
                       target="_blank"
                       title="Lagerbestände anhand dieser Bestellung anwenden (öffnet JSON-Antwort in neuem Tab)"
                     >
-                      <button
-                        type="submit"
-                        className="px-3 py-1.5 rounded bg-white/10 hover:bg-white/20"
-                      >
+                      <button type="submit" className="px-3 py-1.5 rounded bg-white/10 hover:bg-white/20">
                         Bestand anwenden
                       </button>
                     </form>
@@ -222,9 +226,7 @@ export default async function OrdersPage({ searchParams }: Props) {
                   <div className="opacity-70">{o.email ?? "—"}</div>
                   {line1 && <div className="opacity-70">{line1}</div>}
                   {(line2 || o.country) && (
-                    <div className="opacity-70">
-                      {[line2, o.country].filter(Boolean).join(", ")}
-                    </div>
+                    <div className="opacity-70">{[line2, o.country].filter(Boolean).join(", ")}</div>
                   )}
                 </div>
                 <div>
@@ -254,9 +256,7 @@ export default async function OrdersPage({ searchParams }: Props) {
                       it.product?.productName ||
                       (it.product
                         ? `${it.product.artist ?? ""}${
-                            it.product.artist && it.product.trackTitle
-                              ? " – "
-                              : ""
+                            it.product.artist && it.product.trackTitle ? " – " : ""
                           }${it.product.trackTitle ?? ""}`
                         : "Versand / Service");
                     return (
@@ -267,9 +267,7 @@ export default async function OrdersPage({ searchParams }: Props) {
                         <div className="min-w-0">
                           <div className="truncate">{title}</div>
                           <div className="text-xs opacity-60">
-                            {it.productId
-                              ? `Product #${it.productId}`
-                              : "ohne Produkt (Versand/Service)"}
+                            {it.productId ? `Product #${it.productId}` : "ohne Produkt (Versand/Service)"}
                           </div>
                         </div>
                         <div className="shrink-0 text-right">
@@ -285,9 +283,7 @@ export default async function OrdersPage({ searchParams }: Props) {
 
               <div className="mt-4 text-right">
                 <Link
-                  href={`/admin/orders/${o.id}?key=${encodeURIComponent(
-                    token ?? ""
-                  )}`}
+                  href={`/admin/orders/${o.id}?key=${encodeURIComponent(token ?? "")}`}
                   className="inline-block px-3 py-1.5 rounded bg-white/10 hover:bg-white/20"
                 >
                   Details
@@ -300,34 +296,51 @@ export default async function OrdersPage({ searchParams }: Props) {
 
       {/* Pagination unten */}
       <div className="mt-8 flex items-center justify-between gap-3">
-        <Link
-          href={`/admin/orders?key=${encodeURIComponent(token ?? "")}&page=${Math.max(
-            1,
-            currentPage - 1
-          )}`}
-          aria-disabled={!hasPrev}
-          className={`px-3 py-2 rounded border border-white/10 ${
-            hasPrev
-              ? "bg-white/5 hover:bg-white/10"
-              : "bg-white/5 opacity-50 cursor-not-allowed"
-          }`}
-        >
-          ← Neuere 25
-        </Link>
         <div className="text-sm opacity-70">
-          Seite {currentPage} von {Math.max(1, Math.ceil(total / PAGE_SIZE))}
+          Seite {currentPage} von {maxPage}
         </div>
-        <Link
-          href={`/admin/orders?key=${encodeURIComponent(token ?? "")}&page=${hasNext ? currentPage + 1 : currentPage}`}
-          aria-disabled={!hasNext}
-          className={`px-3 py-2 rounded border border-white/10 ${
-            hasNext
-              ? "bg-white/5 hover:bg-white/10"
-              : "bg-white/5 opacity-50 cursor-not-allowed"
-          }`}
-        >
-          Ältere 25 →
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href={linkTo(1)}
+            aria-disabled={!hasPrev}
+            className={`px-3 py-2 rounded border border-white/10 ${
+              hasPrev ? "bg-white/5 hover:bg-white/10" : "bg-white/5 opacity-50 cursor-not-allowed"
+            }`}
+            title="Erste Seite"
+          >
+            |&lt;
+          </Link>
+          <Link
+            href={linkTo(currentPage - 1)}
+            aria-disabled={!hasPrev}
+            className={`px-3 py-2 rounded border border-white/10 ${
+              hasPrev ? "bg-white/5 hover:bg-white/10" : "bg-white/5 opacity-50 cursor-not-allowed"
+            }`}
+            title="Zurück"
+          >
+            ‹
+          </Link>
+          <Link
+            href={linkTo(currentPage + 1)}
+            aria-disabled={!hasNext}
+            className={`px-3 py-2 rounded border border-white/10 ${
+              hasNext ? "bg-white/5 hover:bg-white/10" : "bg-white/5 opacity-50 cursor-not-allowed"
+            }`}
+            title="Weiter"
+          >
+            ›
+          </Link>
+          <Link
+            href={linkTo(maxPage)}
+            aria-disabled={!hasNext}
+            className={`px-3 py-2 rounded border border-white/10 ${
+              hasNext ? "bg-white/5 hover:bg-white/10" : "bg-white/5 opacity-50 cursor-not-allowed"
+            }`}
+            title="Letzte Seite"
+          >
+            &gt;|
+          </Link>
+        </div>
       </div>
     </div>
   );

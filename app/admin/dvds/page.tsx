@@ -24,6 +24,9 @@ type Row = {
 
 const PAGE_SIZE = 20;
 
+// 🔙 Rücksprung-Ziel für die DVD-Liste
+const RETURN_KEY = "admin:dvds:returnURL";
+
 export default function AdminDvdsPage() {
   const [q, setQ] = useState("");
   const [rows, setRows] = useState<Row[]>([]);
@@ -44,6 +47,15 @@ export default function AdminDvdsPage() {
     else setAskKey(true);
   }, []);
 
+  function rememberCurrentListURL(p: number) {
+    if (typeof window === "undefined") return;
+    const listUrl = new URL("/admin/dvds", window.location.origin);
+    if (q) listUrl.searchParams.set("q", q);
+    listUrl.searchParams.set("limit", String(PAGE_SIZE));
+    listUrl.searchParams.set("page", String(p));
+    sessionStorage.setItem(RETURN_KEY, listUrl.toString());
+  }
+
   async function load(p = 1) {
     if (!adminKey) return;
     setLoading(true);
@@ -54,7 +66,7 @@ export default function AdminDvdsPage() {
       if (q) url.searchParams.set("q", q);
       url.searchParams.set("limit", String(PAGE_SIZE));
       url.searchParams.set("page", String(p));
-      // Key im Header ODER Query – hier im Header:
+      // Key im Header
       const r = await fetch(url.toString(), {
         cache: "no-store",
         headers: { "x-admin-key": adminKey },
@@ -67,6 +79,8 @@ export default function AdminDvdsPage() {
       setRows(items);
       setTotal(Number(j?.total || 0));
       setPage(Number(j?.page || p));
+
+      rememberCurrentListURL(Number(j?.page || p));
     } catch (e: any) {
       setRows([]);
       setTotal(0);
@@ -99,6 +113,7 @@ export default function AdminDvdsPage() {
       const left = rows.length - 1;
       if (left === 0 && page > 1) await load(page - 1);
       else await load(page);
+      rememberCurrentListURL(page);
     } catch (e: any) {
       alert(e?.message || "Fehler beim Löschen");
     }
@@ -107,6 +122,11 @@ export default function AdminDvdsPage() {
   const maxPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const hasPrev = page > 1;
   const hasNext = page < maxPage;
+
+  const goFirst = () => load(1);
+  const goPrev  = () => hasPrev && load(page - 1);
+  const goNext  = () => hasNext && load(page + 1);
+  const goLast  = () => load(maxPage);
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-10">
@@ -136,20 +156,10 @@ export default function AdminDvdsPage() {
           Seite {page} / {maxPage} · {Math.min(page * PAGE_SIZE, total)} von {total} Einträgen
         </div>
         <div className="flex gap-2">
-          <button
-            onClick={() => hasPrev && load(page - 1)}
-            disabled={!hasPrev}
-            className="px-3 py-1 rounded bg-white/10 disabled:opacity-40 hover:bg-white/20"
-          >
-            ‹ Zurück
-          </button>
-          <button
-            onClick={() => hasNext && load(page + 1)}
-            disabled={!hasNext}
-            className="px-3 py-1 rounded bg-white/10 disabled:opacity-40 hover:bg-white/20"
-          >
-            Weiter ›
-          </button>
+          <button onClick={goFirst} disabled={!hasPrev} className="px-3 py-1 rounded bg-white/10 disabled:opacity-40 hover:bg-white/20">I&lt;</button>
+          <button onClick={goPrev}  disabled={!hasPrev} className="px-3 py-1 rounded bg-white/10 disabled:opacity-40 hover:bg-white/20">&lt;</button>
+          <button onClick={goNext}  disabled={!hasNext} className="px-3 py-1 rounded bg-white/10 disabled:opacity-40 hover:bg-white/20">&gt;</button>
+          <button onClick={goLast}  disabled={!hasNext} className="px-3 py-1 rounded bg-white/10 disabled:opacity-40 hover:bg-white/20">&gt;I</button>
         </div>
       </div>
 
@@ -188,7 +198,14 @@ export default function AdminDvdsPage() {
 
                   <td className="py-2 pr-4">
                     <div className="flex items-center gap-2">
-                      <Link href={`/admin/dvds/edit/${r.id}`} className="px-2 py-1 rounded bg-white/10 hover:bg-white/20" title="Bearbeiten">✏️</Link>
+                      {/* Admin-Key (falls vorhanden) an den Edit-Link anhängen */}
+                      <Link
+                        href={`/admin/dvds/edit/${r.id}${adminKey ? `?key=${encodeURIComponent(adminKey)}` : ""}`}
+                        className="px-2 py-1 rounded bg-white/10 hover:bg-white/20"
+                        title="Bearbeiten"
+                      >
+                        ✏️
+                      </Link>
                       {typeof r.fsk === "number" && (
                         <span className="text-xs font-bold px-2 py-0.5 rounded bg-emerald-400 text-black" title={`FSK ${r.fsk}`}>
                           {r.fsk}
@@ -239,12 +256,10 @@ export default function AdminDvdsPage() {
           Seite {page} / {maxPage} · {Math.min(page * PAGE_SIZE, total)} von {total} Einträgen
         </div>
         <div className="flex gap-2">
-          <button onClick={() => hasPrev && load(page - 1)} disabled={!hasPrev} className="px-3 py-1 rounded bg-white/10 disabled:opacity-40 hover:bg-white/20">
-            ‹ Zurück
-          </button>
-          <button onClick={() => hasNext && load(page + 1)} disabled={!hasNext} className="px-3 py-1 rounded bg-white/10 disabled:opacity-40 hover:bg-white/20">
-            Weiter ›
-          </button>
+          <button onClick={goFirst} disabled={!hasPrev} className="px-3 py-1 rounded bg-white/10 disabled:opacity-40 hover:bg-white/20">I&lt;</button>
+          <button onClick={goPrev}  disabled={!hasPrev} className="px-3 py-1 rounded bg-white/10 disabled:opacity-40 hover:bg-white/20">&lt;</button>
+          <button onClick={goNext}  disabled={!hasNext} className="px-3 py-1 rounded bg-white/10 disabled:opacity-40 hover:bg-white/20">&gt;</button>
+          <button onClick={goLast}  disabled={!hasNext} className="px-3 py-1 rounded bg-white/10 disabled:opacity-40 hover:bg-white/20">&gt;I</button>
         </div>
       </div>
 

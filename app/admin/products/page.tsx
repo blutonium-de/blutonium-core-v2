@@ -26,6 +26,19 @@ const PAGE_SIZE = 10;
 // Standard-Kategorien für den Shop (ohne Filme)
 const SHOP_CATS = "bv,sv,bcd,scd,bhs,ss";
 
+// kleine Hilfsfunktion: alte Einträge „Dance & Electronic“ als „Dance“ anzeigen
+function displayGenre(g?: string | null) {
+  if (!g) return g ?? undefined;
+  const s = g.trim();
+  if (!s) return undefined;
+  const canon = s.toLowerCase().replace(/&/g, "and").replace(/\//g, " and ").replace(/\s+/g, " ");
+  if (/(^|\s)dance(\s|$)/.test(canon)) return "Dance";
+  return s;
+}
+
+// 🔙 Rücksprung-Ziel im SessionStorage merken (damit Edit → Speichern wieder auf diese Seite springt)
+const RETURN_KEY = "admin:products:returnURL";
+
 export default function AdminProductsPage() {
   const [q, setQ] = useState("");
   const [cat, setCat] = useState("");               // leer = Alle Shop-Kategorien
@@ -45,6 +58,18 @@ export default function AdminProductsPage() {
       "",
     []
   );
+
+  // aktuelle Listen-URL für den Rücksprung speichern
+  function rememberCurrentListURL(p: number) {
+    if (typeof window === "undefined") return;
+    const listUrl = new URL("/admin/products", window.location.origin);
+    if (q) listUrl.searchParams.set("q", q);
+    listUrl.searchParams.set("cat", cat ? cat : SHOP_CATS);
+    if (soldOutOnly) listUrl.searchParams.set("soldOut", "1");
+    listUrl.searchParams.set("limit", String(PAGE_SIZE));
+    listUrl.searchParams.set("page", String(p));
+    sessionStorage.setItem(RETURN_KEY, listUrl.toString());
+  }
 
   async function load(p: number = page) {
     setLoading(true);
@@ -74,6 +99,9 @@ export default function AdminProductsPage() {
       setRows(items);
       setTotal(Number.isFinite(j?.total) ? Number(j.total) : items.length);
       setPage(p);
+
+      // 🔙 Nach erfolgreichem Laden: Rücksprung-Ziel merken
+      rememberCurrentListURL(p);
     } catch (e: any) {
       setErr(e?.message || "Fehler");
       setRows([]);
@@ -131,6 +159,7 @@ export default function AdminProductsPage() {
       setRows((old) => old.filter((x) => x.id !== id));
       setTotal((t) => Math.max(0, t - 1));
       if (rows.length === 1 && page > 1) load(page - 1);
+      else rememberCurrentListURL(page);
     } catch {
       alert("Konnte nicht löschen.");
     }
@@ -139,6 +168,12 @@ export default function AdminProductsPage() {
   const maxPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const hasPrev = page > 1;
   const hasNext = page < maxPage;
+
+  // ▶ Pager-Handler
+  const goFirst = () => load(1);
+  const goPrev  = () => hasPrev && load(page - 1);
+  const goNext  = () => hasNext && load(page + 1);
+  const goLast  = () => load(maxPage);
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-10">
@@ -216,20 +251,10 @@ export default function AdminProductsPage() {
           Seite {page} / {maxPage} · {Math.min(page * PAGE_SIZE, total)} von {total} Einträgen
         </div>
         <div className="flex gap-2">
-          <button
-            onClick={() => hasPrev && load(page - 1)}
-            disabled={!hasPrev}
-            className="px-3 py-1 rounded bg-white/10 disabled:opacity-40 hover:bg-white/20"
-          >
-            ‹ Zurück
-          </button>
-          <button
-            onClick={() => hasNext && load(page + 1)}
-            disabled={!hasNext}
-            className="px-3 py-1 rounded bg-white/10 disabled:opacity-40 hover:bg-white/20"
-          >
-            Weiter ›
-          </button>
+          <button onClick={goFirst} disabled={!hasPrev} className="px-3 py-1 rounded bg-white/10 disabled:opacity-40 hover:bg-white/20">I&lt;</button>
+          <button onClick={goPrev}  disabled={!hasPrev} className="px-3 py-1 rounded bg-white/10 disabled:opacity-40 hover:bg-white/20">&lt;</button>
+          <button onClick={goNext}  disabled={!hasNext} className="px-3 py-1 rounded bg-white/10 disabled:opacity-40 hover:bg-white/20">&gt;</button>
+          <button onClick={goLast}  disabled={!hasNext} className="px-3 py-1 rounded bg-white/10 disabled:opacity-40 hover:bg-white/20">&gt;I</button>
         </div>
       </div>
 
@@ -265,6 +290,7 @@ export default function AdminProductsPage() {
                   r.productName ||
                   [r.artist, r.trackTitle].filter(Boolean).join(" – ") ||
                   r.slug;
+                const genreBadge = displayGenre(r.genre);
 
                 return (
                   <tr key={r.id} className="border-t border-white/10 align-middle">
@@ -286,7 +312,9 @@ export default function AdminProductsPage() {
                     <td className="py-2 pr-4">
                       <div className="flex items-center gap-2">
                         <Link
-                          href={`/admin/products/edit/${r.id}`}
+                          href={`/admin/products/edit/${r.id}${
+                            adminKey ? `?key=${encodeURIComponent(adminKey)}` : ""
+                          }`}
                           className="px-2 py-1 rounded bg-white/10 hover:bg-white/20"
                           title="Bearbeiten"
                         >
@@ -318,12 +346,12 @@ export default function AdminProductsPage() {
                         >
                           {isOut ? "ausverkauft" : r.active ? "aktiv" : "inaktiv"}
                         </button>
-                        {r.genre ? (
+                        {genreBadge ? (
                           <span
                             className="rounded-full border border-violet-400/30 bg-violet-500/15 px-2 py-[1px] text-[10px] leading-4 text-violet-200"
-                            title={`Genre: ${r.genre}`}
+                            title={`Genre: ${genreBadge}`}
                           >
-                            {r.genre}
+                            {genreBadge}
                           </span>
                         ) : null}
                       </div>
@@ -381,21 +409,11 @@ export default function AdminProductsPage() {
         </div>
 
         <div className="flex gap-2 text-sm">
-          <button
-            onClick={() => hasPrev && load(page - 1)}
-            disabled={!hasPrev}
-            className="px-3 py-1 rounded bg-white/10 disabled:opacity-40 hover:bg-white/20"
-          >
-            ‹ Zurück
-          </button>
+          <button onClick={goFirst} disabled={!hasPrev} className="px-3 py-1 rounded bg-white/10 disabled:opacity-40 hover:bg-white/20">I&lt;</button>
+          <button onClick={goPrev}  disabled={!hasPrev} className="px-3 py-1 rounded bg-white/10 disabled:opacity-40 hover:bg-white/20">&lt;</button>
           <div className="px-2 py-1 opacity-70">Seite {page} / {maxPage}</div>
-          <button
-            onClick={() => hasNext && load(page + 1)}
-            disabled={!hasNext}
-            className="px-3 py-1 rounded bg-white/10 disabled:opacity-40 hover:bg-white/20"
-          >
-            Weiter ›
-          </button>
+          <button onClick={goNext}  disabled={!hasNext} className="px-3 py-1 rounded bg-white/10 disabled:opacity-40 hover:bg-white/20">&gt;</button>
+          <button onClick={goLast}  disabled={!hasNext} className="px-3 py-1 rounded bg-white/10 disabled:opacity-40 hover:bg-white/20">&gt;I</button>
         </div>
       </div>
 
