@@ -46,7 +46,7 @@ export async function POST(req: Request) {
         stock: true,
         isDigital: true,
         weightGrams: true,
-        active: true, // <— hinzugefügt, damit p.active typisiert ist
+        active: true, // wichtig für p.active
       },
     });
     const byId = new Map(products.map((p) => [p.id, p]));
@@ -125,11 +125,13 @@ export async function POST(req: Request) {
               product: { connect: { id: it.id } },
             })),
             ...(shippingCents > 0
-              ? [{
-                  qty: 1,
-                  unitPrice: shippingCents,
-                  productId: null, // Versand-Position ohne Produkt
-                }] as const
+              ? [
+                  {
+                    qty: 1,
+                    unitPrice: shippingCents,
+                    productId: null, // Versand-Position ohne Produkt
+                  },
+                ]
               : []),
           ],
         },
@@ -147,30 +149,32 @@ export async function POST(req: Request) {
           unit_amount: it.unitAmount,
           product_data: {
             name: it.title,
-            images: it.image ? [it.image] : [],
+            images: it.image ? ([it.image] as string[]) : ([] as string[]),
             metadata: { productId: it.id },
           },
         },
       })),
       ...(shippingCents > 0
-        ? [{
-            quantity: 1,
-            price_data: {
-              currency: "eur",
-              unit_amount: shippingCents,
-              product_data: {
-                name: `Versand (${shippingQuote?.name ?? "Standard"})`,
-                images: [],
-                metadata: { productId: "shipping" },
+        ? [
+            {
+              quantity: 1,
+              price_data: {
+                currency: "eur",
+                unit_amount: shippingCents,
+                product_data: {
+                  name: `Versand (${shippingQuote?.name ?? "Standard"})`,
+                  images: [] as string[],
+                  metadata: { productId: "shipping" },
+                },
               },
             },
-          }] as const
+          ]
         : []),
     ];
 
     const origin = appOriginFromHeaders(req);
     const successUrl = `${origin}/de/checkout/success?session_id={CHECKOUT_SESSION_ID}`;
-    const cancelUrl  = `${origin}/de/cart`;
+    const cancelUrl = `${origin}/de/cart`;
 
     const payload = safe.map((it) => ({ id: it.id, qty: it.qty, unit: it.unitAmount }));
 
@@ -179,9 +183,9 @@ export async function POST(req: Request) {
       success_url: successUrl,
       cancel_url: cancelUrl,
       line_items,
-      client_reference_id: order.id,        // <— Fallback für Webhook
+      client_reference_id: order.id, // Fallback für Webhook
       metadata: {
-        orderId: order.id,                  // <— Primärschlüssel für Webhook
+        orderId: order.id, // Primärschlüssel für Webhook
         payload: JSON.stringify(payload),
         region,
         subtotalEUR: String(subtotalEUR),
