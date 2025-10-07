@@ -46,6 +46,7 @@ export async function POST(req: Request) {
         stock: true,
         isDigital: true,
         weightGrams: true,
+        active: true, // <— hinzugefügt, damit p.active typisiert ist
       },
     });
     const byId = new Map(products.map((p) => [p.id, p]));
