@@ -1,9 +1,10 @@
+// app/de/shop/dvds/page.tsx
 import Image from "next/image";
 import Link from "next/link";
 import MoviesGridClient from "@/components/MoviesGridClient";
-// ⬇️ neu (wenn Alias @ funktioniert) – sonst unten die relative Variante verwenden
 import { FREE_SHIPPING_EUR } from "../../../../lib/shop-config";
 
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const PAGE_SIZE = 50 as const;
@@ -54,24 +55,29 @@ async function fetchInitial(params: {
   genre?: string;
   type: "all" | "dvd" | "bd";
 }) {
-  const qs = new URLSearchParams();
-  const cat =
-    params.type === "dvd" ? "dvd" :
-    params.type === "bd"  ? "bd"  :
-    "dvd,bd"; // ALL – Server mappt "bd" → "bray"
-  qs.set("limit", String(PAGE_SIZE));
-  qs.set("offset", "0");
-  qs.set("cat", cat);
-  if (params.q) qs.set("q", params.q);
-  if (params.genre) qs.set("genre", params.genre);
+  try {
+    const qs = new URLSearchParams();
+    const cat =
+      params.type === "dvd" ? "dvd" :
+      params.type === "bd"  ? "bd"  :
+      "dvd,bd"; // ALL – Server mappt "bd" → "bray"
+    qs.set("limit", String(PAGE_SIZE));
+    qs.set("offset", "0");
+    qs.set("cat", cat);
+    if (params.q) qs.set("q", params.q);
+    if (params.genre) qs.set("genre", params.genre);
 
-  const res = await fetch(abs(`/api/public/products?${qs.toString()}`), { cache: "no-store" });
-  const text = await res.text();
-  let j: any; try { j = JSON.parse(text); } catch { j = text; }
-  if (!res.ok) throw new Error((j && j.error) || "Fehler beim Laden");
+    const res = await fetch(abs(`/api/public/products?${qs.toString()}`), { cache: "no-store" });
+    const text = await res.text();
+    let j: any; try { j = JSON.parse(text); } catch { j = text; }
+    if (!res.ok) throw new Error((j && j.error) || "Fehler beim Laden");
 
-  const items: Prod[] = Array.isArray(j) ? j : Array.isArray(j?.items) ? j.items : [];
-  return items;
+    const items: Prod[] = Array.isArray(j) ? j : Array.isArray(j?.items) ? j.items : [];
+    return items;
+  } catch (err: any) {
+    console.error("[dvds] fetchInitial error:", err?.message || err);
+    return [];
+  }
 }
 
 export default async function DVDsPage({ searchParams }: { searchParams: SearchParams }) {
@@ -140,14 +146,17 @@ export default async function DVDsPage({ searchParams }: { searchParams: SearchP
         ))}
       </div>
 
-      {/* Grid */}
-      <MoviesGridClient
-        key={`${q}|${genre}|${type}`}   // Remount bei Wechsel
-        initial={initial}
-        q={q || ""}
-        genre={genre || ""}
-        type={type}
-      />
+      {/* Grid oder Fallback */}
+      {initial.length === 0 ? (
+        <div className="mt-6 rounded-xl border border-white/10 bg-white/5 p-4">
+          <div className="font-semibold">Gerade nicht erreichbar</div>
+          <div className="opacity-70 text-sm">
+            Die Produktliste konnte nicht geladen werden. Bitte kurz neu laden – wir prüfen das im Hintergrund.
+          </div>
+        </div>
+      ) : (
+        <MoviesGridClient key={`${q}|${genre}|${type}`} initial={initial} q={q || ""} genre={genre || ""} type={type} />
+      )}
     </div>
   );
 }

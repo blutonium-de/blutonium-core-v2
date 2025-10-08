@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FREE_SHIPPING_EUR } from "../../../lib/shop-config";
 import ShopGridClient from "../../../components/ShopGridClient";
 
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type Prod = {
@@ -54,20 +55,25 @@ function buildQuery(next: Record<string, string | undefined>, cur: URLSearchPara
 }
 
 async function fetchInitial(params: { q?: string; genre?: string; cat?: string }) {
-  const qs = new URLSearchParams();
-  // Vinyl/CD only – KEINE dvd/bray
-  qs.set("cat", params.cat ? params.cat : "bv,sv,bcd,scd,bhs,ss");
-  qs.set("limit", "50");
-  qs.set("offset", "0");
-  if (params.q) qs.set("q", params.q);
-  if (params.genre) qs.set("genre", params.genre);
+  try {
+    const qs = new URLSearchParams();
+    // Vinyl/CD only – KEINE dvd/bray
+    qs.set("cat", params.cat ? params.cat : "bv,sv,bcd,scd,bhs,ss");
+    qs.set("limit", "50");
+    qs.set("offset", "0");
+    if (params.q) qs.set("q", params.q);
+    if (params.genre) qs.set("genre", params.genre);
 
-  const res = await fetch(abs(`/api/public/products?${qs.toString()}`), { cache: "no-store" });
-  const text = await res.text();
-  let j: any; try { j = JSON.parse(text); } catch { j = text; }
-  if (!res.ok) throw new Error((j && j.error) || "Fehler beim Laden");
-  const items: Prod[] = Array.isArray(j?.items) ? j.items : [];
-  return items;
+    const res = await fetch(abs(`/api/public/products?${qs.toString()}`), { cache: "no-store" });
+    const text = await res.text();
+    let j: any; try { j = JSON.parse(text); } catch { j = text; }
+    if (!res.ok) throw new Error((j && j.error) || "Fehler beim Laden");
+    const items: Prod[] = Array.isArray(j?.items) ? j.items : [];
+    return items;
+  } catch (err: any) {
+    console.error("[shop] fetchInitial error:", err?.message || err);
+    return [];
+  }
 }
 
 export default async function ShopPage({
@@ -180,13 +186,17 @@ export default async function ShopPage({
         ))}
       </div>
 
-      <ShopGridClient
-        key={`${q}|${genre}|${cat}`}
-        initial={initial}
-        q={q}
-        genre={genre}
-        cat={cat}
-      />
+      {/* Grid oder Fallback */}
+      {initial.length === 0 ? (
+        <div className="mt-6 rounded-xl border border-white/10 bg-white/5 p-4">
+          <div className="font-semibold">Gerade nicht erreichbar</div>
+          <div className="opacity-70 text-sm">
+            Die Produktliste konnte nicht geladen werden. Bitte kurz neu laden – wir prüfen das im Hintergrund.
+          </div>
+        </div>
+      ) : (
+        <ShopGridClient key={`${q}|${genre}|${cat}`} initial={initial} q={q} genre={genre} cat={cat} />
+      )}
     </div>
   );
 }

@@ -2,8 +2,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { finalizeOrderAndInventory } from "@/lib/orders";
+import { chooseBestShipping, type RegionCode } from "@/lib/shipping";
 
-// ---------- Shipping-Helfer (identisch zu Stripe-Version) ----------
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+/* ---------- Versand-Item idempotent anlegen/aktualisieren ---------- */
 async function upsertShipping(orderId: string, cents?: number | null, name?: string | null) {
   const shipCents = Math.max(0, Number(cents ?? 0) | 0);
   const shipName  = (name ?? "").trim() || null;
@@ -26,110 +30,168 @@ async function upsertShipping(orderId: string, cents?: number | null, name?: str
   });
 }
 
-// ---------- PayPal API Minimal-Client (für Fallback) ----------
-const PP_ENV = (process.env.PAYPAL_ENV || "").toLowerCase(); // "sandbox" | ""
-const PP_BASE = process.env.PAYPAL_API_BASE
-  ?? (PP_ENV === "sandbox" ? "https://api-m.sandbox.paypal.com" : "https://api-m.paypal.com");
-const PP_ID = process.env.PAYPAL_CLIENT_ID || "";
-const PP_SECRET = process.env.PAYPAL_CLIENT_SECRET || "";
+/* ----------------- PayPal API helpers ----------------- */
+const PP_BASE =
+  (process.env.PAYPAL_MODE || "live").toLowerCase() === "live"
+    ? "https://api-m.paypal.com"
+    : "https://api-m.sandbox.paypal.com";
 
-async function ppAccessToken(): Promise<string | null> {
-  if (!PP_ID || !PP_SECRET) return null;
+async function getPayPalAccessToken(): Promise<string> {
+  const cid = process.env.PAYPAL_CLIENT_ID!;
+  const sec = process.env.PAYPAL_SECRET!;
   const r = await fetch(`${PP_BASE}/v1/oauth2/token`, {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded", Authorization: "Basic " + Buffer.from(`${PP_ID}:${PP_SECRET}`).toString("base64") },
+    headers: {
+      "Authorization": "Basic " + Buffer.from(`${cid}:${sec}`).toString("base64"),
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
     body: "grant_type=client_credentials",
-    cache: "no-store",
   });
-  if (!r.ok) return null;
+  if (!r.ok) throw new Error(`paypal token failed: ${r.status} ${await r.text()}`);
   const j = await r.json();
-  return j?.access_token || null;
+  return j.access_token as string;
 }
 
-async function ppFetchOrder(orderId: string): Promise<any | null> {
-  const token = await ppAccessToken();
-  if (!token) return null;
+async function fetchPayPalOrder(orderId: string) {
+  const token = await getPayPalAccessToken();
   const r = await fetch(`${PP_BASE}/v2/checkout/orders/${orderId}`, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: { "Authorization": `Bearer ${token}` },
     cache: "no-store",
   });
-  if (!r.ok) return null;
+  if (!r.ok) throw new Error(`fetch order ${orderId} failed: ${r.status} ${await r.text()}`);
   return r.json();
 }
 
-// ---------- Extractor-Helfer ----------
-function readShippingValue(obj: any): { cents: number; name: string | null } {
-  const str =
-    obj?.amount?.breakdown?.shipping?.value ??
-    obj?.purchase_units?.[0]?.amount?.breakdown?.shipping?.value ??
-    null;
-  const name =
-    obj?.purchase_units?.[0]?.shipping_method ||
-    obj?.purchase_units?.[0]?.description ||
-    "Versand";
-  const n = str ? Number(str) : NaN;
-  return { cents: Number.isFinite(n) ? Math.round(n * 100) : 0, name };
-}
-
-function readOrderId(obj: any): string | null {
-  // 1) custom_id, 2) invoice_id, 3) related order_id
-  return (
-    obj?.purchase_units?.[0]?.custom_id ||
-    obj?.invoice_id ||
-    obj?.supplementary_data?.related_ids?.order_id ||
-    null
-  );
-}
-
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
+/* ----------------- Webhook ----------------- */
 export async function POST(req: NextRequest) {
   try {
-    // ⚠️ Signatur-Validierung wie in deinem Projekt beibehalten/ergänzen.
     const body = await req.json();
     const eventType = body?.event_type as string;
-    const res = body?.resource || {};
 
-    // Wir versuchen IMMER zuerst, orderId + Versand direkt zu lesen …
-    let orderId = readOrderId(res);
-    let { cents: shipCents, name: shipName } = readShippingValue(res);
+    if (eventType === "PAYMENT.CAPTURE.COMPLETED") {
+      const res = body?.resource || {};
+      const captureId: string | undefined = res?.id;
+      const related = res?.supplementary_data?.related_ids || {};
+      const paypalOrderId: string | undefined = related?.order_id;
 
-    // … wenn wir bei CAPTURE nur die Capture-Resource bekommen, fehlen oft purchase_units.
-    // Dann holen wir uns die ursprüngliche Order.
-    if ((!orderId || shipCents === 0) && res?.supplementary_data?.related_ids?.order_id) {
-      const fullOrder = await ppFetchOrder(res.supplementary_data.related_ids.order_id);
-      if (fullOrder) {
-        orderId = orderId || readOrderId(fullOrder);
-        const sh = readShippingValue(fullOrder);
-        if (sh.cents > 0) { shipCents = sh.cents; shipName = sh.name; }
+      let orderId: string | null = null;
+      let shipCents = 0;
+      let shipName: string | null = null;
+
+      // A) Versuch 1: Versand direkt aus Capture
+      try {
+        const capShipStr: string | undefined = res?.amount?.breakdown?.shipping?.value;
+        if (capShipStr) {
+          const eur = Number(capShipStr);
+          if (Number.isFinite(eur) && eur > 0) {
+            shipCents = Math.round(eur * 100);
+            shipName = "Versand";
+          }
+        }
+      } catch {/* ignore */}
+
+      // B) Order laden -> custom_id (=unsere orderId) + ggf. shipping fallback
+      try {
+        if (paypalOrderId) {
+          const ppOrder = await fetchPayPalOrder(paypalOrderId);
+          const pu = Array.isArray(ppOrder?.purchase_units) ? ppOrder.purchase_units[0] : null;
+          if (!orderId) orderId = pu?.custom_id || null;
+
+          if (shipCents <= 0) {
+            const shippingStr: string | undefined = pu?.amount?.breakdown?.shipping?.value;
+            if (shippingStr) {
+              const eur = Number(shippingStr);
+              if (Number.isFinite(eur) && eur > 0) {
+                shipCents = Math.round(eur * 100);
+                shipName = pu?.shipping_method || pu?.description || "Versand";
+              }
+            }
+          }
+        }
+      } catch (e: any) {
+        console.warn("[paypal/webhook] fetch order/breakdown failed:", e?.message || e);
       }
+
+      // C) Fallback: manchmal spiegelt Capture custom_id
+      if (!orderId) orderId = res?.custom_id || null;
+      if (!orderId) return NextResponse.json({ received: true });
+
+      // Provider markieren (nicht kritisch)
+      prisma.order.update({ where: { id: orderId }, data: { paymentProvider: "paypal" as any } }).catch(() => {});
+
+      // D) Eigene Versandberechnung, wenn PayPal nichts geliefert hat
+      if (shipCents <= 0) {
+        try {
+          const dbOrder = await prisma.order.findUnique({
+            where: { id: orderId },
+            include: {
+              items: {
+                include: { product: { select: { isDigital: true, weightGrams: true } } },
+              },
+            },
+          });
+          if (dbOrder) {
+            const region: RegionCode = (dbOrder.country || "").toUpperCase() === "AT" ? "AT" : "EU";
+
+            const subtotalEUR =
+              dbOrder.items.reduce((s, it) => s + (it.unitPrice / 100) * it.qty, 0);
+
+            const hasPhysical = dbOrder.items.some((it) => !it.product?.isDigital);
+
+            // Mindestgewicht 50g, damit bei "0 g" dennoch ein Tarif greift
+            const rawWeight = dbOrder.items.reduce((s, it) => {
+              const w = Number(it.product?.weightGrams ?? 0);
+              const isDigital = !!it.product?.isDigital;
+              return s + (isDigital ? 0 : Math.max(0, w) * it.qty);
+            }, 0);
+            const effWeight = hasPhysical ? Math.max(50, rawWeight) : 0;
+
+            let quote = hasPhysical
+              ? chooseBestShipping({ region, totalWeightGrams: effWeight, subtotalEUR })
+              : null;
+
+            // absoluter Fallback: wenn aus irgendeinem Grund kein Quote zurückkommt,
+            // nochmal mit 1g probieren
+            if (!quote && hasPhysical) {
+              quote = chooseBestShipping({ region, totalWeightGrams: 1, subtotalEUR });
+            }
+
+            if (quote && quote.amountEUR > 0) {
+              shipCents = Math.round(quote.amountEUR * 100);
+              shipName = shipName || `Versand (${quote.name})`;
+            }
+          }
+        } catch (e: any) {
+          console.warn("[paypal/webhook] fallback shipping calc failed:", e?.message || e);
+        }
+      }
+
+      // E) Versand idempotent eintragen
+      try {
+        if (shipCents > 0 || shipName) {
+          await upsertShipping(orderId, shipCents, shipName);
+        }
+      } catch (e: any) {
+        console.warn("[paypal/webhook] upsert shipping failed:", e?.message || e);
+      }
+
+      // F) Finalisieren
+      try {
+        const totalCents = res?.amount?.value ? Math.round(Number(res.amount.value) * 100) : undefined;
+        await finalizeOrderAndInventory({
+          orderId,
+          provider: "paypal",
+          externalId: captureId || paypalOrderId || "paypal_capture",
+          totalCents,
+        });
+      } catch (e: any) {
+        console.warn("[paypal/webhook] finalize failed:", e?.message || e);
+      }
+
+      return NextResponse.json({ received: true });
     }
 
-    // Falls immer noch keine Order-ID: quittieren und raus.
-    if (!orderId) return NextResponse.json({ received: true });
-
-    // Provider markieren (Statistiken)
-    prisma.order.update({ where: { id: orderId }, data: { paymentProvider: "paypal" as any } }).catch(() => {});
-
-    // Versand-Position idempotent pflegen
-    await upsertShipping(orderId, shipCents, shipName);
-
-    // Finalisieren (idempotent in deinem Helper)
-    const externalId =
-      res?.id ||
-      res?.supplementary_data?.related_ids?.capture_id ||
-      res?.supplementary_data?.related_ids?.order_id ||
-      "paypal";
-    const totalCents = res?.amount?.value ? Math.round(Number(res.amount.value) * 100) : undefined;
-
-    await finalizeOrderAndInventory({
-      orderId,
-      provider: "paypal",
-      externalId,
-      totalCents,
-    });
-
+    // andere Events: ack
     return NextResponse.json({ received: true });
   } catch (e: any) {
     console.error("[paypal/webhook] ERROR", e?.message || e, e?.stack);

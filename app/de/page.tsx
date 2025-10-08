@@ -1,28 +1,33 @@
 // app/de/page.tsx
-import Image from "next/image"
+import Image from "next/image";
+import { prisma } from "@/lib/db";
 
-export default function HomeDE() {
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+export default async function HomeDE() {
   // Versandfrei-Schwelle aus ENV (Fallback 50 €)
-  const raw = process.env.SHOP_FREE_SHIPPING_MIN
-  const freeMin = Number.isFinite(Number(raw)) ? Number(raw) : 50
+  const raw = process.env.SHOP_FREE_SHIPPING_MIN;
+  const freeMin = Number.isFinite(Number(raw)) ? Number(raw) : 50;
+
+  // Neueste 2 Releases laden (Cover + Titel) – guarded
+  let latestReleases: Array<{ id: string; title: string; cover: string | null }> = [];
+  try {
+    latestReleases = await prisma.release.findMany({
+      orderBy: [{ year: "desc" }, { createdAt: "desc" }],
+      take: 2,
+      select: { id: true, title: true, cover: true },
+    });
+  } catch (err: any) {
+    console.error("[home] prisma.release.findMany error:", err?.message || err);
+  }
 
   return (
     <div className="relative">
       {/* HERO */}
-      <section
-        className="
-          full-bleed relative
-          min-h-[clamp(540px,calc(100svh-180px),900px)]
-        "
-      >
+      <section className="full-bleed relative min-h-[clamp(540px,calc(100svh-180px),900px)]">
         <div className="absolute inset-0 -z-10">
-          <Image
-            src="/hero.jpg"
-            alt="Blutonium Records Hero"
-            fill
-            priority
-            className="object-cover"
-          />
+          <Image src="/hero.jpg" alt="Blutonium Records Hero" fill priority className="object-cover" />
           <div className="absolute inset-0 bg-black/40" />
           <div
             className="absolute inset-0 pointer-events-none"
@@ -35,9 +40,7 @@ export default function HomeDE() {
         </div>
 
         <div className="mx-auto max-w-6xl px-4 py-24 md:py-36">
-          <h1 className="text-4xl md:text-6xl font-extrabold tracking-tight drop-shadow">
-            Blutonium Records 🚀
-          </h1>
+          <h1 className="text-4xl md:text-6xl font-extrabold tracking-tight drop-shadow">Blutonium Records 🚀</h1>
           <p className="mt-4 text-white/85 text-lg md:text-xl max-w-3xl">
             Seit 1995 — Hardstyle / Hardtrance / Hard Dance
           </p>
@@ -54,20 +57,32 @@ export default function HomeDE() {
       >
         {/* Box 1 */}
         <article className="card flex flex-col items-center justify-center">
-          <img
-            src="/logo.png"
-            alt="Blutonium Records Logo"
-            className="w-40 h-40 object-contain select-none"
-            draggable={false}
-          />
-          <p className="mt-3 text-white/70 text-sm">
-            Blutonium Records — Seit 1995
-          </p>
+          <img src="/logo.png" alt="Blutonium Records Logo" className="w-40 h-40 object-contain select-none" draggable={false} />
+          <p className="mt-3 text-white/70 text-sm">Blutonium Records — Seit 1995</p>
         </article>
 
         {/* Box 2 */}
         <article className="card">
           <h2 className="text-2xl font-bold">Neueste Releases</h2>
+
+          {/* Icon links + zwei neueste Cover rechts */}
+          <div className="mt-3 flex items-center">
+            <img src="/icon.png" alt="Blutonium Icon" className="w-20 h-20 object-contain" />
+            {latestReleases.length > 0 ? (
+              latestReleases.map((r) => (
+                <img
+                  key={r.id}
+                  src={r.cover || "/placeholder.png"}
+                  alt={r.title}
+                  title={r.title}
+                  className="ml-2 w-20 h-20 rounded-lg object-cover"
+                />
+              ))
+            ) : (
+              <span className="ml-3 text-sm opacity-60">aktuell keine Daten</span>
+            )}
+          </div>
+
           <p className="mt-2 text-white/70">
             Der ganze Blutonium Records Katalog von 1995 bis heute mit Links zum Reinhören!
           </p>
@@ -86,7 +101,9 @@ export default function HomeDE() {
           {/* Versandfrei-Badge */}
           <div className="mt-3 inline-flex items-center gap-2 rounded-lg border border-emerald-400/50 bg-emerald-400/10 px-2.5 py-1 text-emerald-200 text-xs">
             <span aria-hidden>🚚</span>
-            <span><strong>Versandkostenfrei ab {freeMin.toFixed(0)} €</strong> (AT &amp; EU)</span>
+            <span>
+              <strong>Versandkostenfrei ab {freeMin.toFixed(0)} €</strong> (AT &amp; EU)
+            </span>
           </div>
 
           <a href="/de/shop" className="btn mt-4 inline-flex">
@@ -100,7 +117,7 @@ export default function HomeDE() {
           <p className="mt-2 text-white/70">
             Blutonium präsentiert Hardstyle Samples Vol. 2 — Producer Sound Pack
           </p>
-          <a href="/de/shop/hardstyle-samples-vol-2" className="btn mt-4 inline-flex">
+          <a href="/de/hardstyle-samples" className="btn mt-4 inline-flex">
             Produkt ansehen →
           </a>
         </article>
@@ -108,14 +125,14 @@ export default function HomeDE() {
         {/* Box 5 – jetzt verlinkt auf die DVD-Seite */}
         <article className="card opacity-95">
           <h2 className="text-2xl font-bold">Gebrauchte DVDs &amp; Blu-rays</h2>
-          <p className="mt-2 text-white/70">
-            DVDs &amp; Blu-rays: geprüft, fair bepreist, schnell versendet.
-          </p>
+          <p className="mt-2 text-white/70">DVDs &amp; Blu-rays: geprüft, fair bepreist, schnell versendet.</p>
 
           {/* Versandfrei-Badge */}
           <div className="mt-3 inline-flex items-center gap-2 rounded-lg border border-emerald-400/50 bg-emerald-400/10 px-2.5 py-1 text-emerald-200 text-xs">
             <span aria-hidden>🚚</span>
-            <span><strong>Versandkostenfrei ab {freeMin.toFixed(0)} €</strong> (AT &amp; EU)</span>
+            <span>
+              <strong>Versandkostenfrei ab {freeMin.toFixed(0)} €</strong> (AT &amp; EU)
+            </span>
           </div>
 
           <a href="/de/shop/dvds" className="btn mt-4 inline-flex">
@@ -124,5 +141,5 @@ export default function HomeDE() {
         </article>
       </section>
     </div>
-  )
+  );
 }
