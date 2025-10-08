@@ -35,39 +35,31 @@ type SearchParams = {
   type?: "all" | "dvd" | "bd";
 };
 
-function buildQuery(next: Record<string, string | undefined>, cur: URLSearchParams) {
-  const s = new URLSearchParams(cur);
-  Object.entries(next).forEach(([k, v]) => {
-    if (v == null || v === "") s.delete(k);
-    else s.set(k, v);
-  });
-  return `?${s.toString()}`;
+// ✅ immer absolute URL, damit Node-Fetch nicht meckert
+function api(path: string) {
+  const base =
+    process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : (process.env.NEXT_PUBLIC_BASE_URL?.replace(/\/+$/, "")) ||
+        `http://localhost:${process.env.PORT || 3000}`;
+  return `${base}${path}`;
 }
 
-async function fetchInitial(params: {
-  q?: string;
-  genre?: string;
-  type: "all" | "dvd" | "bd";
-}) {
+async function fetchInitial(params: { q?: string; genre?: string; type: "all" | "dvd" | "bd" }) {
   try {
     const qs = new URLSearchParams();
-    const cat =
-      params.type === "dvd" ? "dvd" :
-      params.type === "bd"  ? "bd"  :
-      "dvd,bd"; // ALL – Server mappt "bd" → "bray"
+    const cat = params.type === "dvd" ? "dvd" : params.type === "bd" ? "bd" : "dvd,bd";
     qs.set("limit", String(PAGE_SIZE));
     qs.set("offset", "0");
     qs.set("cat", cat);
     if (params.q) qs.set("q", params.q);
     if (params.genre) qs.set("genre", params.genre);
 
-    // ⬇️ RELATIVE URL, kein abs()/localhost mehr
-    const res = await fetch(`/api/public/products?${qs.toString()}`, { cache: "no-store" });
+    const res = await fetch(api(`/api/public/products?${qs.toString()}`), { cache: "no-store" });
     const text = await res.text();
     let j: any; try { j = JSON.parse(text); } catch { j = text; }
     if (!res.ok) throw new Error((j && j.error) || "Fehler beim Laden");
-
-    const items: Prod[] = Array.isArray(j) ? j : Array.isArray(j?.items) ? j.items : [];
+    const items: Prod[] = Array.isArray(j?.items) ? j.items : Array.isArray(j) ? j : [];
     return items;
   } catch (err: any) {
     console.error("[dvds] fetchInitial error:", err?.message || err);
@@ -96,23 +88,17 @@ export default async function DVDsPage({ searchParams }: { searchParams: SearchP
         <div className="grid grid-cols-1 md:grid-cols-[2fr_1fr] gap-4 md:gap-6 items-center">
           <div className="p-6 md:p-8">
             <h1 className="text-3xl sm:text-4xl font-extrabold">2nd Hand DVDs & BLU-rays zum Top Preis</h1>
-            <p className="mt-2 text-white/80">
-              Geprüfte Qualität, Top Titel, fair bepreist, neuwertiger Zustand, schnell versendet.
-            </p>
-
-            {/* Versandkostenfrei Hinweis */}
+            <p className="mt-2 text-white/80">Geprüfte Qualität, Top Titel, fair bepreist, neuwertiger Zustand, schnell versendet.</p>
             <div className="mt-3 inline-flex items-center gap-2 rounded-lg border border-emerald-400/50 bg-emerald-400/10 px-3 py-1.5 text-emerald-200 text-sm">
               <span aria-hidden>🚚</span>
-              <span>
-                <strong>Versandkostenfrei ab {FREE_SHIPPING_EUR.toFixed(0)} €</strong> (AT & EU) – wird im Checkout automatisch berücksichtigt.
-              </span>
+              <span><strong>Versandkostenfrei ab {FREE_SHIPPING_EUR.toFixed(0)} €</strong> (AT & EU) – wird im Checkout automatisch berücksichtigt.</span>
             </div>
 
             {/* Tabs */}
             <div className="mt-5 flex flex-wrap items-center gap-2">
-              <Link href={buildQuery({ type: undefined }, cur)} className={`px-3 py-1.5 rounded-lg border text-sm transition ${type==="all"?"border-cyan-400 bg-cyan-400/10 text-cyan-200":"border-white/15 bg-white/5 hover:bg-white/10"}`}>Alle</Link>
-              <Link href={buildQuery({ type: "dvd" }, cur)} className={`px-3 py-1.5 rounded-lg border text-sm transition ${type==="dvd"?"border-cyan-400 bg-cyan-400/10 text-cyan-200":"border-white/15 bg-white/5 hover:bg-white/10"}`}>DVDs</Link>
-              <Link href={buildQuery({ type: "bd" }, cur)}  className={`px-3 py-1.5 rounded-lg border text-sm transition ${type==="bd" ?"border-cyan-400 bg-cyan-400/10 text-cyan-200":"border-white/15 bg-white/5 hover:bg-white/10"}`}>Blu-rays</Link>
+              <Link href={`?${new URLSearchParams(Object.fromEntries([...cur.entries()].filter(([k])=>k!=="type"))).toString()}`} className={`px-3 py-1.5 rounded-lg border text-sm transition ${type==="all"?"border-cyan-400 bg-cyan-400/10 text-cyan-200":"border-white/15 bg-white/5 hover:bg-white/10"}`}>Alle</Link>
+              <Link href={`?${new URLSearchParams({...Object.fromEntries(cur), type:"dvd"}).toString()}`} className={`px-3 py-1.5 rounded-lg border text-sm transition ${type==="dvd"?"border-cyan-400 bg-cyan-400/10 text-cyan-200":"border-white/15 bg-white/5 hover:bg-white/10"}`}>DVDs</Link>
+              <Link href={`?${new URLSearchParams({...Object.fromEntries(cur), type:"bd"}).toString()}`}  className={`px-3 py-1.5 rounded-lg border text-sm transition ${type==="bd" ?"border-cyan-400 bg-cyan-400/10 text-cyan-200":"border-white/15 bg-white/5 hover:bg-white/10"}`}>Blu-rays</Link>
             </div>
 
             {/* Suche */}
@@ -122,7 +108,6 @@ export default async function DVDsPage({ searchParams }: { searchParams: SearchP
               <input type="hidden" name="type" value={type}/>
               <button type="submit" className="px-4 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-black font-semibold">Suchen</button>
             </form>
-
             <div className="mt-3 text-[13px] text-white/70">Tipp: Nutze die Genre-Buttons, um schneller zu filtern.</div>
           </div>
 
@@ -133,21 +118,19 @@ export default async function DVDsPage({ searchParams }: { searchParams: SearchP
         </div>
       </div>
 
-      {/* Genre-Filter (ohne Label) */}
+      {/* Genre-Filter */}
       <div className="mt-6 flex flex-wrap items-center gap-2">
-        <Link href={buildQuery({ genre: undefined }, cur)} className={`px-2.5 py-1 rounded border text-xs ${!genre ? "border-cyan-400 text-cyan-200 bg-cyan-400/10" : "border-white/15 hover:bg-white/10"}`}>Alle Genres</Link>
+        <Link href={`?${new URLSearchParams(Object.fromEntries([...cur.entries()].filter(([k])=>k!=="genre"))).toString()}`} className={`px-2.5 py-1 rounded border text-xs ${!genre ? "border-cyan-400 text-cyan-200 bg-cyan-400/10" : "border-white/15 hover:bg-white/10"}`}>Alle Genres</Link>
         {GENRES.map((g) => (
-          <Link key={g} href={buildQuery({ genre: g }, cur)} className={`px-2.5 py-1 rounded border text-xs ${genre===g ? "border-cyan-400 text-cyan-200 bg-cyan-400/10" : "border-white/15 hover:bg-white/10"}`}>{g}</Link>
+          <Link key={g} href={`?${new URLSearchParams({...Object.fromEntries(cur), genre:g}).toString()}`} className={`px-2.5 py-1 rounded border text-xs ${genre===g ? "border-cyan-400 text-cyan-200 bg-cyan-400/10" : "border-white/15 hover:bg-white/10"}`}>{g}</Link>
         ))}
       </div>
 
-      {/* Grid oder Fallback */}
+      {/* Grid/Fallback */}
       {initial.length === 0 ? (
         <div className="mt-6 rounded-xl border border-white/10 bg-white/5 p-4">
           <div className="font-semibold">Gerade nicht erreichbar</div>
-          <div className="opacity-70 text-sm">
-            Die Produktliste konnte nicht geladen werden. Bitte kurz neu laden – wir prüfen das im Hintergrund.
-          </div>
+          <div className="opacity-70 text-sm">Die Produktliste konnte nicht geladen werden. Bitte kurz neu laden – wir prüfen das im Hintergrund.</div>
         </div>
       ) : (
         <MoviesGridClient key={`${q}|${genre}|${type}`} initial={initial} q={q || ""} genre={genre || ""} type={type} />
