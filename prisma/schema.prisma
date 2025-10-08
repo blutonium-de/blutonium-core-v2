@@ -32,8 +32,8 @@ model Product {
   createdAt     DateTime    @default(now())
   stock         Int         @default(1)
   genre         String?     @db.VarChar(50)
-  orderItems    OrderItem[]
   fsk           Int?
+  orderItems    OrderItem[]
 
   @@index([active, stock, categoryCode, createdAt])
   @@index([categoryCode, createdAt])
@@ -46,7 +46,7 @@ model Order {
   email           String?
   amountTotal     Int
   currency        String
-  status          String      @default("open")
+  status          String
   createdAt       DateTime    @default(now())
   address         String?
   city            String?
