@@ -1,4 +1,3 @@
-// app/de/shop/page.tsx
 import Image from "next/image";
 import Link from "next/link";
 import { FREE_SHIPPING_EUR } from "../../../lib/shop-config";
@@ -40,11 +39,6 @@ const CATS = [
   { code: "ss",  label: "Sonstiges & Specials" },
 ];
 
-function abs(path: string) {
-  const base = (process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000").replace(/\/+$/, "");
-  return new URL(path, base + "/").toString();
-}
-
 function buildQuery(next: Record<string, string | undefined>, cur: URLSearchParams) {
   const s = new URLSearchParams(cur);
   Object.entries(next).forEach(([k, v]) => {
@@ -64,7 +58,8 @@ async function fetchInitial(params: { q?: string; genre?: string; cat?: string }
     if (params.q) qs.set("q", params.q);
     if (params.genre) qs.set("genre", params.genre);
 
-    const res = await fetch(abs(`/api/public/products?${qs.toString()}`), { cache: "no-store" });
+    // ⬇️ RELATIVE URL, kein abs()/localhost mehr
+    const res = await fetch(`/api/public/products?${qs.toString()}`, { cache: "no-store" });
     const text = await res.text();
     let j: any; try { j = JSON.parse(text); } catch { j = text; }
     if (!res.ok) throw new Error((j && j.error) || "Fehler beim Laden");
