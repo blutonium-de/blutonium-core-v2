@@ -1,161 +1,159 @@
-// app/de/shop/page.tsx
+// app/de/page.tsx
 import Image from "next/image";
-import Link from "next/link";
-import { FREE_SHIPPING_EUR } from "../../../lib/shop-config";
-import ShopGridClient from "../../../components/ShopGridClient";
+import { prisma } from "@/lib/db";
 
-export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type Prod = {
-  id: string;
-  slug: string;
-  artist?: string | null;
-  trackTitle?: string | null;
-  productName?: string | null;
-  subtitle?: string | null;
-  categoryCode: string;
-  condition?: string | null;
-  priceEUR: number;
-  image: string;
-  images?: string[];
-  stock?: number | null;
-  genre?: string | null;
-  format?: string | null;
-};
+export default async function HomeDE() {
+  // Versandfrei-Schwelle aus ENV (Fallback 50 €)
+  const raw = process.env.SHOP_FREE_SHIPPING_MIN;
+  const freeMin = Number.isFinite(Number(raw)) ? Number(raw) : 50;
 
-const GENRES = [
-  "Hardstyle","Techno","Trance","House","Reggae","Pop","Film",
-  "Dance","Hörspiel","Jazz","Klassik","Country",
-  "Italo Disco","Disco","EDM","Hip Hop",
-] as const;
-
-const CATS = [
-  { code: "",    label: "Alle" },
-  { code: "bv",  label: "Blutonium Vinyls" },
-  { code: "sv",  label: "Sonstige Vinyls" },
-  { code: "bcd", label: "Blutonium CDs" },
-  { code: "scd", label: "Sonstige CDs" },
-  { code: "bhs", label: "Blutonium Hardstyle Samples" },
-  { code: "ss",  label: "Sonstiges & Specials" },
-];
-
-// ✅ internal URL helper – immer absolute URL, auch lokal
-function api(path: string) {
-  const base =
-    process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}`                              // Prod (Vercel)
-      : (process.env.NEXT_PUBLIC_BASE_URL?.replace(/\/+$/, ""))          // optional: eigene Basis-URL
-        || `http://localhost:${process.env.PORT || 3000}`;               // lokal Fallback
-  return `${base}${path}`;
-}
-
-function buildQuery(next: Record<string, string | undefined>, cur: URLSearchParams) {
-  const s = new URLSearchParams(cur);
-  Object.entries(next).forEach(([k, v]) => {
-    if (v == null || v === "") s.delete(k);
-    else s.set(k, v);
+  // Neueste 2 Releases laden (Cover + Titel)
+  const latestReleases = await prisma.release.findMany({
+    orderBy: [{ year: "desc" }, { createdAt: "desc" }],
+    take: 2,
+    select: { id: true, title: true, cover: true },
   });
-  return `?${s.toString()}`;
-}
-
-async function fetchInitial(params: { q?: string; genre?: string; cat?: string }) {
-  try {
-    const qs = new URLSearchParams();
-    qs.set("cat", params.cat ? params.cat : "bv,sv,bcd,scd,bhs,ss");
-    qs.set("limit", "50");
-    qs.set("offset", "0");
-    if (params.q) qs.set("q", params.q);
-    if (params.genre) qs.set("genre", params.genre);
-
-    const res = await fetch(api(`/api/public/products?${qs.toString()}`), {
-      cache: "no-store",
-    });
-    const text = await res.text();
-    let j: any; try { j = JSON.parse(text); } catch { j = text; }
-    if (!res.ok) throw new Error((j && j.error) || "Fehler beim Laden");
-    const items: Prod[] = Array.isArray(j?.items) ? j.items : Array.isArray(j) ? j : [];
-    return items;
-  } catch (err: any) {
-    console.error("[shop] fetchInitial error:", err?.message || err);
-    return [];
-  }
-}
-
-export default async function ShopPage({
-  searchParams,
-}: {
-  searchParams?: { q?: string; genre?: string; cat?: string };
-}) {
-  const q     = (searchParams?.q || "").trim();
-  const genre = (searchParams?.genre || "").trim();
-  const cat   = (searchParams?.cat || "").trim();
-
-  const cur = new URLSearchParams();
-  if (q) cur.set("q", q);
-  if (genre) cur.set("genre", genre);
-  if (cat) cur.set("cat", cat);
-
-  const initial = await fetchInitial({ q, genre, cat });
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-10">
-      <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04]">
-        <div className="grid grid-cols-1 md:grid-cols-[2fr_1fr] gap-4 md:gap-6 items-center">
-          <div className="p-6 md:p-8">
-            <h1 className="text-3xl sm:text-4xl font-extrabold">Blutonium Records Online Shop</h1>
-            <p className="mt-2 text-white/80">
-              Gebrauchte Vinyls! 12&quot; Maxi Singles, Compilations, Alben, Maxi CDs und div. Specials zum fairen Preis.
-            </p>
-            <div className="mt-3 inline-flex items-center gap-2 rounded-lg border border-emerald-400/50 bg-emerald-400/10 px-3 py-1.5 text-emerald-200 text-sm">
-              <span aria-hidden>🚚</span>
-              <span><strong>Versandkostenfrei ab {FREE_SHIPPING_EUR.toFixed(0)} €</strong> (AT & EU) – wird im Checkout automatisch berücksichtigt.</span>
-            </div>
-            <form className="mt-5 flex gap-2" action="">
-              <input
-                type="search"
-                name="q"
-                placeholder="Suchen (Artist, Titel, EAN, Katalog …)"
-                defaultValue={q}
-                className="flex-1 rounded-lg px-3 py-2 bg-white/5 border border-white/10"
+    <div className="relative">
+      {/* HERO */}
+      <section className="full-bleed relative min-h-[clamp(540px,calc(100svh-180px),900px)]">
+        <div className="absolute inset-0 -z-10">
+          <Image
+            src="/hero.jpg"
+            alt="Blutonium Records Hero"
+            fill
+            priority
+            className="object-cover"
+          />
+          <div className="absolute inset-0 bg-black/40" />
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{
+              background:
+                "radial-gradient(80% 60% at 30% 10%, rgba(0,255,255,0.12) 0%, rgba(0,0,0,0) 40%), radial-gradient(80% 60% at 90% 30%, rgba(128,0,255,0.18) 0%, rgba(0,0,0,0) 50%)",
+            }}
+          />
+          <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-b from-transparent to-black/80" />
+        </div>
+
+        <div className="mx-auto max-w-6xl px-4 py-24 md:py-36">
+          <h1 className="text-4xl md:text-6xl font-extrabold tracking-tight drop-shadow">
+            Blutonium Records 🚀
+          </h1>
+          <p className="mt-4 text-white/85 text-lg md:text-xl max-w-3xl">
+            Seit 1995 — Hardstyle / Hardtrance / Hard Dance
+          </p>
+        </div>
+      </section>
+
+      {/* 5 BOXEN */}
+      <section
+        className="
+          mx-auto max-w-6xl px-6 pb-10 md:pb-14
+          -mt-52 md:-mt-56
+          grid gap-6 sm:grid-cols-2 lg:grid-cols-5
+        "
+      >
+        {/* Box 1 */}
+        <article className="card flex flex-col items-center justify-center">
+          <img
+            src="/logo.png"
+            alt="Blutonium Records Logo"
+            className="w-40 h-40 object-contain select-none"
+            draggable={false}
+          />
+          <p className="mt-3 text-white/70 text-sm">
+            Blutonium Records — Seit 1995
+          </p>
+        </article>
+
+        {/* Box 2 */}
+        <article className="card">
+          <h2 className="text-2xl font-bold">Neueste Releases</h2>
+
+          {/* Icon links + zwei neueste Cover rechts */}
+          <a href="/de/releases" className="mt-3 flex items-center">
+            <img
+              src="/icon.png"
+              alt="Blutonium Icon"
+              className="w-20 h-20 object-contain"
+            />
+            {latestReleases.map((r) => (
+              <img
+                key={r.id}
+                src={r.cover || "/placeholder.png"}
+                alt={r.title}
+                title={r.title}
+                className="ml-2 w-20 h-20 rounded-lg object-cover"
               />
-              <input type="hidden" name="genre" value={genre} />
-              <input type="hidden" name="cat" value={cat} />
-              <button type="submit" className="px-4 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-black font-semibold">
-                Suchen
-              </button>
-            </form>
-            <div className="mt-3 text-[13px] text-white/70">Tipp: Nutze die Genre-Buttons, um schneller zu filtern.</div>
+            ))}
+          </a>
+
+          <p className="mt-2 text-white/70">
+            Der ganze Blutonium Records Katalog von 1995 bis heute mit Links zum
+            Reinhören!
+          </p>
+          <a href="/de/releases" className="btn mt-4 inline-flex">
+            Releases ansehen →
+          </a>
+        </article>
+
+        {/* Box 3 */}
+        <article className="card">
+          <h2 className="text-2xl font-bold">Vinyl &amp; CD Shop</h2>
+          <p className="mt-2 text-white/70">
+            12&quot; Vinyl Maxi Singles, Maxi CDs, Compilations, Neu &amp;
+            Gebraucht zu super Preisen
+          </p>
+
+          {/* Versandfrei-Badge */}
+          <div className="mt-3 inline-flex items-center gap-2 rounded-lg border border-emerald-400/50 bg-emerald-400/10 px-2.5 py-1 text-emerald-200 text-xs">
+            <span aria-hidden>🚚</span>
+            <span>
+              <strong>Versandkostenfrei ab {freeMin.toFixed(0)} €</strong> (AT &amp; EU)
+            </span>
           </div>
-          <div className="relative h-56 md:h-72 lg:h-80 grid place-items-center p-6">
-            <img src="/blutonium-records-shop-logo.png" alt="Blutonium Records Shop" className="max-h-64 w-auto object-contain" loading="eager" />
+
+          <a href="/de/shop" className="btn mt-4 inline-flex">
+            Zum Shop →
+          </a>
+        </article>
+
+        {/* Box 4 */}
+        <article className="card">
+          <h2 className="text-2xl font-bold">Hardstyle Samples</h2>
+          <p className="mt-2 text-white/70">
+            Blutonium präsentiert Hardstyle Samples Vol. 2 — Producer Sound Pack
+          </p>
+          {/* korrekter Link auf die neue Seite */}
+          <a href="/de/hardstyle-samples" className="btn mt-4 inline-flex">
+            Produkt ansehen →
+          </a>
+        </article>
+
+        {/* Box 5 */}
+        <article className="card opacity-95">
+          <h2 className="text-2xl font-bold">Gebrauchte DVDs &amp; Blu-rays</h2>
+          <p className="mt-2 text-white/70">
+            DVDs &amp; Blu-rays: geprüft, fair bepreist, schnell versendet.
+          </p>
+
+          {/* Versandfrei-Badge */}
+          <div className="mt-3 inline-flex items-center gap-2 rounded-lg border border-emerald-400/50 bg-emerald-400/10 px-2.5 py-1 text-emerald-200 text-xs">
+            <span aria-hidden>🚚</span>
+            <span>
+              <strong>Versandkostenfrei ab {freeMin.toFixed(0)} €</strong> (AT &amp; EU)
+            </span>
           </div>
-        </div>
-      </div>
 
-      <div className="mt-6 flex flex-wrap items-center gap-2">
-        <Link href={buildQuery({ genre: undefined }, cur)} className={`px-2.5 py-1 rounded border text-xs ${!genre ? "border-cyan-400 text-cyan-200 bg-cyan-400/10" : "border-white/15 hover:bg-white/10"}`}>Alle Genres</Link>
-        {GENRES.map((g) => (
-          <Link key={g} href={buildQuery({ genre: g }, cur)} className={`px-2.5 py-1 rounded border text-xs ${genre === g ? "border-cyan-400 text-cyan-200 bg-cyan-400/10" : "border-white/15 hover:bg-white/10"}`}>{g}</Link>
-        ))}
-      </div>
-
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        {CATS.map((c) => (
-          <Link key={c.code || "all"} href={buildQuery({ cat: c.code || undefined }, cur)} className={`px-3 py-1.5 rounded-lg border text-sm transition ${(c.code || "") === (cat || "") ? "border-cyan-400 bg-cyan-400/10 text-cyan-200" : "border-white/15 bg-white/5 hover:bg-white/10"}`}>
-            {c.label}
-          </Link>
-        ))}
-      </div>
-
-      {initial.length === 0 ? (
-        <div className="mt-6 rounded-xl border border-white/10 bg-white/5 p-4">
-          <div className="font-semibold">Gerade nicht erreichbar</div>
-          <div className="opacity-70 text-sm">Die Produktliste konnte nicht geladen werden. Bitte kurz neu laden – wir prüfen das im Hintergrund.</div>
-        </div>
-      ) : (
-        <ShopGridClient key={`${q}|${genre}|${cat}`} initial={initial} q={q} genre={genre} cat={cat} />
-      )}
+          <a href="/de/shop/dvds" className="btn mt-4 inline-flex">
+            Zu DVDs &amp; Blu-rays →
+          </a>
+        </article>
+      </section>
     </div>
   );
 }
