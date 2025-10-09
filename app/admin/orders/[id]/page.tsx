@@ -1,4 +1,3 @@
-// app/admin/orders/[id]/page.tsx
 import { prisma } from "../../../../lib/db";
 import Link from "next/link";
 import OrderStatusControl from "../../../../components/OrderStatusControl";
@@ -60,6 +59,25 @@ export default async function OrderDetailPage({ params, searchParams }: Props) {
 
   const itemsTotal = order.items.reduce((s, it) => s + it.qty * it.unitPrice, 0);
 
+  // ► konsistente Anzeige in Europe/Vienna
+  const atDate = new Intl.DateTimeFormat("de-AT", {
+    timeZone: "Europe/Vienna",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(new Date(order.createdAt));
+
+  // ► Payment-Label
+  const provider = (order.paymentProvider || "").toLowerCase();
+  const providerLabel =
+    provider === "stripe" ? "Stripe / Karte"
+    : provider === "paypal" ? "PayPal"
+    : provider ? provider.charAt(0).toUpperCase() + provider.slice(1)
+    : "—";
+
   return (
     <div className="max-w-6xl mx-auto px-4 py-10">
       <div className="flex items-center justify-between gap-4">
@@ -73,30 +91,48 @@ export default async function OrderDetailPage({ params, searchParams }: Props) {
       </div>
 
       <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+        {/* Zahlungsart */}
         <div>
-          <div className="opacity-60">Stripe Session</div>
-          <div className="font-mono text-xs break-all">{order.stripeId}</div>
+          <div className="opacity-60">Zahlart</div>
+          <div className="font-semibold">{providerLabel}</div>
         </div>
+
+        {/* provider-spezifische IDs */}
+        {provider === "stripe" && (
+          <div>
+            <div className="opacity-60">Stripe Session</div>
+            <div className="font-mono text-xs break-all">{order.stripeId ?? "—"}</div>
+          </div>
+        )}
+        {provider === "paypal" && (
+          <div>
+            <div className="opacity-60">PayPal Capture-ID</div>
+            <div className="font-mono text-xs break-all">{order.paymentId ?? "—"}</div>
+          </div>
+        )}
+
         <div>
           <div className="opacity-60">E-Mail</div>
           <div>{order.email ?? "—"}</div>
         </div>
+
         <div>
           <div className="opacity-60">Datum</div>
-          <div>{new Date(order.createdAt).toLocaleString("de-AT")}</div>
+          <div>{atDate}</div>
         </div>
+
         <div>
-          <div>
-  <div className="opacity-60 mb-1">Status</div>
-  <OrderStatusControl orderId={order.id} current={order.status} adminKey={token} />
-</div>
+          <div className="opacity-60 mb-1">Status</div>
+          <OrderStatusControl orderId={order.id} current={order.status} adminKey={token} />
         </div>
+
         <div>
           <div className="opacity-60">Zwischensumme (Items)</div>
           <div>{eur(itemsTotal)}</div>
         </div>
+
         <div>
-          <div className="opacity-60">Gesamt (Stripe)</div>
+          <div className="opacity-60">Gesamt (bezahlt)</div>
           <div className="font-semibold">{eur(order.amountTotal)}</div>
         </div>
       </div>

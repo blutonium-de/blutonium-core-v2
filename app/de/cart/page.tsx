@@ -1,4 +1,3 @@
-// app/de/cart/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -45,7 +44,6 @@ function readRegion(): RegionCode {
     const r = localStorage.getItem("ship_region") as RegionCode | null;
     if (r === "AT" || r === "EU" || r === "WORLD") return r;
   } catch {}
-  // Fallback: AT; optional könntest du über GeoIP o.ä. auf EU/WORLD mappen
   return "AT";
 }
 function writeRegion(r: RegionCode) {
@@ -58,7 +56,6 @@ export default function CartPage() {
   const [loading, setLoading] = useState(true);
   const [region, setRegion] = useState<RegionCode>("AT");
 
-  // initial
   useEffect(() => {
     setRegion(readRegion());
 
@@ -160,7 +157,7 @@ export default function CartPage() {
   }
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-10">
+    <div className="max-w-6xl mx-auto px-4 py-10 overflow-x-hidden">
       <div className="flex items-start justify-between gap-3">
         <h1 className="text-3xl font-bold">Warenkorb</h1>
 
@@ -245,14 +242,19 @@ export default function CartPage() {
       <div className="mt-6 grid gap-4 sm:grid-cols-2 items-start">
         <div className="rounded-xl border border-white/10 bg-white/5 p-3">
           <div className="text-sm opacity-80">Gewicht</div>
-          <div className="font-semibold">{(totalWeight / 1000).toFixed(2)} kg <span className="opacity-70 text-sm">({labelForBracket(totalWeight)})</span></div>
+          <div className="font-semibold">
+            {(totalWeight / 1000).toFixed(2)} kg{" "}
+            <span className="opacity-70 text-sm">({labelForBracket(totalWeight)})</span>
+          </div>
 
           {shipping && (
             <>
               <div className="mt-3 text-sm opacity-80">Versand ({region})</div>
               <div className="font-semibold">
                 {shipping.amountEUR === 0 ? "Kostenlos" : `${shipping.amountEUR.toFixed(2)} €`}
-                {shipping.freeByThreshold && <span className="ml-2 text-xs opacity-70">(Freigrenze erreicht)</span>}
+                {shipping.freeByThreshold && (
+                  <span className="ml-2 text-xs opacity-70">(Freigrenze erreicht)</span>
+                )}
               </div>
               <div className="mt-1 opacity-60 text-xs">{shipping.name}</div>
             </>
@@ -263,7 +265,9 @@ export default function CartPage() {
           <div className="text-right">
             <div className="opacity-70 text-sm">Zwischensumme (ohne Versand)</div>
             <div className="text-2xl font-extrabold">{subtotal.toFixed(2)} €</div>
-            <div className="opacity-60 text-xs">Genauer Versandpreis im nächsten Schritt (Stripe) – Region wird übernommen.</div>
+            <div className="opacity-60 text-xs">
+              Genauer Versandpreis im nächsten Schritt (Stripe) – Region wird übernommen.
+            </div>
           </div>
           <Link
             href="/de/checkout"

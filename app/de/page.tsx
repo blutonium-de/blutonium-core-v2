@@ -52,6 +52,16 @@ export default function HomeDE() {
           grid gap-6 sm:grid-cols-2 lg:grid-cols-5
         "
       >
+        {/* ✅ Mobile Hinweis-Box – nur auf kleinen Screens sichtbar, nimmt volle Breite */}
+        <article className="block lg:hidden sm:col-span-2 lg:col-span-5 card">
+          <div className="text-sm">
+            <div className="font-semibold mb-1">Hinweis</div>
+            <p className="opacity-80">
+              Auf kleinen Displays findest du unten die Schnellzugriffe zu Releases, Shop und Samples.
+            </p>
+          </div>
+        </article>
+
         {/* Box 1 */}
         <article className="card flex flex-col items-center justify-center">
           <img
@@ -82,13 +92,10 @@ export default function HomeDE() {
           <p className="mt-2 text-white/70">
             12&quot; Vinyl Maxi Singles, Maxi CDs, Compilations, Neu &amp; Gebraucht zu super Preisen
           </p>
-
-          {/* Versandfrei-Badge */}
           <div className="mt-3 inline-flex items-center gap-2 rounded-lg border border-emerald-400/50 bg-emerald-400/10 px-2.5 py-1 text-emerald-200 text-xs">
             <span aria-hidden>🚚</span>
             <span><strong>Versandkostenfrei ab {freeMin.toFixed(0)} €</strong> (AT &amp; EU)</span>
           </div>
-
           <a href="/de/shop" className="btn mt-4 inline-flex">
             Zum Shop →
           </a>
@@ -105,19 +112,16 @@ export default function HomeDE() {
           </a>
         </article>
 
-        {/* Box 5 – jetzt verlinkt auf die DVD-Seite */}
+        {/* Box 5 */}
         <article className="card opacity-95">
           <h2 className="text-2xl font-bold">Gebrauchte DVDs &amp; Blu-rays</h2>
           <p className="mt-2 text-white/70">
             DVDs &amp; Blu-rays: geprüft, fair bepreist, schnell versendet.
           </p>
-
-          {/* Versandfrei-Badge */}
           <div className="mt-3 inline-flex items-center gap-2 rounded-lg border border-emerald-400/50 bg-emerald-400/10 px-2.5 py-1 text-emerald-200 text-xs">
             <span aria-hidden>🚚</span>
             <span><strong>Versandkostenfrei ab {freeMin.toFixed(0)} €</strong> (AT &amp; EU)</span>
           </div>
-
           <a href="/de/shop/dvds" className="btn mt-4 inline-flex">
             Zu DVDs &amp; Blu-rays →
           </a>

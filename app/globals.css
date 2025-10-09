@@ -2,9 +2,23 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Diagnose: Du MUSST jetzt einen grünen Rahmen sehen */
-body {
-  outline: 6px solid lime !important;
+/* Debug-Rahmen ENTFERNT – sorgt sonst für die grüne Linie */
+html, body {
+  overflow-x: hidden;              /* verhindert horizontales Wackeln */
+}
+
+/* iOS Safe-Area Variablen & Utility */
+:root {
+  --safe-bottom: env(safe-area-inset-bottom);
+  --safe-top:    env(safe-area-inset-top);
+  --safe-left:   env(safe-area-inset-left);
+  --safe-right:  env(safe-area-inset-right);
+}
+.safe-pad {
+  padding-bottom: max(0px, var(--safe-bottom));
+  padding-top:    max(0px, var(--safe-top));
+  padding-left:   max(0px, var(--safe-left));
+  padding-right:  max(0px, var(--safe-right));
 }
 
 /* Vollbreit-Breakout */
@@ -33,15 +47,7 @@ body {
 }
 
 /* Typografie */
-h1, h2, h3 {
-  @apply font-bold tracking-tight;
-}
-h1 {
-  @apply text-4xl md:text-6xl;
-}
-h2 {
-  @apply text-2xl md:text-4xl;
-}
-h3 {
-  @apply text-xl md:text-2xl;
-}
+h1, h2, h3 { @apply font-bold tracking-tight; }
+h1 { @apply text-4xl md:text-6xl; }
+h2 { @apply text-2xl md:text-4xl; }
+h3 { @apply text-xl md:text-2xl; }
