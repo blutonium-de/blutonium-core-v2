@@ -49,3 +49,9 @@ out/
 
 /generated/prisma
 .vercel
+
+# Backup-Files nicht ins Git-Repo
+backups/
+*.dump
+*.sql
+*.sql.gz
