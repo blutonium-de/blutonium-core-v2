@@ -41,9 +41,7 @@ export default function VideosClient() {
       const r = await fetch(`/api/youtube?${sp.toString()}`, { cache: "no-store" });
       const data = (await r.json()) as ApiResult;
 
-      if (!r.ok) {
-        throw new Error(data?.error || `YouTube API ${r.status}`);
-      }
+      if (!r.ok) throw new Error(data?.error || `YouTube API ${r.status}`);
 
       setVideos((old) => (reset ? data.videos : [...old, ...data.videos]));
       setNextToken(data.nextPageToken ?? null);
@@ -54,21 +52,17 @@ export default function VideosClient() {
     }
   }
 
-  // Initialer Load
   useEffect(() => {
     load({ reset: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Suche abschicken (Enter)
   function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === "Enter") {
-      load({ reset: true });
-    }
+    if (e.key === "Enter") load({ reset: true });
   }
 
   return (
-    <div className="max-w-6xl mx-auto">
+    <div className="w-full">
       {/* Controls */}
       <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between mb-6">
         <div className="flex gap-2 w-full sm:w-auto">
@@ -109,14 +103,12 @@ export default function VideosClient() {
         </div>
       </div>
 
-      {/* Fehler */}
       {error && (
         <div className="mb-6 rounded-md border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm">
           Fehler: {error}
         </div>
       )}
 
-      {/* Grid */}
       {(!loading && videos.length === 0 && !error) ? (
         <div className="py-16 text-center text-white/70">Keine Videos gefunden.</div>
       ) : (
@@ -139,7 +131,9 @@ export default function VideosClient() {
                 />
               </div>
               <div className="p-3">
-                <div className="text-xs text-white/60">{new Date(v.publishedAt).toLocaleDateString("de-AT")}</div>
+                <div className="text-xs text-white/60">
+                  {new Date(v.publishedAt).toLocaleDateString("de-AT")}
+                </div>
                 <div className="mt-1 line-clamp-2 font-medium group-hover:text-cyan-300">
                   {v.title}
                 </div>
@@ -149,7 +143,6 @@ export default function VideosClient() {
         </div>
       )}
 
-      {/* Load more */}
       <div className="text-center">
         {nextToken && (
           <button

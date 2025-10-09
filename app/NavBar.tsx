@@ -13,7 +13,7 @@ export default function NavBar() {
   useEffect(() => { setOpen(false) }, [pathname])
 
   const links = [
-    { href: "/releases", label: "Releases" },
+    { href: "/de/releases", label: "Releases" },   // ⬅️ angepasst
     { href: "/merchandise", label: "Merchandise" },
     { href: "/samples", label: "Samples" },
     { href: "/videos", label: "Videos" },

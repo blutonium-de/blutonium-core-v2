@@ -1,20 +1,19 @@
 // app/de/releases/page.tsx
 export const dynamic = "force-dynamic";
-export const runtime = "nodejs";
 
-import ReleasesGrid from "../../../components/ReleasesGrid";
+import ReleasesGrid from "@/components/ReleasesGrid";
 
-export default async function ReleasesPage() {
+export default function ReleasesPage() {
   return (
-    <div className="mx-auto max-w-6xl px-4 py-10">
-      <h1 className="text-4xl sm:text-5xl font-extrabold">
-        Blutonium Records Veröffentlichungen
+    <div className="mx-auto max-w-4xl px-4 py-14">
+      <h1 className="text-3xl sm:text-4xl font-extrabold">
+        Releases
       </h1>
-      <p className="opacity-70 mt-2">
+      <p className="opacity-70 mt-1">
         Neueste zuerst. Die aktuellsten Jahre werden vollständig vorgeladen.
       </p>
 
-      {/* Grid mit Jahr-Filter & (jahrweiser) „infinite“ Anzeige */}
+      {/* Grid mit Sticky-Jahr-Navi */}
       <ReleasesGrid />
     </div>
   );
