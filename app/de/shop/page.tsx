@@ -187,7 +187,7 @@ export default async function ShopPage({
 
       {/* Grid; pageSize=24 ermöglicht „Mehr laden“/Paging im Client */}
       <ShopGridClient
-        key={`${q}|${genre}|${cat}|24`}
+        key={`${q}|${genre}|${cat}`}
         initial={initial}
         q={q}
         genre={genre}
