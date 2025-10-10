@@ -131,7 +131,7 @@ export default async function ShopPage({
             </div>
           </div>
 
-          {/* rechtes Logo – KORRIGIERTER PFAD */}
+          {/* rechtes Logo */}
           <div className="relative h-56 md:h-72 lg:h-80">
             <Image
               src="/blutonium-records-shop-logo.png"
@@ -185,15 +185,13 @@ export default async function ShopPage({
         ))}
       </div>
 
-      {/* Grid; pageSize=24 ermöglicht „Mehr laden“/Paging im Client */}
+      {/* Grid */}
       <ShopGridClient
         key={`${q}|${genre}|${cat}`}
         initial={initial}
         q={q}
         genre={genre}
         cat={cat}
-        pageSize={24}
-        showPager
       />
     </div>
   );
