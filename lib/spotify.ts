@@ -8,8 +8,10 @@ const SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token";
 export const ARTISTS = [
   "2qNYTspRpXKdl4MJ6TGC5T", // Blutonium Boy
   "19QmW7ALL7ZhCKkDPRuOjn", // Kris Grey
-  "5SjvqHuCejtD6q6gGa3q29", // DJ Session One
-  "4DUS9SX3NDld2Um49K0Cas", // DJ Neo (Harddance)
+  "1aGVl7Sl6h7N55wkxaQ1U6", // Daniele Mondello
+  "5vbmx7Q2CFSipF64kCGC3N", // Blutonium Boys
+  "4zN8ra0g03fTzZbLhCplCj", // Thomas Trouble
+  "4hspTreuR02Ej5LeJ7AHyC", // John Ferris
   // ggf. weitere …
 ];
 
