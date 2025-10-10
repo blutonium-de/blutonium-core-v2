@@ -1,4 +1,6 @@
+// components/ShopGridClient.tsx
 "use client";
+
 import { useEffect, useState } from "react";
 import ProductCard from "@/components/ProductCard";
 
@@ -38,7 +40,7 @@ export default function ShopGridClient({
       (p) => p.categoryCode !== "dvd" && p.categoryCode !== "bray"
     );
 
-  // Paginierung: wir halten Seiten, aktuellen Index und ob wir am Ende sind
+  // Paginierung: Seiten-Buffer, aktueller Index, End-Flag, Loading
   const [pages, setPages] = useState<Prod[][]>([stripMovies(initial || [])]);
   const [current, setCurrent] = useState<number>(0); // 0-basiert
   const [reachedLast, setReachedLast] = useState<boolean>(
@@ -54,9 +56,10 @@ export default function ShopGridClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q, genre, cat, JSON.stringify(initial?.map?.((p) => p.id))]);
 
-  // Hilfen
+  // Hilfen/Anzeige
   const flatCount = pages.reduce((n, pg) => n + pg.length, 0);
-  const showingFrom = current * PAGE_SIZE + 1;
+  const showingFrom =
+    pages[current]?.length ? current * PAGE_SIZE + 1 : 0;
   const showingTo = current * PAGE_SIZE + (pages[current]?.length || 0);
 
   async function fetchPage(pageIndex: number): Promise<Prod[]> {
@@ -80,7 +83,8 @@ export default function ShopGridClient({
     }
     if (!r.ok) throw new Error((j && j.error) || "Fehler beim Laden");
 
-    const raw: Prod[] = Array.isArray(j?.items) ? j.items : [];
+    // API kann Array ODER { items: [...] } liefern
+    const raw: Prod[] = Array.isArray(j) ? j : Array.isArray(j?.items) ? j.items : [];
     const filtered = stripMovies(raw);
     // Wenn die Rohmenge < PAGE_SIZE ist, sind wir am Ende
     if (raw.length < PAGE_SIZE) setReachedLast(true);
@@ -91,7 +95,7 @@ export default function ShopGridClient({
     if (loading || reachedLast) return;
     setLoading(true);
     try {
-      const nextIndex = pages.length; // nächste Seite
+      const nextIndex = pages.length; // nächste Seite (0-basiert)
       const nextPage = await fetchPage(nextIndex);
       setPages((prev) => [...prev, nextPage]);
       setCurrent(nextIndex); // nach dem Laden direkt auf die neue Seite springen
@@ -100,15 +104,13 @@ export default function ShopGridClient({
     }
   }
 
-  // explizit zu einer Seite springen (falls bereits geladen)
+  // Zu Seite springen (lädt fehlende Seiten sequentiell nach)
   async function goToPage(idx: number) {
     if (idx < 0) idx = 0;
-    // Seite existiert schon
     if (idx < pages.length) {
       setCurrent(idx);
       return;
     }
-    // Seite existiert nicht: sequentiell bis dahin nachladen
     if (loading || reachedLast) return;
     setLoading(true);
     try {
@@ -119,7 +121,7 @@ export default function ShopGridClient({
         i++;
         if (pg.length < PAGE_SIZE) break;
       }
-      setCurrent(Math.min(idx, pages.length)); // sicherheitshalber clampen
+      setCurrent(Math.min(idx, i - 1));
     } finally {
       setLoading(false);
     }
@@ -147,12 +149,19 @@ export default function ShopGridClient({
       <div className="mt-8 flex flex-col items-center gap-3">
         {/* Status */}
         <div className="text-sm opacity-70">
-          Zeige <span className="font-medium">{showingFrom}</span>–
-          <span className="font-medium">{showingTo}</span>
-          {reachedLast ? (
-            <> von <span className="font-medium">{flatCount}</span></>
+          {showingFrom === 0 ? (
+            <>Keine Treffer.</>
+          ) : reachedLast ? (
+            <>
+              Zeige <span className="font-medium">{showingFrom}</span>–
+              <span className="font-medium">{showingTo}</span> von{" "}
+              <span className="font-medium">{flatCount}</span>
+            </>
           ) : (
-            <> (mehr verfügbar)</>
+            <>
+              Zeige <span className="font-medium">{showingFrom}</span>–
+              <span className="font-medium">{showingTo}</span> (mehr verfügbar)
+            </>
           )}
         </div>
 
@@ -162,11 +171,12 @@ export default function ShopGridClient({
             onClick={() => canPrev && goToPage(current - 1)}
             disabled={!canPrev || loading}
             className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 disabled:opacity-50"
+            aria-label="Vorherige Seite"
           >
             ← Zurück
           </button>
 
-          {/* bisher geladene Seiten als Nummern */}
+          {/* Bisher geladene Seiten */}
           {pages.map((_, i) => (
             <button
               key={i}
@@ -177,18 +187,21 @@ export default function ShopGridClient({
                   ? "border-cyan-400 bg-cyan-400/10 text-cyan-200"
                   : "border-white/15 bg-white/5 hover:bg-white/10"
               }`}
+              aria-current={i === current ? "page" : undefined}
+              aria-label={`Seite ${i + 1}`}
             >
               {i + 1}
             </button>
           ))}
 
-          {/* Platzhalter für „nächste“ Seite, wenn es wahrscheinlich noch mehr gibt */}
+          {/* Platzhalter-Nr für „nächste“ Seite, wenn vermutlich mehr existiert */}
           {!reachedLast && (
             <button
               onClick={() => goToPage(current + 1)}
               disabled={loading}
               className="px-3 py-1.5 rounded-lg border text-sm border-white/15 bg-white/5 hover:bg-white/10"
               title="Nächste Seite (wird bei Bedarf nachgeladen)"
+              aria-label={`Seite ${pages.length + 1}`}
             >
               {pages.length + 1}
             </button>
@@ -198,6 +211,7 @@ export default function ShopGridClient({
             onClick={() => canNext && goToPage(current + 1)}
             disabled={!canNext || loading}
             className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 disabled:opacity-50"
+            aria-label="Nächste Seite"
           >
             Weiter →
           </button>
