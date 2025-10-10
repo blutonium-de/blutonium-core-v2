@@ -39,6 +39,7 @@ const CATS = [
   { code: "ss",  label: "Sonstiges & Specials" },
 ];
 
+// absolute URL-Helfer (vermeidet Port-/Origin-Mismatch lokal)
 function abs(path: string) {
   const base = (process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000").replace(/\/+$/, "");
   return new URL(path, base + "/").toString();
@@ -57,7 +58,7 @@ async function fetchInitial(params: { q?: string; genre?: string; cat?: string }
   const qs = new URLSearchParams();
   // Vinyl/CD only – KEINE dvd/bray
   qs.set("cat", params.cat ? params.cat : "bv,sv,bcd,scd,bhs,ss");
-  qs.set("limit", "50");
+  qs.set("limit", "24");
   qs.set("offset", "0");
   if (params.q) qs.set("q", params.q);
   if (params.genre) qs.set("genre", params.genre);
@@ -66,7 +67,9 @@ async function fetchInitial(params: { q?: string; genre?: string; cat?: string }
   const text = await res.text();
   let j: any; try { j = JSON.parse(text); } catch { j = text; }
   if (!res.ok) throw new Error((j && j.error) || "Fehler beim Laden");
-  const items: Prod[] = Array.isArray(j?.items) ? j.items : [];
+
+  // ✅ robust: unterstützt sowohl Array-Response als auch { items: [...] }
+  const items: Prod[] = Array.isArray(j) ? j : Array.isArray(j?.items) ? j.items : [];
   return items;
 }
 
@@ -128,13 +131,15 @@ export default async function ShopPage({
             </div>
           </div>
 
-          {/* rechtes Logo */}
-          <div className="relative h-56 md:h-72 lg:h-80 grid place-items-center p-6">
-            <img
+          {/* rechtes Logo – KORRIGIERTER PFAD */}
+          <div className="relative h-56 md:h-72 lg:h-80">
+            <Image
               src="/blutonium-records-shop-logo.png"
-              alt="Blutonium Records Shop"
-              className="max-h-64 w-auto object-contain"
-              loading="eager"
+              alt="Blutonium Records – Vinyls & CDs"
+              fill
+              className="object-contain object-center p-2"
+              priority
+              sizes="(max-width: 768px) 60vw, 33vw"
             />
           </div>
         </div>
@@ -180,12 +185,15 @@ export default async function ShopPage({
         ))}
       </div>
 
+      {/* Grid; pageSize=24 ermöglicht „Mehr laden“/Paging im Client */}
       <ShopGridClient
-        key={`${q}|${genre}|${cat}`}
+        key={`${q}|${genre}|${cat}|24`}
         initial={initial}
         q={q}
         genre={genre}
         cat={cat}
+        pageSize={24}
+        showPager
       />
     </div>
   );

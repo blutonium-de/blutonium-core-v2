@@ -4,8 +4,6 @@
 import { useEffect, useState } from "react";
 import ProductCard from "@/components/ProductCard";
 
-const PAGE_SIZE = 50 as const;
-
 type Prod = {
   id: string;
   slug: string;
@@ -27,32 +25,38 @@ export default function MoviesGridClient({
   q,
   genre,
   type,
+  pageSize = 24,
+  showPager = false,
 }: {
   initial: Prod[];
   q: string;
   genre: string;
   type: "all" | "dvd" | "bd";  // ⬅️ "bd" statt "bray"
+  pageSize?: number;
+  showPager?: boolean;
 }) {
   const [items, setItems] = useState<Prod[]>(initial || []);
   const [offset, setOffset] = useState<number>(initial.length || 0);
   const [loading, setLoading] = useState(false);
-  const [done, setDone] = useState<boolean>((initial?.length || 0) < PAGE_SIZE);
+  const [done, setDone] = useState<boolean>((initial?.length || 0) < pageSize);
+  const [page, setPage] = useState(1);
 
-  // ✅ State-Reset bei Filterwechsel (kein manuelles Reload mehr nötig)
+  // ✅ Reset bei Filterwechsel
   useEffect(() => {
     setItems(initial || []);
     setOffset(initial.length || 0);
-    setDone((initial?.length || 0) < PAGE_SIZE);
-  }, [initial, q, genre, type]);
+    setPage(1);
+    setDone((initial?.length || 0) < pageSize);
+  }, [initial, q, genre, type, pageSize]);
 
-  async function loadMore() {
+  async function loadMore(nextPage?: number) {
     if (loading || done) return;
     setLoading(true);
     try {
       const qs = new URLSearchParams();
       const cat = type === "dvd" ? "dvd" : type === "bd" ? "bray" : "dvd,bray"; // ⬅️ map "bd" → "bray"
-      qs.set("limit", String(PAGE_SIZE));
-      qs.set("offset", String(offset));
+      qs.set("limit", String(pageSize));
+      qs.set("offset", String((nextPage ? (nextPage - 1) : 0) * pageSize));
       qs.set("cat", cat);
       if (q) qs.set("q", q);
       if (genre) qs.set("genre", genre);
@@ -63,9 +67,19 @@ export default function MoviesGridClient({
       if (!r.ok) throw new Error((j && j.error) || "Fehler beim Laden");
 
       const next: Prod[] = Array.isArray(j) ? j : Array.isArray(j?.items) ? j.items : [];
-      setItems((prev) => [...prev, ...next]);
-      setOffset((o) => o + next.length);
-      if (next.length < PAGE_SIZE) setDone(true);
+
+      if (nextPage) {
+        // bei Pager → komplette Seite ersetzen
+        setItems(next);
+        setPage(nextPage);
+        setOffset(nextPage * pageSize);
+      } else {
+        // bei "Weitere laden" → anhängen
+        setItems((prev) => [...prev, ...next]);
+        setOffset((o) => o + next.length);
+      }
+
+      if (next.length < pageSize) setDone(true);
     } finally {
       setLoading(false);
     }
@@ -73,7 +87,6 @@ export default function MoviesGridClient({
 
   return (
     <div className="mt-8">
-      {/* Abstand wie Vinyl/CD Seite */}
       <div
         className="
           grid grid-cols-2 gap-x-2 gap-y-4 place-items-stretch
@@ -86,19 +99,40 @@ export default function MoviesGridClient({
         ))}
       </div>
 
-      <div className="mt-6 flex justify-center">
-        {done ? (
-          <div className="text-sm opacity-60">Alles geladen.</div>
-        ) : (
+      {/* Pagination */}
+      {showPager ? (
+        <div className="mt-8 flex justify-center items-center gap-4">
           <button
-            onClick={loadMore}
-            disabled={loading}
-            className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 disabled:opacity-60"
+            onClick={() => loadMore(page - 1)}
+            disabled={page <= 1 || loading}
+            className="px-3 py-1 rounded-lg bg-white/10 hover:bg-white/20 disabled:opacity-40"
           >
-            {loading ? "Lade …" : `Weitere ${PAGE_SIZE} laden`}
+            ← Zurück
           </button>
-        )}
-      </div>
+          <span className="text-sm opacity-70">Seite {page}</span>
+          <button
+            onClick={() => loadMore(page + 1)}
+            disabled={done || loading}
+            className="px-3 py-1 rounded-lg bg-white/10 hover:bg-white/20 disabled:opacity-40"
+          >
+            Weiter →
+          </button>
+        </div>
+      ) : (
+        <div className="mt-6 flex justify-center">
+          {done ? (
+            <div className="text-sm opacity-60">Alles geladen.</div>
+          ) : (
+            <button
+              onClick={() => loadMore()}
+              disabled={loading}
+              className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 disabled:opacity-60"
+            >
+              {loading ? "Lade …" : `Weitere ${pageSize} laden`}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -7,7 +7,7 @@ import { FREE_SHIPPING_EUR } from "@/lib/shop-config";
 
 export const dynamic = "force-dynamic";
 
-const PAGE_SIZE = 50 as const;
+const PAGE_SIZE = 24 as const;
 
 const GENRES = [
   "Action","Thriller","Horror","Komödie","Drama","Sci-Fi","Romanze",
