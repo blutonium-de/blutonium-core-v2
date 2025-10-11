@@ -1,7 +1,7 @@
 // app/admin/products/page.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -23,7 +23,6 @@ type Row = {
 };
 
 const PAGE_SIZE = 10;
-// Standard-Kategorien für den Shop (ohne Filme)
 const SHOP_CATS = "bv,sv,bcd,scd,bhs,ss";
 
 // kleine Hilfsfunktion: alte Einträge „Dance & Electronic“ als „Dance“ anzeigen
@@ -36,8 +35,8 @@ function displayGenre(g?: string | null) {
   return s;
 }
 
-// 🔙 Rücksprung-Ziel im SessionStorage merken (damit Edit → Speichern wieder auf diese Seite springt)
-const RETURN_KEY = "admin:products:returnURL";
+// 🔙 Rücksprung-Key (auch in der Edit-Form verwenden)
+export const RETURN_KEY = "admin:products:returnURL";
 
 export default function AdminProductsPage() {
   const [q, setQ] = useState("");
@@ -51,6 +50,9 @@ export default function AdminProductsPage() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // Flag: Initial-Hydration aus URL läuft/abgeschlossen?
+  const hydrating = useRef(false);
+
   const adminKey = useMemo(
     () =>
       (typeof window !== "undefined" && localStorage.getItem("admin_key")) ||
@@ -59,35 +61,38 @@ export default function AdminProductsPage() {
     []
   );
 
-  // aktuelle Listen-URL für den Rücksprung speichern
-  function rememberCurrentListURL(p: number) {
+  function rememberCurrentListURL(p: number, opts?: { q?: string; cat?: string; soldOutOnly?: boolean }) {
     if (typeof window === "undefined") return;
     const listUrl = new URL("/admin/products", window.location.origin);
-    if (q) listUrl.searchParams.set("q", q);
-    listUrl.searchParams.set("cat", cat ? cat : SHOP_CATS);
-    if (soldOutOnly) listUrl.searchParams.set("soldOut", "1");
+    const qv   = opts?.q   ?? q;
+    const catv = opts?.cat ?? cat;
+    const so   = opts?.soldOutOnly ?? soldOutOnly;
+
+    if (qv) listUrl.searchParams.set("q", qv);
+    listUrl.searchParams.set("cat", catv ? catv : SHOP_CATS);
+    if (so) listUrl.searchParams.set("soldOut", "1");
     listUrl.searchParams.set("limit", String(PAGE_SIZE));
     listUrl.searchParams.set("page", String(p));
     sessionStorage.setItem(RETURN_KEY, listUrl.toString());
   }
 
-  async function load(p: number = page) {
+  // ⬇ load() kann optional Overrides bekommen (nötig für den allerersten Load nach URL-Parse)
+  async function load(
+    p: number = page,
+    overrides?: { q?: string; cat?: string; soldOutOnly?: boolean }
+  ) {
     setLoading(true);
     setErr(null);
     try {
+      const curQ   = overrides?.q ?? q;
+      const curCat = overrides?.cat ?? cat;
+      const curSO  = overrides?.soldOutOnly ?? soldOutOnly;
+
       const url = new URL("/api/admin/products", window.location.origin);
-
-      // Suche
-      if (q) url.searchParams.set("q", q);
-
-      // ❗️WICHTIG: Standardmäßig NUR Shop-Kategorien (keine Filme)
-      // Wenn im Dropdown nichts gewählt ist, senden wir die 6 Shop-Kategorien.
-      url.searchParams.set("cat", cat ? cat : SHOP_CATS);
-
-      if (soldOutOnly) url.searchParams.set("soldOut", "1");
+      if (curQ) url.searchParams.set("q", curQ);
+      url.searchParams.set("cat", curCat ? curCat : SHOP_CATS);
+      if (curSO) url.searchParams.set("soldOut", "1");
       if (adminKey) url.searchParams.set("key", adminKey);
-
-      // serverseitige Paginierung
       url.searchParams.set("limit", String(PAGE_SIZE));
       url.searchParams.set("page", String(p)); // 1-basiert
 
@@ -100,8 +105,8 @@ export default function AdminProductsPage() {
       setTotal(Number.isFinite(j?.total) ? Number(j.total) : items.length);
       setPage(p);
 
-      // 🔙 Nach erfolgreichem Laden: Rücksprung-Ziel merken
-      rememberCurrentListURL(p);
+      // 🔙 Zustand für Rücksprung mit den tatsächlich verwendeten Parametern merken
+      rememberCurrentListURL(p, { q: curQ, cat: curCat, soldOutOnly: curSO });
     } catch (e: any) {
       setErr(e?.message || "Fehler");
       setRows([]);
@@ -111,34 +116,51 @@ export default function AdminProductsPage() {
     }
   }
 
-  // Initial laden
+  // ⬇ Initial: URL-Parameter auslesen und damit starten (kein hartes load(1) mehr)
   useEffect(() => {
-    load(1);
+    if (typeof window === "undefined") return;
+    hydrating.current = true;
+
+    const sp = new URLSearchParams(window.location.search);
+
+    const initQ = sp.get("q") || "";
+    const initCatRaw = sp.get("cat") || "";
+    const initSold = sp.get("soldOut") === "1";
+    const initPage = Math.max(1, Number(sp.get("page") || "1"));
+
+    // cat aus URL auf unsere Select-Logik mappen:
+    // - leer oder SHOP_CATS => "Alle" (cat="")
+    // - ansonsten einzelne Kategorie übernehmen
+    const initCat = (!initCatRaw || initCatRaw === SHOP_CATS) ? "" : initCatRaw;
+
+    setQ(initQ);
+    setCat(initCat);
+    setSoldOutOnly(initSold);
+
+    // Direkt laden mit den geparsten Werten
+    (async () => {
+      await load(initPage, { q: initQ, cat: initCat, soldOutOnly: initSold });
+      hydrating.current = false; // jetzt dürfen andere Effekte wieder feuern
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Bei Kategoriewechsel direkt neu laden
+  // Bei Kategoriewechsel neu laden, aber NICHT während der Initial-Hydration
   useEffect(() => {
+    if (hydrating.current) return;
     load(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cat]);
 
   function fmtDate(iso: string) {
-    try {
-      return new Date(iso).toLocaleString("de-AT");
-    } catch {
-      return iso;
-    }
+    try { return new Date(iso).toLocaleString("de-AT"); } catch { return iso; }
   }
 
   async function toggleActive(id: string, current: boolean) {
     try {
       const r = await fetch(`/api/admin/products/${id}`, {
         method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          "x-admin-key": adminKey,
-        },
+        headers: { "Content-Type": "application/json", "x-admin-key": adminKey },
         body: JSON.stringify({ active: !current }),
       });
       if (!r.ok) throw new Error("Update fehlgeschlagen");
@@ -169,7 +191,6 @@ export default function AdminProductsPage() {
   const hasPrev = page > 1;
   const hasNext = page < maxPage;
 
-  // ▶ Pager-Handler
   const goFirst = () => load(1);
   const goPrev  = () => hasPrev && load(page - 1);
   const goNext  = () => hasNext && load(page + 1);
@@ -181,18 +202,9 @@ export default function AdminProductsPage() {
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <h1 className="text-3xl sm:text-4xl font-extrabold">Admin · Produkte</h1>
         <div className="flex gap-2">
-          <Link href="/admin" className="px-4 py-2 rounded bg-white/10 hover:bg-white/20">
-            ← Admin Hauptmenü
-          </Link>
-          <button onClick={() => load(page)} className="px-4 py-2 rounded bg-white/10 hover:bg-white/20">
-            Produktliste aktualisieren
-          </button>
-          <Link
-            href="/admin/new"
-            className="px-4 py-2 rounded bg-cyan-500 hover:bg-cyan-400 text-black font-semibold"
-          >
-            + Neues Produkt
-          </Link>
+          <Link href="/admin" className="px-4 py-2 rounded bg-white/10 hover:bg-white/20">← Admin Hauptmenü</Link>
+          <button onClick={() => load(page)} className="px-4 py-2 rounded bg-white/10 hover:bg-white/20">Produktliste aktualisieren</button>
+          <Link href="/admin/new" className="px-4 py-2 rounded bg-cyan-500 hover:bg-cyan-400 text-black font-semibold">+ Neues Produkt</Link>
         </div>
       </div>
 
@@ -220,25 +232,15 @@ export default function AdminProductsPage() {
           <option value="ss">Sonstiges & Specials</option>
         </select>
         <button
-          onClick={() => {
-            setSoldOutOnly(false);
-            load(1);
-          }}
-          className={`px-4 py-2 rounded ${
-            !soldOutOnly ? "bg-cyan-500 text-black" : "bg-white/10 hover:bg-white/20"
-          }`}
+          onClick={() => { setSoldOutOnly(false); load(1); }}
+          className={`px-4 py-2 rounded ${!soldOutOnly ? "bg-cyan-500 text-black" : "bg-white/10 hover:bg-white/20"}`}
           title="Alle"
         >
           Alle
         </button>
         <button
-          onClick={() => {
-            setSoldOutOnly(true);
-            load(1);
-          }}
-          className={`px-4 py-2 rounded ${
-            soldOutOnly ? "bg-cyan-500 text-black" : "bg-white/10 hover:bg-white/20"
-          }`}
+          onClick={() => { setSoldOutOnly(true); load(1); }}
+          className={`px-4 py-2 rounded ${soldOutOnly ? "bg-cyan-500 text-black" : "bg-white/10 hover:bg-white/20"}`}
           title="Nur ausverkauft"
         >
           Nur ausverkauft
@@ -258,9 +260,6 @@ export default function AdminProductsPage() {
         </div>
       </div>
 
-      {err && <p className="text-red-500 mt-4">{err}</p>}
-      {loading && <p className="mt-4 opacity-70">Lade …</p>}
-
       {/* TABELLE */}
       <div className="mt-4 overflow-x-auto">
         <table className="min-w-full text-sm">
@@ -279,9 +278,7 @@ export default function AdminProductsPage() {
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={8} className="py-6 opacity-70">
-                  Keine Produkte gefunden.
-                </td>
+                <td colSpan={8} className="py-6 opacity-70">Keine Produkte gefunden.</td>
               </tr>
             ) : (
               rows.map((r) => {
@@ -292,9 +289,19 @@ export default function AdminProductsPage() {
                   r.slug;
                 const genreBadge = displayGenre(r.genre);
 
+                // 🔗 Edit-URL inkl. Query (page/q/cat/soldOut) + key
+                const editUrl = (() => {
+                  const u = new URL(`/admin/products/edit/${r.id}`, typeof window !== "undefined" ? window.location.origin : "http://localhost");
+                  if (q) u.searchParams.set("q", q);
+                  u.searchParams.set("cat", cat ? cat : SHOP_CATS);
+                  if (soldOutOnly) u.searchParams.set("soldOut", "1");
+                  u.searchParams.set("page", String(page));
+                  if (adminKey) u.searchParams.set("key", adminKey);
+                  return u.pathname + "?" + u.searchParams.toString();
+                })();
+
                 return (
                   <tr key={r.id} className="border-t border-white/10 align-middle">
-                    {/* Cover */}
                     <td className="py-2 pr-4">
                       <div className="h-[50px] w-[50px] rounded overflow-hidden bg-white/5 border border-white/10">
                         <img
@@ -312,9 +319,8 @@ export default function AdminProductsPage() {
                     <td className="py-2 pr-4">
                       <div className="flex items-center gap-2">
                         <Link
-                          href={`/admin/products/edit/${r.id}${
-                            adminKey ? `?key=${encodeURIComponent(adminKey)}` : ""
-                          }`}
+                          href={editUrl}
+                          onClick={() => rememberCurrentListURL(page)}
                           className="px-2 py-1 rounded bg-white/10 hover:bg-white/20"
                           title="Bearbeiten"
                         >
@@ -397,15 +403,8 @@ export default function AdminProductsPage() {
       {/* BOTTOM BAR */}
       <div className="mt-6 flex items-center justify-between gap-2 flex-wrap">
         <div className="flex gap-2">
-          <Link href="/admin" className="px-4 py-2 rounded bg-white/10 hover:bg-white/20">
-            ← Admin Hauptmenü
-          </Link>
-          <Link
-            href="/admin/new"
-            className="px-4 py-2 rounded bg-cyan-500 hover:bg-cyan-400 text-black font-semibold"
-          >
-            + Neues Produkt
-          </Link>
+          <Link href="/admin" className="px-4 py-2 rounded bg-white/10 hover:bg-white/20">← Admin Hauptmenü</Link>
+          <Link href="/admin/new" className="px-4 py-2 rounded bg-cyan-500 hover:bg-cyan-400 text-black font-semibold">+ Neues Produkt</Link>
         </div>
 
         <div className="flex gap-2 text-sm">

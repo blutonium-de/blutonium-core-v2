@@ -163,8 +163,17 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
       let j: any; try { j = JSON.parse(t); } catch { j = { error: t || "Serverfehler" }; }
       if (!r.ok) throw new Error(j?.error || "Speichern fehlgeschlagen");
 
-      // Direkt zur Liste zurück
-      window.location.href = "/admin/products?updated=1";
+      // ✅ Nach dem Speichern: exakt zur gemerkten Listen-URL zurück
+      try {
+        const stored = sessionStorage.getItem("admin:products:returnURL");
+        if (stored) {
+          window.location.href = stored;
+        } else {
+          window.location.href = "/admin/products?updated=1";
+        }
+      } catch {
+        window.location.href = "/admin/products?updated=1";
+      }
     } catch (e: any) {
       setMsg(e?.message || "Fehler");
     } finally {
@@ -215,7 +224,17 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
         let j: any; try { j = JSON.parse(t); } catch { j = { error: t || "Serverfehler" }; }
         throw new Error(j?.error || "Löschen fehlgeschlagen");
       }
-      window.location.href = "/admin/products?deleted=1";
+      // auch beim Löschen: zurück zur gemerkten Liste
+      try {
+        const stored = sessionStorage.getItem("admin:products:returnURL");
+        if (stored) {
+          window.location.href = stored;
+        } else {
+          window.location.href = "/admin/products?deleted=1";
+        }
+      } catch {
+        window.location.href = "/admin/products?deleted=1";
+      }
     } catch (e:any) {
       setMsg(e?.message || "Fehler beim Löschen");
     }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import ImageDrop from "./ImageDrop";
 import BarcodeScanner from "./BarcodeScanner";
 
@@ -48,6 +48,31 @@ type Props = {
 
 export default function AdminProductForm({ media = "music" }: Props) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // 👉 Query-State aus der Liste übernehmen (z.B. ?page=13&q=...&genre=...)
+  const preservedQS = (() => {
+    // Wenn explizit returnTo gegeben, dieses bevorzugen:
+    const returnTo = searchParams.get("returnTo");
+    if (returnTo) return { returnTo };
+
+    const keep = new URLSearchParams();
+    for (const k of ["page", "q", "genre", "cat", "type"]) {
+      const v = searchParams.get(k);
+      if (v) keep.set(k, v);
+    }
+    return { keep };
+  })();
+
+  function goBackToList() {
+    const base = media === "dvd" ? "/admin/dvds" : "/admin/products";
+    if ("returnTo" in preservedQS && preservedQS.returnTo) {
+      router.push(preservedQS.returnTo);
+    } else {
+      const qs = preservedQS.keep!;
+      router.push(`${base}${qs.toString() ? `?${qs.toString()}` : ""}`);
+    }
+  }
 
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -187,14 +212,13 @@ export default function AdminProductForm({ media = "music" }: Props) {
         }
         if (j.format) setFormat(j.format);
       } else {
-        // DVD/BD: Felder typischer Movie-APIs (Beispiele: Title, Year, Genre, Director, Poster)
         if (j.title && !productName) setProductName(j.title);
         if (j.genre && !genre) setGenre(String(j.genre).split(",")[0]?.trim() || "");
         if (j.year) {
           const y = document.querySelector<HTMLInputElement>('input[name="year"]');
           if (y) y.value = String(j.year);
         }
-        if (j.format) setFormat(j.format); // z.B. "DVD" / "Blu-ray"
+        if (j.format) setFormat(j.format);
       }
 
       if (j.catno) {
@@ -289,9 +313,9 @@ export default function AdminProductForm({ media = "music" }: Props) {
       setGenre(""); if (priceRef.current) priceRef.current.value = "";
 
       setMsg("Gespeichert ✔");
-      // zurück in die passende Liste
-      if (media === "dvd") router.push("/admin/dvds");
-      else router.push("/admin/products");
+
+      // ✅ Zurück in die Liste – mit Erhalt der Seite / Filter
+      goBackToList();
     } catch (err: any) {
       setMsg(err?.message || "Fehler");
     } finally {
@@ -301,6 +325,14 @@ export default function AdminProductForm({ media = "music" }: Props) {
 
   const GENRES = media === "dvd" ? MOVIE_GENRES : MUSIC_GENRES;
 
+  // Hilfsfunktion: Link zur Liste mit Query-Params
+  function listHref() {
+    const base = media === "dvd" ? "/admin/dvds" : "/admin/products";
+    if ("returnTo" in preservedQS && preservedQS.returnTo) return preservedQS.returnTo!;
+    const qs = preservedQS.keep!;
+    return `${base}${qs.toString() ? `?${qs.toString()}` : ""}`;
+  }
+
   return (
     <div className="space-y-6">
       {/* TOP BAR (fixiert) */}
@@ -308,7 +340,7 @@ export default function AdminProductForm({ media = "music" }: Props) {
         <a href="/admin" className="px-3 py-2 rounded bg-white/10 hover:bg-white/20">
           Zum Admin
         </a>
-        <a href={media === "dvd" ? "/admin/dvds" : "/admin/products"} className="px-3 py-2 rounded bg-white/10 hover:bg-white/20">
+        <a href={listHref()} className="px-3 py-2 rounded bg-white/10 hover:bg-white/20">
           Zur Liste
         </a>
         <button
@@ -550,7 +582,7 @@ export default function AdminProductForm({ media = "music" }: Props) {
           <a href="/admin" className="px-4 py-2 rounded bg-white/10 hover:bg-white/20">
             Zum Admin
           </a>
-          <a href={media === "dvd" ? "/admin/dvds" : "/admin/products"} className="px-4 py-2 rounded bg-white/10 hover:bg-white/20">
+          <a href={listHref()} className="px-4 py-2 rounded bg-white/10 hover:bg-white/20">
             Zur Liste
           </a>
           <button
