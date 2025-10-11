@@ -1,3 +1,4 @@
+// app/admin/products/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -34,7 +35,7 @@ function displayGenre(g?: string | null) {
   return s;
 }
 
-// 🔙 Key im SessionStorage (nicht exportieren!)
+// SessionStorage-Key für die Rücksprung-URL (von der Edit-Seite genutzt)
 const RETURN_KEY = "admin:products:returnURL";
 
 export default function AdminProductsPage() {
@@ -57,34 +58,52 @@ export default function AdminProductsPage() {
     []
   );
 
-  function rememberCurrentListURL(p: number, opts?: { q?: string; cat?: string; soldOutOnly?: boolean }) {
-    if (typeof window === "undefined") return;
-    const _q   = opts?.q ?? q;
-    const _cat = opts?.cat ?? cat;
-    const _sold = opts?.soldOutOnly ?? soldOutOnly;
+  // URL-Parameter beim Einstieg auslesen (page/q/cat/soldOut/limit)
+  function readInitialFromURL() {
+    try {
+      const sp = new URLSearchParams(window.location.search);
+      const initQ = sp.get("q") || "";
+      const initCat = sp.get("cat") || ""; // kann auch die CSV SHOP_CATS sein
+      const initSold = sp.get("soldOut") === "1" || sp.get("soldout") === "1";
+      const initPage = Math.max(1, parseInt(sp.get("page") || "1", 10) || 1);
+      // limit ignorieren wir bewusst, PAGE_SIZE ist kanonisch; wir hängen es aber an Links an
+      return { initQ, initCat, initSold, initPage };
+    } catch {
+      return { initQ: "", initCat: "", initSold: false, initPage: 1 };
+    }
+  }
 
+  // Rücksprung-URL für die Edit-Seite merken
+  function rememberCurrentListURL(p: number, qArg = q, catArg = cat, soldArg = soldOutOnly) {
+    if (typeof window === "undefined") return;
     const listUrl = new URL("/admin/products", window.location.origin);
-    if (_q) listUrl.searchParams.set("q", _q);
-    listUrl.searchParams.set("cat", _cat ? _cat : SHOP_CATS);
-    if (_sold) listUrl.searchParams.set("soldOut", "1");
+    if (qArg) listUrl.searchParams.set("q", qArg);
+    listUrl.searchParams.set("cat", catArg ? catArg : SHOP_CATS);
+    if (soldArg) listUrl.searchParams.set("soldOut", "1");
     listUrl.searchParams.set("limit", String(PAGE_SIZE));
     listUrl.searchParams.set("page", String(p));
     sessionStorage.setItem(RETURN_KEY, listUrl.toString());
   }
 
-  // zentrales Lade-API – kann wahlweise mit Overrides arbeiten
-  async function load(p: number = page, opts?: { q?: string; cat?: string; soldOutOnly?: boolean }) {
-    const _q   = opts?.q ?? q;
-    const _cat = opts?.cat ?? cat;
-    const _sold = opts?.soldOutOnly ?? soldOutOnly;
+  // Laden mit optionalen Overrides (wichtig für den Initial-Load mit URL-Params)
+  async function load(
+    p: number = page,
+    qOverride?: string,
+    catOverride?: string,
+    soldOverride?: boolean
+  ) {
+    const qEff   = qOverride   !== undefined ? qOverride   : q;
+    const catEff = catOverride !== undefined ? catOverride : cat;
+    const soldEff= soldOverride!== undefined ? soldOverride: soldOutOnly;
 
     setLoading(true);
     setErr(null);
     try {
       const url = new URL("/api/admin/products", window.location.origin);
-      if (_q) url.searchParams.set("q", _q);
-      url.searchParams.set("cat", _cat ? _cat : SHOP_CATS);
-      if (_sold) url.searchParams.set("soldOut", "1");
+
+      if (qEff) url.searchParams.set("q", qEff);
+      url.searchParams.set("cat", catEff ? catEff : SHOP_CATS);
+      if (soldEff) url.searchParams.set("soldOut", "1");
       if (adminKey) url.searchParams.set("key", adminKey);
       url.searchParams.set("limit", String(PAGE_SIZE));
       url.searchParams.set("page", String(p)); // 1-basiert
@@ -99,7 +118,7 @@ export default function AdminProductsPage() {
       setPage(p);
 
       // 🔙 Zustand für Rücksprung merken
-      rememberCurrentListURL(p, { q: _q, cat: _cat, soldOutOnly: _sold });
+      rememberCurrentListURL(p, qEff, catEff, soldEff);
     } catch (e: any) {
       setErr(e?.message || "Fehler");
       setRows([]);
@@ -109,40 +128,16 @@ export default function AdminProductsPage() {
     }
   }
 
-  // Initial: URL-Query auslesen (page, q, cat, soldOut) und damit laden
+  // Initial: URL-Params berücksichtigen und damit laden
   useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const sp = new URLSearchParams(window.location.search);
-
-    const initialQ = sp.get("q") || "";
-    const initialCatRaw = sp.get("cat") || "";
-    // Spezialfall: wenn cat genau die SHOP_CATS-Kette ist, behandeln wie „Alle“
-    const initialCat = initialCatRaw && initialCatRaw !== SHOP_CATS ? initialCatRaw : "";
-    const initialSoldOut = sp.get("soldOut") === "1";
-    const initialLimit = Number(sp.get("limit") || PAGE_SIZE);
-    const initialPage = Math.max(1, Number(sp.get("page") || "1"));
-
-    // States setzen (sichtbar in UI)
-    setQ(initialQ);
-    setCat(initialCat);
-    setSoldOutOnly(initialSoldOut);
-
-    // Falls limit aus URL ungleich PAGE_SIZE ist, ignorieren wir es beim Laden,
-    // schreiben es aber in RETURN_URL später wieder als PAGE_SIZE zurück.
-    // Jetzt laden wir die gewünschte Seite:
-    load(initialPage, { q: initialQ, cat: initialCat, soldOutOnly: initialSoldOut });
-
+    const { initQ, initCat, initSold, initPage } = readInitialFromURL();
+    setQ(initQ);
+    setCat(initCat);
+    setSoldOutOnly(initSold);
+    // WICHTIG: mit Overrides laden, damit nicht die (noch) alten States (leer/false) verwendet werden
+    load(initPage, initQ, initCat, initSold);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Bei Kategoriewechsel direkt neu laden (Seite 1)
-  useEffect(() => {
-    // Nur auslösen, wenn wir bereits einmal initialisiert wurden (window vorhanden)
-    if (typeof window === "undefined") return;
-    load(1);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cat]);
 
   function fmtDate(iso: string) {
     try { return new Date(iso).toLocaleString("de-AT"); } catch { return iso; }
@@ -207,12 +202,16 @@ export default function AdminProductsPage() {
           placeholder="Suche (Artist, Titel, Slug, SKU, EAN ...)"
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && load(1)}
+          onKeyDown={(e) => e.key === "Enter" && load(1, e.currentTarget.value, cat, soldOutOnly)}
         />
         <select
           className="input"
           value={cat}
-          onChange={(e) => setCat(e.target.value)}
+          onChange={(e) => {
+            const nextCat = e.target.value;
+            setCat(nextCat);
+            load(1, q, nextCat, soldOutOnly);
+          }}
           title="Kategorie filtern (ohne Filme)"
         >
           <option value="">Alle Kategorien</option>
@@ -224,14 +223,14 @@ export default function AdminProductsPage() {
           <option value="ss">Sonstiges & Specials</option>
         </select>
         <button
-          onClick={() => { setSoldOutOnly(false); load(1, { soldOutOnly: false }); }}
+          onClick={() => { setSoldOutOnly(false); load(1, q, cat, false); }}
           className={`px-4 py-2 rounded ${!soldOutOnly ? "bg-cyan-500 text-black" : "bg-white/10 hover:bg-white/20"}`}
           title="Alle"
         >
           Alle
         </button>
         <button
-          onClick={() => { setSoldOutOnly(true); load(1, { soldOutOnly: true }); }}
+          onClick={() => { setSoldOutOnly(true); load(1, q, cat, true); }}
           className={`px-4 py-2 rounded ${soldOutOnly ? "bg-cyan-500 text-black" : "bg-white/10 hover:bg-white/20"}`}
           title="Nur ausverkauft"
         >
@@ -281,13 +280,15 @@ export default function AdminProductsPage() {
                   r.slug;
                 const genreBadge = displayGenre(r.genre);
 
-                // 🔗 Edit-URL inkl. Query (page/q/cat/soldOut) + key
+                // 🔗 Edit-URL inkl. Query (page/q/cat/soldOut/limit) + key
                 const editUrl = (() => {
-                  const u = new URL(`/admin/products/edit/${r.id}`, typeof window !== "undefined" ? window.location.origin : "http://localhost");
+                  const base = typeof window !== "undefined" ? window.location.origin : "http://localhost";
+                  const u = new URL(`/admin/products/edit/${r.id}`, base);
                   if (q) u.searchParams.set("q", q);
                   u.searchParams.set("cat", cat ? cat : SHOP_CATS);
                   if (soldOutOnly) u.searchParams.set("soldOut", "1");
                   u.searchParams.set("page", String(page));
+                  u.searchParams.set("limit", String(PAGE_SIZE));
                   if (adminKey) u.searchParams.set("key", adminKey);
                   return u.pathname + "?" + u.searchParams.toString();
                 })();

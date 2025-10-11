@@ -1,3 +1,4 @@
+// app/admin/products/edit/[id]/page.tsx
 "use client";
 
 export const dynamic = "force-dynamic";
@@ -46,6 +47,9 @@ type Product = {
   stock?: number | null; // Bestand
 };
 
+// SessionStorage-Key für den Rücksprung
+const RETURN_KEY = "admin:products:returnURL";
+
 export default function AdminEditProductPage({ params }: { params: { id: string } }) {
   const { id } = params;
   const searchParams = useSearchParams();
@@ -64,7 +68,32 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
   const [images, setImages] = useState<string[]>([]);
   const [active, setActive] = useState<boolean>(false);
 
+  const [backHref, setBackHref] = useState<string>("/admin/products"); // für „Zur Liste“-Buttons
+
   const formRef = useRef<HTMLFormElement | null>(null);
+
+  // --------- Rücksprung-URL beim Betreten der Edit-Seite setzen ----------
+  useEffect(() => {
+    try {
+      const keep = ["q","cat","soldOut","page","limit"] as const;
+      const u = new URL("/admin/products", window.location.origin);
+      for (const k of keep) {
+        const v = searchParams.get(k);
+        if (v) u.searchParams.set(k, v);
+      }
+      // Defaults setzen, falls nicht in der URL vorhanden:
+      if (!u.searchParams.get("cat"))   u.searchParams.set("cat", "bv,sv,bcd,scd,bhs,ss");
+      if (!u.searchParams.get("limit")) u.searchParams.set("limit", "10");
+      if (!u.searchParams.get("page"))  u.searchParams.set("page", "1");
+
+      const full = u.toString();
+      sessionStorage.setItem(RETURN_KEY, full);
+      setBackHref(u.pathname + "?" + u.searchParams.toString());
+    } catch {
+      setBackHref("/admin/products");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // nur einmal beim Mount
 
   // --------- Helpers ----------
   function submitForm() {
@@ -164,7 +193,7 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
 
       // ✅ Nach dem Speichern: exakt zur gemerkten Listen-URL zurück
       try {
-        const stored = sessionStorage.getItem("admin:products:returnURL");
+        const stored = sessionStorage.getItem(RETURN_KEY);
         if (stored) {
           window.location.href = stored;
         } else {
@@ -225,7 +254,7 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
       }
       // auch beim Löschen: zurück zur gemerkten Liste
       try {
-        const stored = sessionStorage.getItem("admin:products:returnURL");
+        const stored = sessionStorage.getItem(RETURN_KEY);
         if (stored) {
           window.location.href = stored;
         } else {
@@ -239,20 +268,6 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
     }
   }
 
-  // Hilfsfunktion: „Zur Liste“ klick – nutzt gemerkte URL
-  function goBackToList() {
-    try {
-      const stored = sessionStorage.getItem("admin:products:returnURL");
-      if (stored) {
-        window.location.href = stored;
-      } else {
-        window.location.href = "/admin/products";
-      }
-    } catch {
-      window.location.href = "/admin/products";
-    }
-  }
-
   if (loading) return <div className="max-w-6xl mx-auto px-4 py-10">Lade …</div>;
   if (!p)      return <div className="max-w-6xl mx-auto px-4 py-10 text-red-400">{msg || "Produkt nicht gefunden"}</div>;
 
@@ -261,14 +276,7 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-3xl sm:text-4xl font-extrabold">Produkt bearbeiten</h1>
         <div className="flex flex-wrap items-center gap-2">
-          {/* nutzt die gemerkte Liste */}
-          <button
-            type="button"
-            onClick={goBackToList}
-            className="px-3 py-2 rounded bg-white/10 hover:bg-white/20"
-          >
-            Zur Liste
-          </button>
+          <a href={backHref} className="px-3 py-2 rounded bg-white/10 hover:bg-white/20">Zur Liste</a>
 
           {/* Speichern oben (kein Scanner im Edit!) */}
           <button
@@ -406,15 +414,13 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
               {saving ? "Speichere …" : "Speichern & Zur Liste"}
             </button>
 
-            {/* nutzt die gemerkte Liste */}
-            <button
-              type="button"
-              onClick={goBackToList}
+            <a
+              href={backHref}
               className="px-3 py-2 rounded bg-white/10 hover:bg-white/20"
               title="Zurück zur Liste"
             >
               Zurück zur Liste
-            </button>
+            </a>
           </div>
 
           <style jsx>{`
