@@ -1,7 +1,6 @@
-// app/admin/products/page.tsx
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -35,8 +34,8 @@ function displayGenre(g?: string | null) {
   return s;
 }
 
-// 🔙 Rücksprung-Key (auch in der Edit-Form verwenden)
-export const RETURN_KEY = "admin:products:returnURL";
+// 🔙 Key im SessionStorage (nicht exportieren!)
+const RETURN_KEY = "admin:products:returnURL";
 
 export default function AdminProductsPage() {
   const [q, setQ] = useState("");
@@ -50,9 +49,6 @@ export default function AdminProductsPage() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // Flag: Initial-Hydration aus URL läuft/abgeschlossen?
-  const hydrating = useRef(false);
-
   const adminKey = useMemo(
     () =>
       (typeof window !== "undefined" && localStorage.getItem("admin_key")) ||
@@ -63,35 +59,32 @@ export default function AdminProductsPage() {
 
   function rememberCurrentListURL(p: number, opts?: { q?: string; cat?: string; soldOutOnly?: boolean }) {
     if (typeof window === "undefined") return;
-    const listUrl = new URL("/admin/products", window.location.origin);
-    const qv   = opts?.q   ?? q;
-    const catv = opts?.cat ?? cat;
-    const so   = opts?.soldOutOnly ?? soldOutOnly;
+    const _q   = opts?.q ?? q;
+    const _cat = opts?.cat ?? cat;
+    const _sold = opts?.soldOutOnly ?? soldOutOnly;
 
-    if (qv) listUrl.searchParams.set("q", qv);
-    listUrl.searchParams.set("cat", catv ? catv : SHOP_CATS);
-    if (so) listUrl.searchParams.set("soldOut", "1");
+    const listUrl = new URL("/admin/products", window.location.origin);
+    if (_q) listUrl.searchParams.set("q", _q);
+    listUrl.searchParams.set("cat", _cat ? _cat : SHOP_CATS);
+    if (_sold) listUrl.searchParams.set("soldOut", "1");
     listUrl.searchParams.set("limit", String(PAGE_SIZE));
     listUrl.searchParams.set("page", String(p));
     sessionStorage.setItem(RETURN_KEY, listUrl.toString());
   }
 
-  // ⬇ load() kann optional Overrides bekommen (nötig für den allerersten Load nach URL-Parse)
-  async function load(
-    p: number = page,
-    overrides?: { q?: string; cat?: string; soldOutOnly?: boolean }
-  ) {
+  // zentrales Lade-API – kann wahlweise mit Overrides arbeiten
+  async function load(p: number = page, opts?: { q?: string; cat?: string; soldOutOnly?: boolean }) {
+    const _q   = opts?.q ?? q;
+    const _cat = opts?.cat ?? cat;
+    const _sold = opts?.soldOutOnly ?? soldOutOnly;
+
     setLoading(true);
     setErr(null);
     try {
-      const curQ   = overrides?.q ?? q;
-      const curCat = overrides?.cat ?? cat;
-      const curSO  = overrides?.soldOutOnly ?? soldOutOnly;
-
       const url = new URL("/api/admin/products", window.location.origin);
-      if (curQ) url.searchParams.set("q", curQ);
-      url.searchParams.set("cat", curCat ? curCat : SHOP_CATS);
-      if (curSO) url.searchParams.set("soldOut", "1");
+      if (_q) url.searchParams.set("q", _q);
+      url.searchParams.set("cat", _cat ? _cat : SHOP_CATS);
+      if (_sold) url.searchParams.set("soldOut", "1");
       if (adminKey) url.searchParams.set("key", adminKey);
       url.searchParams.set("limit", String(PAGE_SIZE));
       url.searchParams.set("page", String(p)); // 1-basiert
@@ -105,8 +98,8 @@ export default function AdminProductsPage() {
       setTotal(Number.isFinite(j?.total) ? Number(j.total) : items.length);
       setPage(p);
 
-      // 🔙 Zustand für Rücksprung mit den tatsächlich verwendeten Parametern merken
-      rememberCurrentListURL(p, { q: curQ, cat: curCat, soldOutOnly: curSO });
+      // 🔙 Zustand für Rücksprung merken
+      rememberCurrentListURL(p, { q: _q, cat: _cat, soldOutOnly: _sold });
     } catch (e: any) {
       setErr(e?.message || "Fehler");
       setRows([]);
@@ -116,38 +109,37 @@ export default function AdminProductsPage() {
     }
   }
 
-  // ⬇ Initial: URL-Parameter auslesen und damit starten (kein hartes load(1) mehr)
+  // Initial: URL-Query auslesen (page, q, cat, soldOut) und damit laden
   useEffect(() => {
     if (typeof window === "undefined") return;
-    hydrating.current = true;
 
     const sp = new URLSearchParams(window.location.search);
 
-    const initQ = sp.get("q") || "";
-    const initCatRaw = sp.get("cat") || "";
-    const initSold = sp.get("soldOut") === "1";
-    const initPage = Math.max(1, Number(sp.get("page") || "1"));
+    const initialQ = sp.get("q") || "";
+    const initialCatRaw = sp.get("cat") || "";
+    // Spezialfall: wenn cat genau die SHOP_CATS-Kette ist, behandeln wie „Alle“
+    const initialCat = initialCatRaw && initialCatRaw !== SHOP_CATS ? initialCatRaw : "";
+    const initialSoldOut = sp.get("soldOut") === "1";
+    const initialLimit = Number(sp.get("limit") || PAGE_SIZE);
+    const initialPage = Math.max(1, Number(sp.get("page") || "1"));
 
-    // cat aus URL auf unsere Select-Logik mappen:
-    // - leer oder SHOP_CATS => "Alle" (cat="")
-    // - ansonsten einzelne Kategorie übernehmen
-    const initCat = (!initCatRaw || initCatRaw === SHOP_CATS) ? "" : initCatRaw;
+    // States setzen (sichtbar in UI)
+    setQ(initialQ);
+    setCat(initialCat);
+    setSoldOutOnly(initialSoldOut);
 
-    setQ(initQ);
-    setCat(initCat);
-    setSoldOutOnly(initSold);
+    // Falls limit aus URL ungleich PAGE_SIZE ist, ignorieren wir es beim Laden,
+    // schreiben es aber in RETURN_URL später wieder als PAGE_SIZE zurück.
+    // Jetzt laden wir die gewünschte Seite:
+    load(initialPage, { q: initialQ, cat: initialCat, soldOutOnly: initialSoldOut });
 
-    // Direkt laden mit den geparsten Werten
-    (async () => {
-      await load(initPage, { q: initQ, cat: initCat, soldOutOnly: initSold });
-      hydrating.current = false; // jetzt dürfen andere Effekte wieder feuern
-    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Bei Kategoriewechsel neu laden, aber NICHT während der Initial-Hydration
+  // Bei Kategoriewechsel direkt neu laden (Seite 1)
   useEffect(() => {
-    if (hydrating.current) return;
+    // Nur auslösen, wenn wir bereits einmal initialisiert wurden (window vorhanden)
+    if (typeof window === "undefined") return;
     load(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cat]);
@@ -232,14 +224,14 @@ export default function AdminProductsPage() {
           <option value="ss">Sonstiges & Specials</option>
         </select>
         <button
-          onClick={() => { setSoldOutOnly(false); load(1); }}
+          onClick={() => { setSoldOutOnly(false); load(1, { soldOutOnly: false }); }}
           className={`px-4 py-2 rounded ${!soldOutOnly ? "bg-cyan-500 text-black" : "bg-white/10 hover:bg-white/20"}`}
           title="Alle"
         >
           Alle
         </button>
         <button
-          onClick={() => { setSoldOutOnly(true); load(1); }}
+          onClick={() => { setSoldOutOnly(true); load(1, { soldOutOnly: true }); }}
           className={`px-4 py-2 rounded ${soldOutOnly ? "bg-cyan-500 text-black" : "bg-white/10 hover:bg-white/20"}`}
           title="Nur ausverkauft"
         >

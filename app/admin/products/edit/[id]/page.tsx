@@ -1,4 +1,3 @@
-// app/admin/products/edit/[id]/page.tsx
 "use client";
 
 export const dynamic = "force-dynamic";
@@ -240,6 +239,20 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
     }
   }
 
+  // Hilfsfunktion: „Zur Liste“ klick – nutzt gemerkte URL
+  function goBackToList() {
+    try {
+      const stored = sessionStorage.getItem("admin:products:returnURL");
+      if (stored) {
+        window.location.href = stored;
+      } else {
+        window.location.href = "/admin/products";
+      }
+    } catch {
+      window.location.href = "/admin/products";
+    }
+  }
+
   if (loading) return <div className="max-w-6xl mx-auto px-4 py-10">Lade …</div>;
   if (!p)      return <div className="max-w-6xl mx-auto px-4 py-10 text-red-400">{msg || "Produkt nicht gefunden"}</div>;
 
@@ -248,7 +261,14 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-3xl sm:text-4xl font-extrabold">Produkt bearbeiten</h1>
         <div className="flex flex-wrap items-center gap-2">
-          <a href="/admin/products" className="px-3 py-2 rounded bg-white/10 hover:bg-white/20">Zur Liste</a>
+          {/* nutzt die gemerkte Liste */}
+          <button
+            type="button"
+            onClick={goBackToList}
+            className="px-3 py-2 rounded bg-white/10 hover:bg-white/20"
+          >
+            Zur Liste
+          </button>
 
           {/* Speichern oben (kein Scanner im Edit!) */}
           <button
@@ -386,13 +406,15 @@ export default function AdminEditProductPage({ params }: { params: { id: string 
               {saving ? "Speichere …" : "Speichern & Zur Liste"}
             </button>
 
-            <a
-              href="/admin/products"
+            {/* nutzt die gemerkte Liste */}
+            <button
+              type="button"
+              onClick={goBackToList}
               className="px-3 py-2 rounded bg-white/10 hover:bg-white/20"
               title="Zurück zur Liste"
             >
               Zurück zur Liste
-            </a>
+            </button>
           </div>
 
           <style jsx>{`
